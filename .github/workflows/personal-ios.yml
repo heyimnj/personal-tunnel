@@ -39,6 +39,7 @@ jobs:
           git -C source submodule update --init --recursive
 
       - name: Select newest installed Xcode
+        id: xcode
         shell: bash
         run: |
           set -euo pipefail
@@ -62,21 +63,38 @@ jobs:
           sudo xcode-select -s "$XCODE_PATH/Contents/Developer"
           xcodebuild -version
           xcrun --sdk iphoneos --show-sdk-version
+          echo "stamp=$(xcodebuild -version | shasum -a 256 | cut -d ' ' -f 1)" >> "$GITHUB_OUTPUT"
 
       - name: Parser and redaction tests
         run: bash scripts/check_swift_parser_tests.sh
 
+      - name: Restore pinned Libbox cache
+        id: libbox-cache
+        uses: actions/cache/restore@v4
+        with:
+          path: source/Libbox.xcframework
+          key: libbox-v1-${{ runner.os }}-${{ runner.arch }}-${{ steps.xcode.outputs.stamp }}-${{ hashFiles('source/core/VERSION', 'source/core/overlays/**', 'source/scripts/build_libbox.sh', 'source/scripts/prepare_core.sh', 'source/scripts/apply_singbox_overlays.sh', 'source/scripts/tags/**') }}
+
       - name: Set up pinned Go
+        if: steps.libbox-cache.outputs.cache-hit != 'true'
         uses: actions/setup-go@v5
         with:
           go-version: '1.26.6'
           cache-dependency-path: source/core/sing-box/go.sum
 
       - name: Build iOS Libbox
+        if: steps.libbox-cache.outputs.cache-hit != 'true'
         env:
           VPN_DIRECT_APPLE_PLATFORM: ios
           VPN_DIRECT_FORCE_GOMOBILE_INSTALL: '1'
         run: bash scripts/build_libbox.sh
+
+      - name: Save pinned Libbox cache before application compilation
+        if: steps.libbox-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: source/Libbox.xcframework
+          key: libbox-v1-${{ runner.os }}-${{ runner.arch }}-${{ steps.xcode.outputs.stamp }}-${{ hashFiles('source/core/VERSION', 'source/core/overlays/**', 'source/scripts/build_libbox.sh', 'source/scripts/prepare_core.sh', 'source/scripts/apply_singbox_overlays.sh', 'source/scripts/tags/**') }}
 
       - name: Compile unsigned iOS application
         shell: bash
