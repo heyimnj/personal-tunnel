@@ -107,6 +107,7 @@ jobs:
             -resultBundlePath build/PersonalTunnel.xcresult \
             -skipPackagePluginValidation -skipMacroValidation \
             CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO \
+            APP_GROUP_IDENTIFIER=group.a69e6dc9a612eb7d.1 \
             CODE_SIGN_IDENTITY= build 2>&1 | tee build/xcodebuild.log
 
       - name: Package unsigned IPA for subsequent signing
