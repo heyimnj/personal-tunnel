@@ -33,9 +33,9 @@ jobs:
           GIT_TERMINAL_PROMPT: '0'
         run: |
           set -euo pipefail
-          echo '3c0a32f172c7ab5e29552b0fd55d07afee3c909da66bdff6e76c9c095131fef6  personal-tunnel-source.bundle' | shasum -a 256 -c -
+          shasum -a 256 -c SOURCE_SHA256SUMS
           git clone --branch audit/independent-client personal-tunnel-source.bundle source
-          test "$(git -C source rev-parse HEAD)" = '54cf6084c55930c3be46b20e60343329bb8c6250'
+          test "$(git -C source rev-parse HEAD)" = "$(cat source-commit.txt)"
           git -C source submodule update --init --recursive
 
       - name: Select newest installed Xcode
