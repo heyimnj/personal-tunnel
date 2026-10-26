@@ -4,8 +4,8 @@ Private build repository for the locally modified iOS VPN client.
 
 `personal-tunnel-source.bundle` contains the complete modified source and Git history, not an unmodified upstream import.
 
-Source commit: `da521f2965c1240724d5257009afdf1268a1cc87`
-Bundle SHA-256: `8738c6a57350c9387ad4f89ce47be2146d0cbf4e9d561d6e3fe51ec78b6965da`
+Source commit: `e7d68c0bd6203cf394e1c827851dff5a5e1f5219`
+Bundle SHA-256: `f0d7cccfb20626a05650ec49c0d514f32412fb1accf4ba05640a0250b3fa084e`
 
 Recover a normal source checkout:
 
