@@ -92,7 +92,7 @@ final class AppModel {
         tunnelError = SharedContainer.defaults.string(forKey: SharedKey.lastTunnelError)
         if tunnel.isConnected { core.start() }
         isLaunching = false
-        try? prepareConfiguration()
+        _ = try? prepareConfiguration()
         await refreshDue()
     }
 
@@ -118,13 +118,13 @@ final class AppModel {
         Haptics.selection()
         library.selectedServerID = server.id
         guard tunnel.isActive else {
-            try? prepareConfiguration()
+            _ = try? prepareConfiguration()
             return
         }
         let subscriptionID = library.subscription(containing: server.id)?.id
         if subscriptionID == runningSubscriptionID, let tag = runningTags[server.id] {
             // Same configuration: switch the selector, no reconnect.
-            try? prepareConfiguration()
+            _ = try? prepareConfiguration()
             Task.detached {
                 try? LibboxNewStandaloneCommandClient()?.selectOutbound(BuiltConfiguration.selectorTag, outboundTag: tag)
             }
@@ -336,7 +336,7 @@ final class AppModel {
             if updated.servers.map(\.fingerprint) != before, runningSubscriptionID == id {
                 configurationChanged(reload: true)
             } else if library.subscription(containing: library.selectedServerID)?.id == id {
-                try? prepareConfiguration()
+                _ = try? prepareConfiguration()
             }
             if !quiet, updated.lastError == nil {
                 show(.success, L("«%@» обновлена: %@", updated.name, serversCount(updated.servers.count)))
@@ -407,7 +407,7 @@ final class AppModel {
                 library.subscriptions[index].servers += content.servers.map { Server(imported: $0) }
             }
             library.repairSelection()
-            try? prepareConfiguration()
+            _ = try? prepareConfiguration()
             let message = L("Добавлено: %@", serversCount(content.servers.count))
                 + (content.skipped.isEmpty ? "" : " · " + L("пропущено: %d", content.skipped.count))
             show(.success, message)
@@ -604,9 +604,9 @@ func errorText(_ error: Error) -> String {
     if let localized = error as? LocalizedError, let text = localized.errorDescription {
         return localizedMessage(text)
     }
-    if let convertible = error as? CustomStringConvertible {
-        let text = convertible.description
-        if !text.isEmpty, !text.hasPrefix("Error Domain=") { return localizedMessage(text) }
+    let text = String(describing: error)
+    if !text.isEmpty, !text.hasPrefix("Error Domain="), !(error is URLError) {
+        return localizedMessage(text)
     }
     return localizedMessage(error.localizedDescription)
 }

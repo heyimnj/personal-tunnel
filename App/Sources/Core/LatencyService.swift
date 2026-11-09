@@ -46,7 +46,7 @@ final class LatencyService {
             await LatencyRunner.run(pending, mode: mode, priority: priority, probes: probes) { id, sample in
                 await sink.store(id, sample, finalStage: plans[id]?.last ?? .tcp)
             }
-            if !Task.isCancelled { await sink.finish() }
+            if !Task.isCancelled { sink.finish() }
         }
         // Servers with nothing to measure (UDP without a running tunnel).
         for target in pending where plans[target.id]?.isEmpty == true {

@@ -7,26 +7,25 @@ import TunnelKit
 struct HomeView: View {
     let openServers: () -> Void
 
-    @Environment(AppModel.self) private var model
     @Environment(\.palette) private var palette
-    @State private var page: Int? = 0
 
     var body: some View {
-        GeometryReader { proxy in
-            ScrollView(.vertical) {
-                LazyVStack(spacing: 0) {
-                    ConnectionPage(openServers: openServers, showAnalytics: { withAnimation { page = 1 } })
-                        .frame(height: proxy.size.height)
-                        .id(0)
-                    AnalyticsView(isVisible: page == 1)
-                        .frame(minHeight: proxy.size.height)
-                        .id(1)
+        GeometryReader { geometry in
+            ScrollViewReader { scroller in
+                ScrollView(.vertical) {
+                    LazyVStack(spacing: 0) {
+                        ConnectionPage(openServers: openServers, showAnalytics: {
+                            withAnimation(.spring(response: 0.5, dampingFraction: 0.9)) {
+                                scroller.scrollTo("analytics", anchor: .top)
+                            }
+                        })
+                        .frame(height: geometry.size.height)
+                        AnalyticsView(viewportHeight: geometry.size.height)
+                            .id("analytics")
+                    }
                 }
-                .scrollTargetLayout()
+                .scrollIndicators(.hidden)
             }
-            .scrollTargetBehavior(.paging)
-            .scrollPosition(id: $page)
-            .scrollIndicators(.hidden)
         }
         .screenBackground(palette)
     }

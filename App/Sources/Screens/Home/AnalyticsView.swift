@@ -5,7 +5,8 @@ import TunnelKit
 /// Session statistics: speed over the last two minutes, totals, traffic by
 /// route and the recent connections the core reports.
 struct AnalyticsView: View {
-    let isVisible: Bool
+    /// Height of the scroll view, to tell when the analytics are on screen.
+    let viewportHeight: CGFloat
 
     @Environment(AppModel.self) private var model
     @Environment(\.palette) private var palette
@@ -34,7 +35,16 @@ struct AnalyticsView: View {
         }
         .padding(.horizontal, 16)
         .padding(.bottom, 24)
-        .onChange(of: isVisible) { _, visible in model.core.wantsConnections = visible }
+        // The connection list costs the extension work: stream it only while
+        // the analytics are actually on screen.
+        .background {
+            GeometryReader { proxy in
+                let onScreen = proxy.frame(in: .global).minY < viewportHeight * 0.75
+                Color.clear
+                    .onAppear { model.core.wantsConnections = onScreen }
+                    .onChange(of: onScreen) { _, visible in model.core.wantsConnections = visible }
+            }
+        }
         .onDisappear { model.core.wantsConnections = false }
     }
 
