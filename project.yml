@@ -38,6 +38,7 @@ targets:
         embed: false
       - sdk: libresolv.tbd
       - sdk: SystemConfiguration.framework
+      - sdk: UIKit.framework
 
   PacketTunnel:
     type: app-extension
@@ -66,6 +67,8 @@ targets:
         embed: false
       - sdk: libresolv.tbd
       - sdk: SystemConfiguration.framework
+      # cronet (NaiveProxy) inside Libbox references UIApplication.
+      - sdk: UIKit.framework
 
   Widgets:
     type: app-extension
