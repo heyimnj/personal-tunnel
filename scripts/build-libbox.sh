@@ -8,10 +8,11 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-# shellcheck disable=SC1091
-set -a
-source <(grep -E '^[A-Z_]+=' "$ROOT/Core/VERSION")
-set +a
+# Read KEY=VALUE pins (macOS ships bash 3.2, where `source <(...)` does not work).
+while IFS= read -r line || [[ -n "$line" ]]; do
+  [[ "$line" =~ ^[A-Z_]+= ]] || continue
+  export "${line?}"
+done < "$ROOT/Core/VERSION"
 
 CORE_DIR="${CORE_DIR:-$ROOT/build/core}"
 OUTPUT="$ROOT/Libbox.xcframework"
