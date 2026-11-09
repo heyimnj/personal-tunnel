@@ -1,0 +1,20 @@
+# Xcode
+*.xcodeproj/
+!*.xcodeproj/project.xcworkspace/
+DerivedData/
+build/
+*.xcresult
+xcuserdata/
+*.ipa
+
+# Swift Package Manager
+.build/
+.swiftpm/
+Package.resolved
+
+# Core build outputs
+Libbox.xcframework/
+core/sing-box/
+
+# macOS
+.DS_Store
