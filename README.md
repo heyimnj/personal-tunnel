@@ -1,18 +1,66 @@
 # Personal Tunnel
 
-Private build repository for the locally modified iOS VPN client.
+Личный VPN-клиент для iPhone на ядре sing-box. Без аккаунтов, оплаты, рекламы и аналитики: серверы и подписки добавляете вы.
 
-`personal-tunnel-source.bundle` contains the complete modified source and Git history, not an unmodified upstream import.
+**Версия 2.0.0 (179)** — приложение переписано с нуля. Код 1.x (форк VPN Direct / sing-box for Apple) больше не используется; от прежних версий остались только данные пользователя, которые 2.0 переносит сама, и иконка.
 
-Source commit: `3ecb41d1ac01065a624c64a52d456838f3a4cbe9`
-Bundle SHA-256: `5c7b429221e7f0da15b10e6df55c135aaf1ab67f80e9ee381284dda890b5a9bd`
+## Что умеет
 
-Recover a normal source checkout:
+- **Протоколы:** VLESS (Reality, TLS, XTLS Vision, VLESS encryption), VMess, Trojan, Shadowsocks (включая 2022 и плагины obfs / v2ray-plugin), Hysteria2 (Salamander, Gecko, смена портов), Hysteria, TUIC, WireGuard и AmneziaWG, NaiveProxy, AnyTLS, SOCKS. Транспорты TCP, WebSocket (early data), gRPC, HTTPUpgrade, HTTP/2, QUIC, XHTTP.
+- **Форматы:** ссылки серверов, Base64-списки, подписки Remnawave / Happ с HWID, Xray JSON (включая Hysteria в формате Xray 26 с `finalmask` и `quicParams`), sing-box JSON, Clash / Mihomo YAML, WireGuard `.conf`, QR-коды, файлы, ссылки `sing-box://import-remote-profile` и `personaltunnel://`.
+- **Неподдерживаемое называется прямо:** OpenVPN, OpenConnect, Tailscale, Mieru, ShadowsocksR и mKCP не входят в сборку, и импорт пишет, что именно пропущено и почему; остальные серверы подписки сохраняются.
+- **Переключение сервера без переподключения:** все серверы активной подписки лежат в одной конфигурации, выбор меняется селектором ядра на лету.
+- **Тест задержки** в три режима (Основной: TCP-фильтр в обход VPN → generate_204 через сервер; Классика; Альтернативный), отменяется мгновенно, не блокирует отключение VPN, снижает параллельность при росте памяти расширения, помечает нестабильные серверы, умеет «подключаться к лучшему».
+- **Маршрутизация:** встроенная офлайн-блокировка рекламы, российские сайты и IP напрямую (встроенные списки runetfreedom), свои правила «всегда напрямую / всегда через VPN», DNS через сервер (Cloudflare, Google, Quad9, AdGuard или свой DoH / DoT / DoQ / UDP), IPv6.
+- **Туннель iOS:** «весь трафик через VPN», исключения для локальной сети, APNs и сотовых служб, подключение по требованию с доверенными Wi-Fi.
+- **Три стиля:** Классический, Современный (карточки, раскрывающиеся подписки-контейнеры, «жидкое стекло» iOS 26) и Material You (тональная палитра из одного цвета, кнопка-«печенье», навигация Material 3). Свой акцент для каждого стиля, тёмная/светлая/чёрная тема, свой шрифт TTF/OTF, русский и английский язык с переключением внутри приложения.
+- **Аналитика:** скорость за 2 минуты, трафик сеанса и за сегодня, память расширения, маршруты и список соединений.
+- **Виджеты:** статус на экране «Домой» и экране блокировки с кнопкой (iOS 18+), переключатель в Пункте управления, команды для «Быстрых команд» и Siri.
+- **Данные:** резервная копия в Файлы (читает и копии 1.x), автокопия после изменений, ключи и ссылки не попадают в копию iPhone/iCloud.
+- **Прозрачность:** журнал собственных сетевых запросов приложения с замаскированными заголовками, журнал ядра без ключей и ссылок, коммит исходников в «О приложении».
+
+## Переход с 1.x
+
+Bundle ID (`com.personaltunnelapp`) и расширение остались прежними, поэтому 2.0 ставится поверх 1.4.x. При первом запуске приложение само переносит подписки из базы 1.x (`settings.db`) или из её автокопии; оформление, язык, акценты и режим пинга подхватываются по старым ключам, HWID остаётся тем же (панели не посчитают устройство новым). Старые файлы не удаляются. Если что-то не перенеслось: «Настройки → Резервные копии» в 1.x → сохранить копию → открыть её в 2.0.
+
+## Устройство репозитория
+
+| Путь | Что там |
+|---|---|
+| `Packages/TunnelKit` | Логика без зависимостей от Apple: импорт всех форматов, сборка конфигурации sing-box 1.14, подписки, резервные копии, тест задержки. Собирается и тестируется на Linux. |
+| `App` | Приложение SwiftUI (iOS 17+). |
+| `PacketTunnel` | Network Extension с ядром Libbox и встроенными списками правил. |
+| `Widgets` | WidgetKit: виджет статуса и переключатель Пункта управления (iOS 18+). |
+| `Shared` | App Intents, общие для приложения и виджетов. |
+| `Core/VERSION` | Закреплённая версия ядра sing-box-lx и теги сборки. |
+| `project.yml` | Описание проекта для XcodeGen. |
+
+## Сборка
+
+GitHub Actions (`.github/workflows/build.yml`) на каждый push:
+
+1. гоняет тесты TunnelKit на Linux;
+2. собирает `Libbox.xcframework` из закреплённого ядра (`scripts/build-libbox.sh`, результат кэшируется);
+3. генерирует Xcode-проект (`xcodegen generate`), компилирует приложение без подписи и выкладывает `PersonalTunnel-<версия>-<сборка>-unsigned.ipa` в артефакты.
+
+App Group для подписанной сборки задаётся переменной `APP_GROUP_IDENTIFIER` в workflow. IPA нужно подписать вместе с Network Extension (`packet-tunnel-provider`) и App Group.
+
+Локально (macOS, Xcode 26, Go из `Core/VERSION`):
 
 ```sh
-git clone --branch audit/independent-client personal-tunnel-source.bundle source
-cd source
-git submodule update --init --recursive
+scripts/build-libbox.sh
+brew install xcodegen && xcodegen generate
+open PersonalTunnel.xcodeproj
 ```
 
-The build workflow verifies the bundle hash and exact source commit before compiling. No signing credentials or server credentials are uploaded. The resulting IPA is unsigned and requires valid app/Network Extension signing before installation. See REPORT.md inside the source checkout for unresolved verification items.
+Тесты логики: `swift test --package-path Packages/TunnelKit`.
+
+Версия: `scripts/version.py bump patch|minor|major` или `set X.Y.Z`. Списки обхода: `scripts/update-rule-sets.sh`.
+
+## Приватность
+
+У приложения нет своего сервера. Само оно выходит в сеть только чтобы обновить подписки, проверить соединение (по кнопке) и измерить задержку; каждый такой запрос виден в «Настройки → Сетевая активность приложения». Подробно — `docs/PRIVACY.md`.
+
+## Лицензия
+
+GPL-3.0-or-later (`LICENSE`). Сторонние компоненты — `NOTICE`.

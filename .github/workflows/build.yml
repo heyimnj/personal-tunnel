@@ -1,0 +1,148 @@
+name: Build
+
+on:
+  push:
+    branches: [main, "claude/**"]
+    paths-ignore:
+      - "**.md"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # The App Group of the provisioning profile the IPA is signed with.
+  APP_GROUP_IDENTIFIER: group.a69e6dc9a612eb7d.1
+
+jobs:
+  tunnelkit:
+    name: TunnelKit tests (Linux)
+    runs-on: ubuntu-latest
+    container: swift:6.2
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Test importers, configuration builder, backups and latency runner
+        run: swift test --package-path Packages/TunnelKit
+
+  ios:
+    name: Unsigned IPA
+    needs: tunnelkit
+    runs-on: macos-26
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Select the newest stable Xcode
+        id: xcode
+        run: |
+          set -euo pipefail
+          XCODE="$(ls -d /Applications/Xcode*.app | grep -vi beta | sort -V | tail -1)"
+          sudo xcode-select -s "$XCODE/Contents/Developer"
+          xcodebuild -version
+          echo "stamp=$(xcodebuild -version | shasum -a 256 | cut -c1-16)" >> "$GITHUB_OUTPUT"
+
+      - name: Check bundled rule sets
+        run: cd PacketTunnel/Rules && shasum -a 256 -c SHA256SUMS
+
+      - name: Read core pin
+        id: core
+        run: |
+          set -euo pipefail
+          echo "go=$(grep '^GO_VERSION=' Core/VERSION | cut -d= -f2)" >> "$GITHUB_OUTPUT"
+
+      - name: Restore Libbox
+        id: libbox
+        uses: actions/cache/restore@v4
+        with:
+          path: Libbox.xcframework
+          key: libbox-${{ runner.arch }}-${{ steps.xcode.outputs.stamp }}-${{ hashFiles('Core/VERSION', 'scripts/build-libbox.sh') }}
+
+      - name: Set up Go
+        if: steps.libbox.outputs.cache-hit != 'true'
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ steps.core.outputs.go }}
+          cache: false
+
+      - name: Build Libbox
+        if: steps.libbox.outputs.cache-hit != 'true'
+        run: bash scripts/build-libbox.sh
+
+      - name: Save Libbox
+        if: steps.libbox.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: Libbox.xcframework
+          key: libbox-${{ runner.arch }}-${{ steps.xcode.outputs.stamp }}-${{ hashFiles('Core/VERSION', 'scripts/build-libbox.sh') }}
+
+      - name: Generate the Xcode project
+        run: |
+          set -euo pipefail
+          brew install xcodegen
+          xcodegen generate
+
+      - name: Compile
+        run: |
+          set -euo pipefail
+          mkdir -p build
+          xcodebuild -project PersonalTunnel.xcodeproj -scheme PersonalTunnel \
+            -configuration Release -destination 'generic/platform=iOS' \
+            -derivedDataPath build/DerivedData \
+            -skipPackagePluginValidation -skipMacroValidation \
+            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY= \
+            APP_GROUP_IDENTIFIER="$APP_GROUP_IDENTIFIER" \
+            PERSONAL_SOURCE_COMMIT="$(git rev-parse --short=12 HEAD)" \
+            build 2>&1 | tee build/xcodebuild.log | grep -E "error:|warning: unre|BUILD (SUCCEEDED|FAILED)|\*\* " || true
+          grep -q "BUILD SUCCEEDED" build/xcodebuild.log
+
+      - name: Compiler errors
+        if: failure()
+        run: |
+          if [ -f build/xcodebuild.log ]; then
+            grep -E "error:" build/xcodebuild.log | sort -u | head -150 | tee -a "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Package the IPA
+        id: package
+        run: |
+          set -euo pipefail
+          VERSION="$(grep MARKETING_VERSION Config/Version.xcconfig | cut -d= -f2 | tr -d ' ')"
+          BUILD="$(grep CURRENT_PROJECT_VERSION Config/Version.xcconfig | cut -d= -f2 | tr -d ' ')"
+          NAME="PersonalTunnel-${VERSION//./_}-${BUILD}-unsigned.ipa"
+          APP="build/DerivedData/Build/Products/Release-iphoneos/PersonalTunnel.app"
+          test -d "$APP/PlugIns/PacketTunnel.appex"
+          test -f "$APP/PlugIns/PacketTunnel.appex/Rules/ad-block.srs"
+          mkdir -p build/ipa/Payload
+          cp -R "$APP" build/ipa/Payload/
+          (cd build/ipa && /usr/bin/ditto -c -k --keepParent Payload "../$NAME")
+          shasum -a 256 "build/$NAME" > build/SHA256SUMS
+          git rev-parse HEAD > build/source-commit.txt
+          cp Libbox.xcframework/CORE.txt build/core.txt 2>/dev/null || cp Core/VERSION build/core.txt
+          echo "name=$NAME" >> "$GITHUB_OUTPUT"
+          ls -la build/*.ipa
+
+      - name: Upload the IPA
+        uses: actions/upload-artifact@v4
+        with:
+          name: PersonalTunnel-unsigned-${{ github.run_number }}
+          path: |
+            build/${{ steps.package.outputs.name }}
+            build/SHA256SUMS
+            build/source-commit.txt
+            build/core.txt
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Upload the build log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-log-${{ github.run_number }}
+          path: build/xcodebuild.log
+          if-no-files-found: ignore
+          retention-days: 7

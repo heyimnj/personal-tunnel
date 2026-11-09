@@ -1,0 +1,12 @@
+# sing-box core pin for Personal Tunnel. Changing anything here rebuilds Libbox in CI.
+SING_BOX_REMOTE=https://github.com/Leadaxe/sing-box-lx.git
+SING_BOX_TAG=v1.14.0-lx.36
+SING_BOX_COMMIT=cbcc7935f7230e67691155bd6f3da6a9cc2d3e0b
+GO_VERSION=1.26.6
+GOMOBILE_VERSION=v0.1.12
+IOS_MIN_VERSION=15.0
+# Protocols in the build: VLESS (Reality, Vision, encryption), VMess, Trojan, Shadowsocks,
+# Hysteria / Hysteria2 (Salamander, Gecko), TUIC, WireGuard + AmneziaWG, NaiveProxy, AnyTLS, SOCKS, HTTP,
+# with TCP / WebSocket / gRPC / HTTPUpgrade / HTTP / QUIC / XHTTP transports and uTLS.
+# Left out: OpenVPN, OpenConnect, Tailscale, outbound chains, idle suspend, Clash API.
+BUILD_TAGS=with_gvisor,with_quic,with_wireguard,with_utls,with_naive_outbound,badlinkname,tfogo_checklinkname0,with_xhttp,with_awg,with_lx_command,with_dhcp,grpcnotrace

@@ -1,0 +1,3 @@
+// The release version of Personal Tunnel. Change it with scripts/version.py.
+MARKETING_VERSION = 2.0.0
+CURRENT_PROJECT_VERSION = 179

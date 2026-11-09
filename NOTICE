@@ -1,0 +1,22 @@
+Personal Tunnel
+Copyright (C) 2026 Personal Tunnel contributors
+
+Personal Tunnel 2.0 is a new implementation written from scratch. It is free
+software under the GNU General Public License, version 3 or later (see LICENSE),
+because it links the sing-box core, which is licensed the same way.
+
+Third-party components
+----------------------
+
+sing-box (core, built into Libbox.xcframework at build time)
+  https://github.com/SagerNet/sing-box — Copyright (C) 2022 by nekohasekai — GPL-3.0-or-later
+  Built from the sing-box-lx fork: https://github.com/Leadaxe/sing-box-lx (pin in Core/VERSION)
+
+Ad-blocking rule set (PacketTunnel/Rules/ad-block.srs)
+  SagerNet/sing-geosite, data from v2fly/domain-list-community
+  GPL-3.0 / MIT — full texts in PacketTunnel/Rules/ad-block.NOTICE.txt
+
+Russian bypass rule sets (PacketTunnel/Rules/ru-*.srs)
+  https://github.com/runetfreedom/russia-v2ray-rules-dat — GPL-3.0
+
+The app icon is the Personal Tunnel mark carried over from earlier releases.

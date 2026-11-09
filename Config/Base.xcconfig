@@ -1,0 +1,18 @@
+#include "Version.xcconfig"
+
+// The App Group shared by the app, the packet tunnel and the widget. A re-signed
+// build may need the group its provisioning profile allows: pass
+// APP_GROUP_IDENTIFIER=... to xcodebuild (CI does).
+APP_GROUP_IDENTIFIER = group.com.personaltunnelapp
+
+// Filled in by CI with the commit the IPA is built from.
+PERSONAL_SOURCE_COMMIT =
+
+SWIFT_VERSION = 5.0
+IPHONEOS_DEPLOYMENT_TARGET = 17.0
+TARGETED_DEVICE_FAMILY = 1,2
+DEVELOPMENT_TEAM =
+CODE_SIGN_STYLE = Manual
+ENABLE_USER_SCRIPT_SANDBOXING = NO
+DEAD_CODE_STRIPPING = YES
+LOCALIZATION_PREFERS_STRING_CATALOGS = NO
