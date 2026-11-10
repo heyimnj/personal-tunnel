@@ -1,0 +1,21 @@
+// Версия Personal Tunnel. Номер сборки должен только расти: 1.5.0 была сборкой 179.
+MARKETING_VERSION = 2.0
+CURRENT_PROJECT_VERSION = 200
+
+// App Group, общая для приложения и туннеля. Подписанной сборке нужна группа из её
+// профиля: CI передаёт APP_GROUP_IDENTIFIER=... в xcodebuild.
+APP_GROUP_IDENTIFIER = group.com.personaltunnelapp
+
+// Коммит, из которого собран IPA; подставляет CI.
+PERSONAL_SOURCE_COMMIT =
+
+SWIFT_VERSION = 5.0
+IPHONEOS_DEPLOYMENT_TARGET = 16.0
+TARGETED_DEVICE_FAMILY = 1
+DEVELOPMENT_TEAM =
+CODE_SIGN_STYLE = Manual
+ENABLE_USER_SCRIPT_SANDBOXING = NO
+DEAD_CODE_STRIPPING = YES
+SWIFT_COMPILATION_MODE = wholemodule
+LOCALIZATION_PREFERS_STRING_CATALOGS = NO
+ENABLE_BITCODE = NO

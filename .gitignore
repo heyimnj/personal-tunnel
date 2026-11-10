@@ -1,0 +1,8 @@
+.DS_Store
+/build/
+/Libbox.xcframework/
+/PersonalTunnel.xcodeproj/
+.build/
+*.xcuserstate
+xcuserdata/
+DerivedData/

@@ -1,0 +1,13 @@
+# Закреплённое ядро sing-box для Personal Tunnel. Любое изменение здесь пересобирает Libbox в CI.
+SING_BOX_REMOTE=https://github.com/Leadaxe/sing-box-lx.git
+SING_BOX_TAG=v1.14.0-lx.36
+SING_BOX_COMMIT=cbcc7935f7230e67691155bd6f3da6a9cc2d3e0b
+GO_VERSION=1.26.6
+GOMOBILE_VERSION=v0.1.12
+IOS_MIN_VERSION=15.0
+# Те же теги, что у 1.5.0: VLESS (Reality, Vision), VMess, Trojan, Shadowsocks, Hysteria/Hysteria2, TUIC,
+# WireGuard + AmneziaWG, NaiveProxy; транспорты TCP, WebSocket, gRPC, HTTPUpgrade, HTTP, QUIC, XHTTP; uTLS.
+# Не входят: Tailscale, OpenVPN, OpenConnect, Clash API.
+BUILD_TAGS=with_gvisor,with_quic,with_wireguard,with_utls,with_naive_outbound,badlinkname,tfogo_checklinkname0,with_xhttp,with_awg,with_lx_command,with_lx_chain,with_lx_idle_suspend,with_dhcp,grpcnotrace
+# Теги для проверочной сборки на Linux (без NaiveProxy: ему нужны библиотеки cronet).
+CHECK_TAGS=with_gvisor,with_quic,with_wireguard,with_utls,badlinkname,tfogo_checklinkname0,with_xhttp,with_awg,with_lx_command,with_lx_chain,with_lx_idle_suspend,with_dhcp
