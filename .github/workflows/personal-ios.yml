@@ -2,7 +2,7 @@ name: Personal Tunnel iOS
 
 on:
   push:
-    branches: [main]
+    branches: [main, ptbeta, 'claude/**']
   workflow_dispatch:
 
 permissions:
@@ -65,15 +65,41 @@ jobs:
           xcrun --sdk iphoneos --show-sdk-version
           echo "stamp=$(xcodebuild -version | shasum -a 256 | cut -d ' ' -f 1)" >> "$GITHUB_OUTPUT"
 
+      - name: Type-check motion diagnostics with the iOS SDK
+        shell: bash
+        run: |
+          set -euo pipefail
+          ios_sdk="$(xcrun --sdk iphoneos --show-sdk-path)"
+          xcrun --sdk iphoneos swiftc -typecheck -swift-version 5 \
+            -target arm64-apple-ios16.0 -sdk "$ios_sdk" \
+            ApplicationLibrary/Views/DirectUI/ModernMotionTrace.swift
+
+      - name: Release metadata checks
+        run: |
+          python3 scripts/release_version.py check
+          python3 -m unittest discover -s scripts/tests -p 'test_release_version.py'
+          python3 scripts/check_ad_blocking_resources.py
+
       - name: Parser and redaction tests
         run: bash scripts/check_swift_parser_tests.sh
+
+      - name: Ad blocking with the pinned core and local DNS/HTTP fixtures
+        shell: bash
+        run: |
+          set -euo pipefail
+          validation_core="$(python3 scripts/validation_core.py --directory build/validation-core)"
+          export SING_BOX="$validation_core"
+          export PERSONAL_TUNNEL_SOURCE_ROOT="$PWD"
+          export PERSONAL_AD_BLOCK_FIXTURE="$RUNNER_TEMP/personal-ad-block-fixture.json"
+          swift test --package-path tests/VPNDirectParserPackage --filter AdBlockingRoutingTests
+          python3 scripts/check_ad_blocking_core.py --core "$validation_core" --fixture "$PERSONAL_AD_BLOCK_FIXTURE"
 
       - name: Restore pinned Libbox cache
         id: libbox-cache
         uses: actions/cache/restore@v4
         with:
           path: source/Libbox.xcframework
-          key: libbox-v1-${{ runner.os }}-${{ runner.arch }}-${{ steps.xcode.outputs.stamp }}-${{ hashFiles('source/core/VERSION', 'source/core/overlays/**', 'source/scripts/build_libbox.sh', 'source/scripts/prepare_core.sh', 'source/scripts/apply_singbox_overlays.sh', 'source/scripts/tags/**') }}
+          key: libbox-v1-${{ runner.os }}-${{ runner.arch }}-${{ steps.xcode.outputs.stamp }}-${{ hashFiles('source/core/VERSION', 'source/core/overlays/**', 'source/scripts/build_libbox.sh', 'source/scripts/prepare_core.sh', 'source/scripts/apply_singbox_overlays.sh', 'source/scripts/restrict_libbox_tags.py', 'source/scripts/tags/**') }}
 
       - name: Set up pinned Go
         if: steps.libbox-cache.outputs.cache-hit != 'true'
@@ -94,7 +120,7 @@ jobs:
         uses: actions/cache/save@v4
         with:
           path: source/Libbox.xcframework
-          key: libbox-v1-${{ runner.os }}-${{ runner.arch }}-${{ steps.xcode.outputs.stamp }}-${{ hashFiles('source/core/VERSION', 'source/core/overlays/**', 'source/scripts/build_libbox.sh', 'source/scripts/prepare_core.sh', 'source/scripts/apply_singbox_overlays.sh', 'source/scripts/tags/**') }}
+          key: libbox-v1-${{ runner.os }}-${{ runner.arch }}-${{ steps.xcode.outputs.stamp }}-${{ hashFiles('source/core/VERSION', 'source/core/overlays/**', 'source/scripts/build_libbox.sh', 'source/scripts/prepare_core.sh', 'source/scripts/apply_singbox_overlays.sh', 'source/scripts/restrict_libbox_tags.py', 'source/scripts/tags/**') }}
 
       - name: Compile unsigned iOS application
         shell: bash
@@ -108,32 +134,43 @@ jobs:
             -skipPackagePluginValidation -skipMacroValidation \
             CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO \
             APP_GROUP_IDENTIFIER=group.a69e6dc9a612eb7d.1 \
+            PERSONAL_SOURCE_COMMIT="$(git rev-parse HEAD)" \
             CODE_SIGN_IDENTITY= build 2>&1 | tee build/xcodebuild.log
 
       - name: Package unsigned IPA for subsequent signing
         shell: bash
         run: |
           set -euo pipefail
+          IPA_VERSION="$(python3 -c "import json;d=json.load(open('release-version.json'));print(d['version'].replace('.','_')+'-'+str(d['build']))")"
+          BETA_NUMBER="$(sed -n 's/.*static let betaNumber = \([0-9][0-9]*\).*/\1/p' ApplicationLibrary/Views/DirectUI/PersonalNetworkActivityView.swift | head -1)"
+          if [ "${BETA_NUMBER:-0}" -gt 0 ]; then
+            IPA_NAME="PTBeta-${IPA_VERSION}-beta${BETA_NUMBER}-unsigned.ipa"
+          else
+            IPA_NAME="PersonalTunnel-${IPA_VERSION}-unsigned.ipa"
+          fi
+          echo "IPA_NAME=${IPA_NAME}" >> "$GITHUB_ENV"
           python3 - <<'PY'
-          import pathlib, shutil
+          import pathlib, shutil, subprocess, sys
           apps = list(pathlib.Path('build/DerivedData/Build/Products/Release-iphoneos').glob('*.app'))
           if len(apps) != 1:
               raise SystemExit(f'Expected one iOS app, got {len(apps)}')
+          subprocess.run([sys.executable, 'scripts/release_version.py', 'check', '--app', str(apps[0])], check=True)
+          subprocess.run([sys.executable, 'scripts/check_ad_blocking_resources.py', '--app', str(apps[0])], check=True)
           payload = pathlib.Path('build/ipa/Payload')
           payload.mkdir(parents=True, exist_ok=True)
           shutil.copytree(apps[0], payload / apps[0].name, symlinks=True)
           PY
-          (cd build/ipa && /usr/bin/ditto -c -k --keepParent Payload ../PersonalTunnel-unsigned.ipa)
+          (cd build/ipa && /usr/bin/ditto -c -k --keepParent Payload "../${IPA_NAME}")
           git rev-parse HEAD > build/source-commit.txt
           cp core/VERSION build/core-pins.txt
-          shasum -a 256 build/PersonalTunnel-unsigned.ipa > build/SHA256SUMS
+          shasum -a 256 "build/${IPA_NAME}" > build/SHA256SUMS
 
       - name: Upload unsigned IPA and provenance
         uses: actions/upload-artifact@v4
         with:
           name: PersonalTunnel-unsigned-${{ github.run_number }}
           path: |
-            source/build/PersonalTunnel-unsigned.ipa
+            source/build/${{ env.IPA_NAME }}
             source/build/source-commit.txt
             source/build/core-pins.txt
             source/build/SHA256SUMS
