@@ -144,7 +144,7 @@ private final class NodeCell: UICollectionViewListCell {
 
     override func prepareForReuse() {
         super.prepareForReuse()
-        maskView = nil
+        mask = nil
     }
 }
 
@@ -522,7 +522,7 @@ final class MinimalServersViewController: UIViewController, UICollectionViewDele
             for item in current {
                 guard let path = source.indexPath(for: item), let cell = collection.cellForItem(at: path) else { continue }
                 let top = cell.frame.minY
-                cell.maskView = Self.revealMask(width: cell.bounds.width, edge: headerBottom + extent - top)
+                cell.mask = Self.revealMask(width: cell.bounds.width, edge: headerBottom + extent - top)
                 leaving.append((cell, Self.maskOrigin(edge: headerBottom - top)))
             }
         }
@@ -541,7 +541,7 @@ final class MinimalServersViewController: UIViewController, UICollectionViewDele
         UIView.animate(withDuration: reduce ? 0.2 : (opening ? 0.5 : 0.62), delay: 0, usingSpringWithDamping: 1, initialSpringVelocity: 0,
                        options: [.allowUserInteraction, .beginFromCurrentState]) {
             header?.set(open: opening, animated: false)
-            for item in leaving { item.cell.maskView?.frame.origin.y = item.target }
+            for item in leaving { item.cell.mask?.frame.origin.y = item.target }
             // The layout reads `expanded` again for this update: the container's
             // bottom inset and frame change inside this same animation.
             self.source.apply(snapshot, animatingDifferences: true)
@@ -555,13 +555,13 @@ final class MinimalServersViewController: UIViewController, UICollectionViewDele
                       let attributes = self.collection.layoutAttributesForItem(at: path) else { continue }
                 let top = attributes.frame.minY
                 UIView.performWithoutAnimation {
-                    cell.maskView = Self.revealMask(width: attributes.frame.width, edge: headerBottom - top)
+                    cell.mask = Self.revealMask(width: attributes.frame.width, edge: headerBottom - top)
                 }
-                cell.maskView?.frame.origin.y = Self.maskOrigin(edge: headerBottom + extent - top)
+                cell.mask?.frame.origin.y = Self.maskOrigin(edge: headerBottom + extent - top)
                 arriving.append(cell)
             }
         } completion: { _ in
-            for cell in arriving + leaving.map(\.cell) { cell.maskView = nil }
+            for cell in arriving + leaving.map(\.cell) { cell.mask = nil }
         }
     }
 
