@@ -171,6 +171,17 @@ final class MinimalAnalyticsViewController: UIViewController {
 
     var isAtTop: Bool { scroll.contentOffset.y <= -scroll.adjustedContentInset.top + 1 }
 
+    /// A pull past the top, handed to the pager (see HandoffScrollView).
+    var onPull: ((CGFloat) -> Void)? {
+        get { scroll.onPull }
+        set { scroll.onPull = newValue }
+    }
+
+    var onPullEnd: ((CGFloat) -> Void)? {
+        get { scroll.onPullEnd }
+        set { scroll.onPullEnd = newValue }
+    }
+
     /// The screen's insets (status bar, tab bar), set by Home.
     var pageInsets: UIEdgeInsets = .zero {
         didSet {

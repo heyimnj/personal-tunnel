@@ -3,6 +3,59 @@ import UIKit
 
 /// A scroll view that hands a downward drag at its top edge to the pager outside it.
 final class HandoffScrollView: UIScrollView {
+    /// While this list is dragged and already at its top, how far the finger pulls
+    /// past the top (points, 0 when back). The list holds still; the page follows.
+    var onPull: ((CGFloat) -> Void)?
+    /// The pull ended; the finger's speed in points per second (positive downwards).
+    var onPullEnd: ((CGFloat) -> Void)?
+    private var anchor: CGFloat?
+    private var pulling = false
+
+    override init(frame: CGRect) {
+        super.init(frame: frame)
+        panGestureRecognizer.addTarget(self, action: #selector(tracked(_:)))
+    }
+
+    @available(*, unavailable)
+    required init?(coder _: NSCoder) { fatalError() }
+
+    /// The hand-off inside the drag itself. A touch that lands while the list is
+    /// still settling is given to the list by iOS (to stop it), and the check below
+    /// is never asked; so once the list is at its top, pulling further moves the
+    /// page instead, whoever got the touch.
+    @objc private func tracked(_ pan: UIPanGestureRecognizer) {
+        guard onPull != nil else { return }
+        let top = -adjustedContentInset.top
+        let translation = pan.translation(in: self).y
+        switch pan.state {
+        case .began, .changed:
+            if anchor == nil, contentOffset.y <= top + 1 { anchor = translation }
+            guard let anchor else { return }
+            let pull = translation - anchor
+            if pull > 0 {
+                pulling = true
+                if contentOffset.y != top { contentOffset.y = top }
+                onPull?(pull)
+            } else if pulling {
+                pulling = false
+                onPull?(0)
+                self.anchor = nil
+            } else if contentOffset.y > top + 1 {
+                self.anchor = nil
+            }
+        case .ended, .cancelled, .failed:
+            if pulling {
+                // No bounce of the list: the page takes the motion from here.
+                setContentOffset(CGPoint(x: contentOffset.x, y: top), animated: false)
+                onPullEnd?(pan.velocity(in: self).y)
+            }
+            pulling = false
+            anchor = nil
+        default:
+            break
+        }
+    }
+
     override func gestureRecognizerShouldBegin(_ gestureRecognizer: UIGestureRecognizer) -> Bool {
         if gestureRecognizer === panGestureRecognizer {
             let top = -adjustedContentInset.top
@@ -67,6 +120,8 @@ final class MinimalHomeViewController: UIViewController, UIScrollViewDelegate, U
         addChild(analyticsNavigation)
         pager.addSubview(analyticsNavigation.view)
         analyticsNavigation.didMove(toParent: self)
+        analytics.onPull = { [weak self] pull in self?.pullPage(pull) }
+        analytics.onPullEnd = { [weak self] velocity in self?.releasePage(velocity) }
         connection.onChooseServer = { [weak self] in
             self?.present(MinimalServersViewController.wrapped(), animated: true)
         }
@@ -112,7 +167,35 @@ final class MinimalHomeViewController: UIViewController, UIScrollViewDelegate, U
         applyAnalyticsInsets()
     }
 
-    private var pageMoving: Bool { animatingPage || pager.isDragging || pager.isDecelerating }
+    private var pageMoving: Bool { animatingPage || pullingPage || pager.isDragging || pager.isDecelerating }
+    /// The page follows a pull handed over by the analytics list.
+    private var pullingPage = false
+
+    private func pullPage(_ pull: CGFloat) {
+        let height = pager.bounds.height
+        guard height > 0 else { return }
+        if pageAnimator != nil {
+            pageAnimator?.stopAnimation(true)
+            pageAnimator = nil
+            animatingPage = false
+        }
+        if pull > 0, !pullingPage {
+            pullingPage = true
+            showDots()
+        }
+        pager.contentOffset = CGPoint(x: 0, y: max(0, height - pull))
+    }
+
+    private func releasePage(_ velocity: CGFloat) {
+        let height = pager.bounds.height
+        guard pullingPage, height > 0 else { return }
+        pullingPage = false
+        let position = pager.contentOffset.y / height
+        let next: Int
+        if velocity > 300 { next = 0 } else if velocity < -300 { next = 1 } else { next = position < 0.5 ? 0 : 1 }
+        // The page's offset moves against the finger.
+        go(to: next, animated: true, velocity: -velocity)
+    }
 
     /// The analytics page lives inside the pager, below the screen, so UIKit does
     /// not give it the status bar and tab bar insets of the screen. They are made

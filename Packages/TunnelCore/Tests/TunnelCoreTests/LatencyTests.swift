@@ -73,6 +73,19 @@ final class LatencyTests: XCTestCase {
         XCTAssertNil(quic.tlsServerName)
     }
 
+    func testTunnelRunTCPForAllThenURLForSurvivors() async {
+        let sink = Sink()
+        let targets: [LatencyRunner.Target] = [
+            .init(tag: "ok", host: "h", port: 1, udp: false), .init(tag: "gone", host: "dead", port: 1, udp: false),
+            .init(tag: "quic", host: "dead", port: 1, udp: true),
+        ]
+        await LatencyRunner(probes: FakeProbes()).run(targets, mode: .named("primary"), tunnel: true) { await sink.add($0) }
+        let all = await sink.all
+        XCTAssertEqual(all["ok"], .delay(2))       // URL test after the TCP pass
+        XCTAssertEqual(all["gone"], .failed(.refused)) // TCP failure is final
+        XCTAssertEqual(all["quic"], .delay(4))     // UDP goes straight to the URL test
+    }
+
     func testHangingProbeEndsWithTimeout() async {
         let result = await LatencyRunner.deadline(seconds: 0.2) { try? await Task.sleep(nanoseconds: 30_000_000_000); return .delay(1) }
         XCTAssertEqual(result, .failed(.timeout))

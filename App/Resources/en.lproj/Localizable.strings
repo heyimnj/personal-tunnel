@@ -61,7 +61,7 @@
 "Акцентная активная точка" = "Accent active dot";
 "Акцентный цвет" = "Accent colour";
 "Альтернативный" = "Alternative";
-"Альтернативный: короткая HTTP-проверка через узел, до 12 одновременно, ожидание до 2,5 с; без VPN — TCP. HTTP-проверка не подтверждает доступность HTTPS-сайтов." = "Alternative: a short HTTP check through each server, up to 12 at once, waiting up to 2.5 s; without VPN a TCP or TLS handshake. An HTTP check does not prove that HTTPS sites are reachable.";
+"Альтернативный: короткая HTTP-проверка через узел, до 12 одновременно, ожидание до 2,5 с; без VPN — TCP. HTTP-проверка не подтверждает доступность HTTPS-сайтов." = "Alternative: a short HTTP check through each server, up to 12 at once, waiting up to 2.5 s; without VPN a TCP connect. An HTTP check does not prove that HTTPS sites are reachable.";
 "Аналитика" = "Analytics";
 "БЕЗОПАСНОСТЬ" = "SECURITY";
 "Без транспортного TLS" = "No transport TLS";
@@ -135,7 +135,7 @@
 "Интерфейс" = "Interface";
 "Карточки и панели" = "Cards and panels";
 "Классика" = "Classic";
-"Классика: активный узел проверяется по HTTPS раз в минуту. Список: generate_204 по HTTPS через каждый узел, до 8 одновременно, ожидание до 5 с; без VPN — TCP-соединение с сервером." = "Classic: the active server is checked over HTTPS once a minute. The list: generate_204 over HTTPS through each server, up to 8 at once, waiting up to 5 s; without VPN a TCP or TLS handshake with the server.";
+"Классика: активный узел проверяется по HTTPS раз в минуту. Список: generate_204 по HTTPS через каждый узел, до 8 одновременно, ожидание до 5 с; без VPN — TCP-соединение с сервером." = "Classic: the active server is checked over HTTPS once a minute. The list: generate_204 over HTTPS through each server, up to 8 at once, waiting up to 5 s; without VPN a TCP connection to the server.";
 "Кнопка подключения" = "Connect button";
 "Коммит" = "Commit";
 "Конфигурация 1.x не прочитана. Обновите подписку." = "The 1.x configuration could not be read. Update the subscription.";
@@ -180,7 +180,7 @@
 "Обход российских сайтов" = "Bypass Russian sites";
 "Определяем…" = "Detecting…";
 "Основной" = "Primary";
-"Основной: сначала TCP-проверка доступности сервера (1,5 с), затем generate_204 через каждый ответивший узел (3 с), до 20 одновременно; UDP-протоколы сразу проходят URL-тест. Без VPN доступна только TCP-проверка. Результаты хранятся 2,5 минуты, при открытии списка проверяются только устаревшие." = "Primary: first a TCP check that the server is reachable (1.5 s), then generate_204 through every server that answered (3 s), up to 20 at once; UDP protocols go straight to the URL test. Without VPN only a TCP or TLS handshake is possible. Results are kept for 2.5 minutes; opening the list checks only the outdated ones.";
+"Основной: сначала TCP-проверка доступности сервера (1,5 с), затем generate_204 через каждый ответивший узел (3 с), до 20 одновременно; UDP-протоколы сразу проходят URL-тест. Без VPN доступна только TCP-проверка. Результаты хранятся 2,5 минуты, при открытии списка проверяются только устаревшие." = "Primary: first a TCP check that the server is reachable (1.5 s), then generate_204 through every server that answered (3 s), up to 20 at once; UDP protocols go straight to the URL test. Without VPN only the TCP check is possible. Results are kept for 2.5 minutes; opening the list checks only the outdated ones.";
 "Остановить проверку" = "Stop the test";
 "Ответ за %@ мс через «%@»" = "Response in %@ ms through “%@”";
 "Отдача" = "Upload";

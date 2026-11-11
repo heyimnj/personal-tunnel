@@ -100,19 +100,58 @@ public actor LatencyRunner {
     public init(probes: LatencyProbes) { self.probes = probes }
 
     /// `tunnel`: the tags can be URL-tested (their subscription runs in the tunnel).
+    /// With the tunnel and a TCP filter (the primary mode) the test runs in two
+    /// passes, as 1.5.0 did: first a quick TCP connect to every server at once
+    /// (those that fail get their result straight away), then the URL test only
+    /// through the servers that answered. UDP protocols go straight to the URL test.
     public func run(_ targets: [Target], mode: LatencyMode, tunnel: Bool,
                     deliver: @escaping @Sendable ([String: ProbeResult]) async -> Void) async
     {
-        let concurrency = tunnel ? mode.urlConcurrency : mode.directConcurrency
+        guard tunnel, mode.tcpFilter else {
+            await pass(targets, concurrency: tunnel ? mode.urlConcurrency : mode.directConcurrency, deliver: deliver) { [probes] target in
+                await LatencyRunner.measure(target, probes: probes, mode: mode, tunnel: tunnel)
+            }
+            return
+        }
+        let filtered = targets.filter { !$0.udp && $0.host != nil && $0.port != nil }
+        let survivors = SurvivorBox()
+        await pass(filtered, concurrency: max(mode.urlConcurrency, mode.directConcurrency), deliver: { results in
+            // Only failures are final here; answers wait for their URL test.
+            let failed = results.filter { if case .failed = $0.value { return true }; return false }
+            if !failed.isEmpty { await deliver(failed) }
+        }) { [probes] target in
+            let result = await LatencyRunner.deadline(seconds: 2) {
+                await probes.tcp(host: target.host ?? "", port: target.port ?? 0, timeout: 1.5, label: target.label)
+            }
+            if case .delay = result { await survivors.add(target.tag) }
+            return result
+        }
+        guard !Task.isCancelled else { return }
+        let passed = await survivors.tags
+        let second = targets.filter { $0.udp || $0.host == nil || $0.port == nil || passed.contains($0.tag) }
+        await pass(second, concurrency: mode.urlConcurrency, deliver: deliver) { [probes] target in
+            await LatencyRunner.deadline(seconds: Double(mode.urlTimeoutMs) / 1000 + 1) {
+                await probes.url(tag: target.tag, link: mode.link, timeoutMs: mode.urlTimeoutMs)
+            }
+        }
+    }
+
+    private actor SurvivorBox {
+        var tags = Set<String>()
+        func add(_ tag: String) { tags.insert(tag) }
+    }
+
+    /// Runs `probe` over the targets, `concurrency` at a time, delivering in batches.
+    private func pass(_ targets: [Target], concurrency: Int, deliver: @escaping @Sendable ([String: ProbeResult]) async -> Void,
+                      probe: @escaping @Sendable (Target) async -> ProbeResult) async
+    {
         var pending = targets[...]
         var buffer: [String: ProbeResult] = [:]
         var lastFlush = Date()
         await withTaskGroup(of: (String, ProbeResult).self) { group in
             func next() -> Bool {
                 guard let target = pending.popFirst() else { return false }
-                group.addTask { [probes] in
-                    (target.tag, await LatencyRunner.measure(target, probes: probes, mode: mode, tunnel: tunnel))
-                }
+                group.addTask { (target.tag, await probe(target)) }
                 return true
             }
             for _ in 0 ..< concurrency { if !next() { break } }
@@ -130,23 +169,17 @@ public actor LatencyRunner {
 
     static func measure(_ target: Target, probes: LatencyProbes, mode: LatencyMode, tunnel: Bool) async -> ProbeResult {
         if tunnel {
-            if mode.tcpFilter, !target.udp, let host = target.host, let port = target.port {
-                if case let .failed(reason) = await deadline(seconds: 2) { await probes.tcp(host: host, port: port, timeout: 1.5, label: target.label) } {
-                    return .failed(reason)
-                }
-            }
             return await deadline(seconds: Double(mode.urlTimeoutMs) / 1000 + 1) {
                 await probes.url(tag: target.tag, link: mode.link, timeoutMs: mode.urlTimeoutMs)
             }
         }
+        // Without the VPN: a quick TCP connect with one retry, as 1.5.0 did.
         guard !target.udp else { return .failed(.unsupported) }
         guard let host = target.host, let port = target.port else { return .failed(.noAddress) }
-        let label = target.label, name = target.tlsName
-        // A handshake takes two round trips, so it gets more time than a connect.
-        let timeout = name == nil ? mode.directTimeout : mode.directTimeout + 2
-        var result = await deadline(seconds: timeout + 1) { await probes.handshake(host: host, port: port, serverName: name, timeout: timeout, label: label) }
+        let label = target.label
+        var result = await deadline(seconds: mode.directTimeout + 1) { await probes.tcp(host: host, port: port, timeout: mode.directTimeout, label: label) }
         if case .failed = result, !Task.isCancelled {
-            result = await deadline(seconds: timeout + 1) { await probes.handshake(host: host, port: port, serverName: name, timeout: timeout, label: label) }
+            result = await deadline(seconds: mode.directTimeout + 1) { await probes.tcp(host: host, port: port, timeout: mode.directTimeout, label: label) }
         }
         return result
     }
