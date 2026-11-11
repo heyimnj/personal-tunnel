@@ -153,17 +153,17 @@ final class DonutView: UIView {
 /// The second Home page.
 final class MinimalAnalyticsViewController: UIViewController {
     private let scroll = HandoffScrollView()
-    private let download = StatCard(symbol: "arrow.down", title: "Загрузка", tint: SpeedGraphView.downColor)
-    private let upload = StatCard(symbol: "arrow.up", title: "Отдача", tint: SpeedGraphView.upColor)
+    private let download = StatCard(symbol: "arrow.down", title: L("Загрузка"), tint: SpeedGraphView.downColor)
+    private let upload = StatCard(symbol: "arrow.up", title: L("Отдача"), tint: SpeedGraphView.upColor)
     private let tcp = StatCard(symbol: "arrow.left.arrow.right", title: "TCP", tint: .systemIndigo)
     private let udp = StatCard(symbol: "arrow.up.arrow.down", title: "UDP", tint: .systemOrange)
-    private let memory = StatCard(symbol: "memorychip", title: "Память ядра", tint: .systemPurple)
-    private let delay = StatCard(symbol: "waveform", title: "Задержка", tint: .systemTeal)
+    private let memory = StatCard(symbol: "memorychip", title: L("Память ядра"), tint: .systemPurple)
+    private let delay = StatCard(symbol: "waveform", title: L("Задержка"), tint: .systemTeal)
     private let graph = SpeedGraphView()
-    private let graphHint = UILabel("Данные появятся после подключения", font: Theme.font(.caption1), color: .secondaryLabel)
+    private let graphHint = UILabel(L("Данные появятся после подключения"), font: Theme.font(.caption1), color: .secondaryLabel)
     private let donut = DonutView()
     private let legend = UIStackView(.vertical, spacing: 8, alignment: .fill, [])
-    private let routesEmpty = UILabel("Данные соединений пока недоступны", font: Theme.font(.caption1), color: .secondaryLabel, lines: 0)
+    private let routesEmpty = UILabel(L("Данные соединений пока недоступны"), font: Theme.font(.caption1), color: .secondaryLabel, lines: 0)
     private var routesChart: UIView?
     private let session = UILabel(font: UIFont.monospacedDigitSystemFont(ofSize: Theme.font(.footnote).pointSize, weight: .regular), color: .secondaryLabel)
     private var timer: Timer?
@@ -180,13 +180,13 @@ final class MinimalAnalyticsViewController: UIViewController {
         view.addSubview(scroll)
         scroll.pin(to: view)
 
-        let title = UILabel("Аналитика", font: Theme.font(17, .semibold))
+        let title = UILabel(L("Аналитика"), font: Theme.font(17, .semibold))
         title.textAlignment = .center
         let more = UIButton(type: .system)
         more.setImage(UIImage(systemName: "ellipsis", withConfiguration: UIImage.SymbolConfiguration(pointSize: 17, weight: .bold)), for: .normal)
         more.tintColor = Theme.accent
         more.showsMenuAsPrimaryAction = true
-        more.menu = UIMenu(children: [UIAction(title: "Сбросить статистику") { _ in App.shared.core.resetStatistics() }])
+        more.menu = UIMenu(children: [UIAction(title: L("Сбросить статистику")) { _ in App.shared.core.resetStatistics() }])
         let moreGlass = GlassView()
         moreGlass.isUserInteractionEnabled = false
         let header = UIView()
@@ -206,7 +206,7 @@ final class MinimalAnalyticsViewController: UIViewController {
         let graphCard = AnalyticsCard()
         graphCard.stack.alignment = .fill
         graphCard.stack.spacing = 14
-        graphCard.stack.addArrangedSubview(AnalyticsCard.title("waveform.path.ecg", "Скорость за последние 2 минуты", big: true))
+        graphCard.stack.addArrangedSubview(AnalyticsCard.title("waveform.path.ecg", L("Скорость за последние 2 минуты"), big: true))
         graph.heightAnchor.constraint(equalToConstant: 140).isActive = true
         graphCard.stack.addArrangedSubview(graph)
         func key(_ text: String, _ color: UIColor) -> UIView {
@@ -217,13 +217,13 @@ final class MinimalAnalyticsViewController: UIViewController {
             NSLayoutConstraint.activate([dot.widthAnchor.constraint(equalToConstant: 12), dot.heightAnchor.constraint(equalToConstant: 12)])
             return UIStackView(.horizontal, spacing: 6, alignment: .center, [dot, UILabel(text, font: Theme.font(.caption1), color: color)])
         }
-        graphCard.stack.addArrangedSubview(UIStackView(.horizontal, spacing: 14, alignment: .center, [key("Загрузка", SpeedGraphView.downColor), key("Отдача", SpeedGraphView.upColor), UIView()]))
+        graphCard.stack.addArrangedSubview(UIStackView(.horizontal, spacing: 14, alignment: .center, [key(L("Загрузка"), SpeedGraphView.downColor), key(L("Отдача"), SpeedGraphView.upColor), UIView()]))
         graphCard.stack.addArrangedSubview(graphHint)
 
         let routes = AnalyticsCard()
         routes.stack.alignment = .fill
         routes.stack.spacing = 14
-        routes.stack.addArrangedSubview(AnalyticsCard.title("chart.pie", "Маршруты наблюдаемых соединений", big: true))
+        routes.stack.addArrangedSubview(AnalyticsCard.title("chart.pie", L("Маршруты наблюдаемых соединений"), big: true))
         // 1.5.0: an 88 pt ring with 8 pt around it, shown only once there is data.
         donut.translatesAutoresizingMaskIntoConstraints = false
         NSLayoutConstraint.activate([donut.widthAnchor.constraint(equalToConstant: 88), donut.heightAnchor.constraint(equalToConstant: 88)])
@@ -231,7 +231,7 @@ final class MinimalAnalyticsViewController: UIViewController {
         routesChart = chart
         routes.stack.addArrangedSubview(routesEmpty)
         routes.stack.addArrangedSubview(chart)
-        routes.stack.addArrangedSubview(UILabel("Показаны только соединения, полученные от ядра во время наблюдения; это не весь трафик сеанса.", font: Theme.font(.caption2), color: .secondaryLabel, lines: 0))
+        routes.stack.addArrangedSubview(UILabel(L("Показаны только соединения, полученные от ядра во время наблюдения; это не весь трафик сеанса."), font: Theme.font(.caption2), color: .secondaryLabel, lines: 0))
 
         func pair(_ left: UIView, _ right: UIView) -> UIStackView {
             let row = UIStackView(.horizontal, spacing: 12, alignment: .fill, [left, right])
@@ -241,14 +241,14 @@ final class MinimalAnalyticsViewController: UIViewController {
         let links = AnalyticsCard(insets: UIEdgeInsets(top: 0, left: 18, bottom: 0, right: 18))
         links.stack.alignment = .fill
         links.stack.spacing = 0
-        links.stack.addArrangedSubview(link("stethoscope", "Проверка соединения") { [weak self] in
+        links.stack.addArrangedSubview(link("stethoscope", L("Проверка соединения")) { [weak self] in
             self?.navigationController?.pushViewController(DiagnosticsViewController(), animated: true)
         })
         let divider = UIView()
         divider.backgroundColor = .separator
         divider.heightAnchor.constraint(equalToConstant: 0.5).isActive = true
         links.stack.addArrangedSubview(Classic.padded(divider, UIEdgeInsets(top: 0, left: 30, bottom: 0, right: 0)))
-        links.stack.addArrangedSubview(link("doc.text.magnifyingglass", "Журнал службы") { [weak self] in
+        links.stack.addArrangedSubview(link("doc.text.magnifyingglass", L("Журнал службы")) { [weak self] in
             self?.navigationController?.pushViewController(ServiceLogViewController(), animated: true)
         })
 
@@ -264,8 +264,8 @@ final class MinimalAnalyticsViewController: UIViewController {
             content.leadingAnchor.constraint(equalTo: scroll.frameLayoutGuide.leadingAnchor, constant: 20),
             content.trailingAnchor.constraint(equalTo: scroll.frameLayoutGuide.trailingAnchor, constant: -20),
         ])
-        tcp.caption.text = "Активные соединения"
-        udp.caption.text = "Активные соединения"
+        tcp.caption.text = L("Активные соединения")
+        udp.caption.text = L("Активные соединения")
 
         let core = App.shared.core
         core.status.observe(self) { [weak self] in self?.show($0) }
@@ -312,7 +312,7 @@ final class MinimalAnalyticsViewController: UIViewController {
 
     private func tick() {
         let since = App.shared.tunnel.connectedSince.value
-        session.text = "Сеанс: " + Format.duration(since.map { Int(Date().timeIntervalSince($0)) } ?? 0)
+        session.text = L("Сеанс: ") + Format.duration(since.map { Int(Date().timeIntervalSince($0)) } ?? 0)
     }
 
     private func show(_ status: CoreStatus?) {
@@ -321,7 +321,7 @@ final class MinimalAnalyticsViewController: UIViewController {
         upload.value.text = Format.bytes(status?.uplinkTotal ?? 0)
         upload.caption.text = Format.speed(status?.uplink ?? 0)
         memory.value.text = status.map { Format.bytes($0.memory) } ?? "—"
-        memory.caption.text = status.map { "\($0.goroutines) goroutines" } ?? "Ядро не запущено"
+        memory.caption.text = status.map { "\($0.goroutines) goroutines" } ?? L("Ядро не запущено")
         graphHint.isHidden = status != nil
     }
 

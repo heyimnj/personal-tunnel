@@ -104,7 +104,7 @@ final class MinimalServersViewController: UIViewController {
         view.addSubview(bar)
         bar.translatesAutoresizingMaskIntoConstraints = false
         let close = circle("xmark", #selector(closeTapped))
-        let title = UILabel("Серверы", font: Theme.font(17, .semibold))
+        let title = UILabel(L("Серверы"), font: Theme.font(17, .semibold))
         subtitle.textAlignment = .center
         let titles = UIStackView(.vertical, spacing: 1, alignment: .center, [title, subtitle])
 
@@ -142,29 +142,29 @@ final class MinimalServersViewController: UIViewController {
     private func show(_ progress: LatencyProgress) {
         let symbol = progress.running ? "stop.circle.fill" : "waveform.path.ecg"
         pingButton.setImage(UIImage(systemName: symbol, withConfiguration: UIImage.SymbolConfiguration(pointSize: progress.running ? 22 : 17, weight: .medium)), for: .normal)
-        pingButton.accessibilityLabel = progress.running ? "Остановить проверку" : "Проверить пинг"
-        subtitle.text = progress.running ? "Проверено \(progress.done) из \(progress.total)" : nil
+        pingButton.accessibilityLabel = progress.running ? L("Остановить проверку") : L("Проверить пинг")
+        subtitle.text = progress.running ? Lf("Проверено %@ из %@", "\(progress.done)", "\(progress.total)") : nil
         subtitle.isHidden = !progress.running
     }
 
     private func moreItems() -> [UIMenuElement] {
         let arrangement = Prefs.arrangement
         return [
-            UIAction(title: "Сортировать по имени", image: UIImage(systemName: "textformat.abc"), state: arrangement.byName ? .on : .off) { [weak self] _ in
+            UIAction(title: L("Сортировать по имени"), image: UIImage(systemName: "textformat.abc"), state: arrangement.byName ? .on : .off) { [weak self] _ in
                 var next = Prefs.arrangement
                 next.byName.toggle()
                 Prefs.arrangement = next
                 self?.reload()
             },
-            UIAction(title: "Сортировать по задержке", image: UIImage(systemName: "speedometer"), state: Prefs.sortByLatency ? .on : .off) { [weak self] _ in
+            UIAction(title: L("Сортировать по задержке"), image: UIImage(systemName: "speedometer"), state: Prefs.sortByLatency ? .on : .off) { [weak self] _ in
                 Prefs.sortByLatency.toggle()
                 self?.reload()
             },
-            UIAction(title: "Порядок серверов") { [weak self] _ in
+            UIAction(title: L("Порядок серверов")) { [weak self] _ in
                 let order = UINavigationController(rootViewController: ServerOrderViewController())
                 self?.present(order, animated: true)
             },
-            UIAction(title: "Закрепить текущий сервер") { [weak self] _ in
+            UIAction(title: L("Закрепить текущий сервер")) { [weak self] _ in
                 let library = App.shared.library
                 guard let subscription = library.activeSubscription, let node = library.activeNode else { return }
                 var next = Prefs.arrangement
@@ -173,7 +173,7 @@ final class MinimalServersViewController: UIViewController {
                 Prefs.arrangement = next
                 self?.reload()
             },
-            UIAction(title: "Обновить подписки") { _ in App.shared.refreshAll() },
+            UIAction(title: L("Обновить подписки")) { _ in App.shared.refreshAll() },
         ]
     }
 
@@ -213,16 +213,16 @@ final class MinimalServersViewController: UIViewController {
             self?.configure(row, node: node, subscription: subscription)
         }
         list.actionsForHeader = { [weak self] id in
-            [SwipeAction(symbol: "pencil", color: .systemOrange, title: "Редактировать") { self?.rename(subscription: id) },
-             SwipeAction(symbol: "arrow.clockwise", color: Theme.accent, title: "Обновить") { App.shared.refresh(id) },
-             SwipeAction(symbol: "trash", color: .systemRed, title: "Удалить") { self?.confirmDelete(subscription: id) }]
+            [SwipeAction(symbol: "pencil", color: .systemOrange, title: L("Редактировать")) { self?.rename(subscription: id) },
+             SwipeAction(symbol: "arrow.clockwise", color: Theme.accent, title: L("Обновить")) { App.shared.refresh(id) },
+             SwipeAction(symbol: "trash", color: .systemRed, title: L("Удалить")) { self?.confirmDelete(subscription: id) }]
         }
         list.actionsForRow = { [weak self] id, tag in
-            [SwipeAction(symbol: "pencil", color: .systemOrange, title: "Редактировать") { self?.rename(node: tag, in: id) },
-             SwipeAction(symbol: "waveform.path.ecg", color: Theme.accent, title: "Проверить пинг") {
+            [SwipeAction(symbol: "pencil", color: .systemOrange, title: L("Редактировать")) { self?.rename(node: tag, in: id) },
+             SwipeAction(symbol: "waveform.path.ecg", color: Theme.accent, title: L("Проверить пинг")) {
                  if let subscription = App.shared.library.subscription(id), let node = subscription.node(tag) { App.shared.ping(node: node, in: subscription) }
              },
-             SwipeAction(symbol: "trash", color: .systemRed, title: "Удалить") { self?.confirmDelete(node: tag, in: id) }]
+             SwipeAction(symbol: "trash", color: .systemRed, title: L("Удалить")) { self?.confirmDelete(node: tag, in: id) }]
         }
         list.onToggle = { [weak self] id in self?.toggle(id) }
         list.onSelect = { id, tag in App.shared.select(node: tag, in: id) }
@@ -318,25 +318,25 @@ final class MinimalServersViewController: UIViewController {
             title = App.shared.store.label(of: node, in: subscription).text
             pinKey = subscription.isStandalone ? Arrangement.subscription(id) : Arrangement.server(id, tag)
             items = [
-                HoldMenuItem(title: "Проверить пинг", symbol: "waveform.path.ecg") { App.shared.ping(node: node, in: subscription) },
-                HoldMenuItem(title: "Редактировать", symbol: "pencil") { [weak self] in self?.rename(node: tag, in: id) },
-                HoldMenuItem(title: "Скопировать ссылку", symbol: "doc.on.doc") { [weak self] in self?.copy(node.link ?? (subscription.isStandalone ? subscription.url : nil)) },
+                HoldMenuItem(title: L("Проверить пинг"), symbol: "waveform.path.ecg") { App.shared.ping(node: node, in: subscription) },
+                HoldMenuItem(title: L("Редактировать"), symbol: "pencil") { [weak self] in self?.rename(node: tag, in: id) },
+                HoldMenuItem(title: L("Скопировать ссылку"), symbol: "doc.on.doc") { [weak self] in self?.copy(node.link ?? (subscription.isStandalone ? subscription.url : nil)) },
             ]
             if subscription.isStandalone, subscription.isRemote {
-                items.insert(HoldMenuItem(title: "Обновить", symbol: "arrow.clockwise") { App.shared.refresh(id) }, at: 2)
+                items.insert(HoldMenuItem(title: L("Обновить"), symbol: "arrow.clockwise") { App.shared.refresh(id) }, at: 2)
             }
         } else {
             title = subscription.name
             pinKey = Arrangement.subscription(id)
             items = [
-                HoldMenuItem(title: "Проверить пинг", symbol: "waveform.path.ecg") { App.shared.ping([subscription]) },
-                HoldMenuItem(title: "Редактировать", symbol: "pencil") { [weak self] in self?.rename(subscription: id) },
-                HoldMenuItem(title: "Обновить", symbol: "arrow.clockwise") { App.shared.refresh(id) },
-                HoldMenuItem(title: "Скопировать ссылку", symbol: "doc.on.doc") { [weak self] in self?.copy(subscription.url) },
+                HoldMenuItem(title: L("Проверить пинг"), symbol: "waveform.path.ecg") { App.shared.ping([subscription]) },
+                HoldMenuItem(title: L("Редактировать"), symbol: "pencil") { [weak self] in self?.rename(subscription: id) },
+                HoldMenuItem(title: L("Обновить"), symbol: "arrow.clockwise") { App.shared.refresh(id) },
+                HoldMenuItem(title: L("Скопировать ссылку"), symbol: "doc.on.doc") { [weak self] in self?.copy(subscription.url) },
             ]
         }
-        items.append(HoldMenuItem(title: Prefs.arrangement.isPinned(pinKey) ? "Открепить" : "Закрепить", symbol: "pin") { [weak self] in self?.togglePin(pinKey) })
-        items.append(HoldMenuItem(title: "Удалить", symbol: "trash", destructive: true) { [weak self] in
+        items.append(HoldMenuItem(title: Prefs.arrangement.isPinned(pinKey) ? L("Открепить") : L("Закрепить"), symbol: "pin") { [weak self] in self?.togglePin(pinKey) })
+        items.append(HoldMenuItem(title: L("Удалить"), symbol: "trash", destructive: true) { [weak self] in
             if let tag { self?.confirmDelete(node: tag, in: id) } else { self?.confirmDelete(subscription: id) }
         })
         HoldMenuView.show(in: view, at: list.convert(point, to: view), title: title, items: items, onDismiss: release)
@@ -351,7 +351,7 @@ final class MinimalServersViewController: UIViewController {
 
     private func copy(_ text: String?) {
         guard let text, !text.isEmpty else {
-            App.shared.notice.value = "У этого сервера нет исходной ссылки: он добавлен из файла или из подписки в формате JSON."
+            App.shared.notice.value = L("У этого сервера нет исходной ссылки: он добавлен из файла или из подписки в формате JSON.")
             return
         }
         UIPasteboard.general.string = text
@@ -361,8 +361,8 @@ final class MinimalServersViewController: UIViewController {
     private func prompt(_ title: String, value: String, apply: @escaping (String) -> Void) {
         let alert = UIAlertController(title: title, message: nil, preferredStyle: .alert)
         alert.addTextField { $0.text = value; $0.clearButtonMode = .whileEditing }
-        alert.addAction(UIAlertAction(title: "Отмена", style: .cancel))
-        alert.addAction(UIAlertAction(title: "Сохранить", style: .default) { _ in
+        alert.addAction(UIAlertAction(title: L("Отмена"), style: .cancel))
+        alert.addAction(UIAlertAction(title: L("Сохранить"), style: .default) { _ in
             let text = alert.textFields?.first?.text?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
             if !text.isEmpty { apply(text) }
         })
@@ -371,12 +371,12 @@ final class MinimalServersViewController: UIViewController {
 
     private func rename(subscription id: Int64) {
         guard let subscription = App.shared.library.subscription(id) else { return }
-        prompt("Название подписки", value: subscription.name) { App.shared.rename(subscription: id, to: $0) }
+        prompt(L("Название подписки"), value: subscription.name) { App.shared.rename(subscription: id, to: $0) }
     }
 
     private func rename(node tag: String, in id: Int64) {
         guard let node = App.shared.library.subscription(id)?.node(tag) else { return }
-        prompt("Название сервера", value: node.name) { name in
+        prompt(L("Название сервера"), value: node.name) { name in
             App.shared.store.update { library in
                 guard var subscription = library.subscription(id), let index = subscription.nodes.firstIndex(where: { $0.id == tag }) else { return }
                 subscription.nodes[index].name = name
@@ -387,18 +387,18 @@ final class MinimalServersViewController: UIViewController {
 
     private func confirm(_ message: String, action: @escaping () -> Void) {
         let alert = UIAlertController(title: nil, message: message, preferredStyle: .alert)
-        alert.addAction(UIAlertAction(title: "Отмена", style: .cancel))
-        alert.addAction(UIAlertAction(title: "Удалить", style: .destructive) { _ in action() })
+        alert.addAction(UIAlertAction(title: L("Отмена"), style: .cancel))
+        alert.addAction(UIAlertAction(title: L("Удалить"), style: .destructive) { _ in action() })
         present(alert, animated: true)
     }
 
     private func confirmDelete(subscription id: Int64) {
         guard let subscription = App.shared.library.subscription(id) else { return }
-        confirm("Удалить «\(subscription.name)»?") { App.shared.delete(subscription: id) }
+        confirm(Lf("Удалить «%@»?", "\(subscription.name)")) { App.shared.delete(subscription: id) }
     }
 
     private func confirmDelete(node tag: String, in id: Int64) {
         guard let node = App.shared.library.subscription(id)?.node(tag) else { return }
-        confirm("Удалить сервер «\(node.name)»?") { App.shared.delete(node: tag, in: id) }
+        confirm(Lf("Удалить сервер «%@»?", "\(node.name)")) { App.shared.delete(node: tag, in: id) }
     }
 }

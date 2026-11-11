@@ -15,18 +15,18 @@ public struct ProtocolFacts: Hashable, Sendable {
 
     /// The line the Classic interface prints under a server.
     public var summary: String {
-        if isMixedGroup { return "Группа · разные протоколы" }
+        if isMixedGroup { return CoreText.t("Группа · разные протоколы") }
         return ([proto, security, transport] + (flow.map { [$0] } ?? [])).joined(separator: " · ")
     }
 
     /// Short tags for the Minimal interface, in display order.
     public var badges: [String] {
-        if isMixedGroup { return ["Группа"] }
+        if isMixedGroup { return [CoreText.t("Группа")] }
         var result = [proto]
         switch security {
         case "REALITY": result.append("Reality")
-        case "Без транспортного TLS": result.append("без TLS")
-        case "Шифрование протокола": break
+        case CoreText.t("Без транспортного TLS"): result.append(CoreText.t("без TLS"))
+        case CoreText.t("Шифрование протокола"): break
         default: result.append(security)
         }
         result.append(transport == "TCP/RAW" ? "TCP" : transport)
@@ -49,9 +49,9 @@ public struct ProtocolFacts: Hashable, Sendable {
         } else if tls?["enabled"]?.boolValue == true || isQUIC {
             security = "TLS"
         } else if ["wireguard", "awg", "amneziawg", "shadowsocks"].contains(type) {
-            security = "Шифрование протокола"
+            security = CoreText.t("Шифрование протокола")
         } else {
-            security = "Без транспортного TLS"
+            security = CoreText.t("Без транспортного TLS")
         }
         let raw = object.at("transport", "type")?.stringValue?.lowercased() ?? (isQUIC ? "quic" : "tcp")
         transport = ProtocolFacts.transportNames[raw] ?? raw

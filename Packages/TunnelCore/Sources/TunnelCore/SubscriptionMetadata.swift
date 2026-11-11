@@ -61,7 +61,7 @@ public enum Format {
         return String(format: "%.1f %@", amount, units[index])
     }
 
-    public static func speed(_ bytesPerSecond: Int64) -> String { bytes(bytesPerSecond) + "/с" }
+    public static func speed(_ bytesPerSecond: Int64) -> String { bytes(bytesPerSecond) + CoreText.t("/с") }
 
     public static func duration(_ seconds: Int) -> String {
         let s = max(0, seconds)
@@ -69,15 +69,17 @@ public enum Format {
     }
 
     public static func ago(_ date: Date?, now: Date = Date()) -> String {
-        guard let date else { return "никогда" }
+        guard let date else { return CoreText.t("никогда") }
         let seconds = max(0, Int(now.timeIntervalSince(date)))
-        if seconds < 60 { return "\(seconds) с назад" }
-        if seconds < 3600 { return "\(seconds / 60) мин назад" }
-        if seconds < 86400 { return "\(seconds / 3600) ч назад" }
-        return "\(seconds / 86400) дн. назад"
+        if seconds < 60 { return CoreText.f("%@ с назад", "\(seconds)") }
+        if seconds < 3600 { return CoreText.f("%@ мин назад", "\(seconds / 60)") }
+        if seconds < 86400 { return CoreText.f("%@ ч назад", "\(seconds / 3600)") }
+        return CoreText.f("%@ дн. назад", "\(seconds / 86400)")
     }
 
     public static func plural(_ count: Int, _ one: String, _ few: String, _ many: String) -> String {
+        // The words arrive translated; English needs only "one" and "many".
+        guard CoreText.russianPlurals else { return "\(count) \(count == 1 ? one : many)" }
         let tens = count % 100, units = count % 10
         if tens >= 11, tens <= 14 { return "\(count) \(many)" }
         if units == 1 { return "\(count) \(one)" }

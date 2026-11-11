@@ -4,14 +4,14 @@ import UIKit
 /// 02 Серверы — «Все локации».
 final class ClassicServersViewController: UIViewController, UITableViewDataSource, UITableViewDelegate, UISearchBarDelegate {
     private let table = UITableView(frame: .zero, style: .plain)
-    private let heading = Classic.micro("ЛОКАЦИИ / 00")
+    private let heading = Classic.micro(L("ЛОКАЦИИ / 00"))
     private let pingButton = TapControl()
     private let pingIcon = UIImageView()
-    private let pingLabel = Classic.mono("ПИНГ", 12, .white, weight: .bold)
+    private let pingLabel = Classic.mono(L("ПИНГ"), 12, .white, weight: .bold)
     private let pingSpinner = UIActivityIndicatorView(style: .medium)
     private let search = UITextField()
     private let filters = UIStackView(.horizontal, spacing: 22, alignment: .center, [])
-    private let groupTitle = UILabel("Доступные серверы", font: Classic.rounded(14, .semibold))
+    private let groupTitle = UILabel(L("Доступные серверы"), font: Classic.rounded(14, .semibold))
     private let groupKicker = Classic.micro("")
     private let groupCount = Classic.mono("00", 18, Theme.text, weight: .semibold)
     private let groupProgress = Classic.micro("")
@@ -32,7 +32,7 @@ final class ClassicServersViewController: UIViewController, UITableViewDataSourc
         closeBox.translatesAutoresizingMaskIntoConstraints = false
         NSLayoutConstraint.activate([closeBox.widthAnchor.constraint(equalToConstant: 36), closeBox.heightAnchor.constraint(equalToConstant: 36)])
         let title = UIStackView(.horizontal, spacing: 12, alignment: .top, [
-            UIStackView(.vertical, spacing: 6, alignment: .leading, [heading, Classic.text("Все локации", 24, .semibold)]), UIView(), closeBox,
+            UIStackView(.vertical, spacing: 6, alignment: .leading, [heading, Classic.text(L("Все локации"), 24, .semibold)]), UIView(), closeBox,
         ])
         pingIcon.tintColor = .white
         pingSpinner.color = .white
@@ -54,7 +54,7 @@ final class ClassicServersViewController: UIViewController, UITableViewDataSourc
             Haptics.tap()
             if App.shared.latency.progress.value.running { App.shared.latency.cancel() } else if let subscription = self?.subscription { App.shared.ping([subscription]) }
         }
-        search.attributedPlaceholder = NSAttributedString(string: "Страна или город", attributes: [.foregroundColor: Theme.text.withAlphaComponent(0.7)])
+        search.attributedPlaceholder = NSAttributedString(string: L("Страна или город"), attributes: [.foregroundColor: Theme.text.withAlphaComponent(0.7)])
         search.font = Theme.fixed(13, .medium)
         search.autocapitalizationType = .none
         search.autocorrectionType = .no
@@ -81,7 +81,7 @@ final class ClassicServersViewController: UIViewController, UITableViewDataSourc
         filterScroll.heightAnchor.constraint(equalToConstant: 40).isActive = true
         let groupHeader = UIStackView(.horizontal, spacing: 8, alignment: .center, [
             UIStackView(.vertical, spacing: 2, alignment: .leading, [groupKicker, groupTitle, groupProgress]), UIView(),
-            UIStackView(.vertical, spacing: 2, alignment: .trailing, [groupCount, Classic.micro("ЛОКАЦИЙ")]),
+            UIStackView(.vertical, spacing: 2, alignment: .trailing, [groupCount, Classic.micro(L("ЛОКАЦИЙ"))]),
         ])
         let groupBox = UIStackView(.vertical, spacing: 0, alignment: .fill, [Classic.padded(groupHeader, UIEdgeInsets(top: 11, left: 20, bottom: 11, right: 20)), Classic.rule()])
         groupBox.backgroundColor = Theme.text.withAlphaComponent(0.045)
@@ -111,10 +111,10 @@ final class ClassicServersViewController: UIViewController, UITableViewDataSourc
     }
 
     private func show(_ progress: LatencyProgress) {
-        pingLabel.text = progress.running ? "СТОП" : "ПИНГ"
+        pingLabel.text = progress.running ? L("СТОП") : L("ПИНГ")
         pingIcon.image = UIImage(systemName: progress.running ? "stop.fill" : "antenna.radiowaves.left.and.right", withConfiguration: UIImage.SymbolConfiguration(pointSize: 15, weight: .semibold))
         if progress.running { pingSpinner.startAnimating() } else { pingSpinner.stopAnimating() }
-        groupProgress.text = progress.total > 0 ? "ПРОВЕРЕНО \(progress.done) ИЗ \(progress.total)" : ""
+        groupProgress.text = progress.total > 0 ? Lf("ПРОВЕРЕНО %@ ИЗ %@", "\(progress.done)", "\(progress.total)") : ""
     }
 
     private func reload() {
@@ -133,8 +133,8 @@ final class ClassicServersViewController: UIViewController, UITableViewDataSourc
         let favoriteNodes = all.filter { favorites.contains($0.id) }
         let recentNodes = recent.compactMap { key in all.first { Arrangement.server(subscription.id, $0.id) == key } }
         let sets: [(String, [ServerNode], String)] = [
-            ("Все", all, "Доступные серверы"), ("Безлимитные", limited ? [] : all, "Безлимитные"), ("Лимитные", limited ? all : [], "Лимитные"),
-            ("Избранное", favoriteNodes, "Избранное"), ("Недавние", recentNodes, "Недавние"),
+            (L("Все"), all, L("Доступные серверы")), (L("Безлимитные"), limited ? [] : all, L("Безлимитные")), (L("Лимитные"), limited ? all : [], L("Лимитные")),
+            (L("Избранное"), favoriteNodes, L("Избранное")), (L("Недавние"), recentNodes, L("Недавние")),
         ]
         filters.arrangedSubviews.forEach { $0.removeFromSuperview() }
         for (offset, set) in sets.enumerated() {
@@ -167,7 +167,7 @@ final class ClassicServersViewController: UIViewController, UITableViewDataSourc
         }
         let needle = (search.text ?? "").lowercased()
         rows = sets[filter].1.filter { needle.isEmpty || (labels[$0.id]?.text ?? $0.name).lowercased().contains(needle) || $0.name.lowercased().contains(needle) }
-        heading.text = "ЛОКАЦИИ / \(subscription.nodes.count)"
+        heading.text = Lf("ЛОКАЦИИ / %@", "\(subscription.nodes.count)")
         groupKicker.text = "02 / " + subscription.name.uppercased()
         groupKicker.textColor = Theme.accent
         groupTitle.text = sets[filter].2
@@ -220,7 +220,7 @@ final class ClassicServersViewController: UIViewController, UITableViewDataSourc
         name.minimumScaleFactor = 0.7
         let text = UIStackView(.vertical, spacing: 3, alignment: .leading, [
             name, Classic.text(node.facts.summary, 10, .regular, .secondaryLabel),
-            Classic.micro((subscription.info.isLimited ? "Лимитный" : "Безлимитный").uppercased(), selected ? Theme.accent : .secondaryLabel),
+            Classic.micro((subscription.info.isLimited ? L("Лимитный") : L("Безлимитный")).uppercased(), selected ? Theme.accent : .secondaryLabel),
         ])
         let number = Classic.micro(String(format: "%02d", indexPath.row + 1), selected ? Theme.accent : .secondaryLabel)
         number.widthAnchor.constraint(equalToConstant: 21).isActive = true
@@ -252,11 +252,11 @@ final class ClassicManageViewController: ClassicPage {
 
     override func build() {
         content.spacing = 22
-        content.addArrangedSubview(ClassicRow(Classic.body("Добавить сервер или подписку", 17)) { [weak self] in
+        content.addArrangedSubview(ClassicRow(Classic.body(L("Добавить сервер или подписку"), 17)) { [weak self] in
             if let self { AddServerFlow.present(from: self) }
         })
         let field = UITextField()
-        field.placeholder = "Поиск подписок"
+        field.placeholder = L("Поиск подписок")
         field.font = Theme.font(17)
         field.text = query
         field.returnKeyType = .done
@@ -275,15 +275,15 @@ final class ClassicManageViewController: ClassicPage {
             Prefs.arrangement = next
             self?.rebuild()
         }, for: .valueChanged)
-        content.addArrangedSubview(UIStackView(.horizontal, spacing: 8, alignment: .center, [Classic.body("Сортировать по имени", 17), UIView(), toggle]))
+        content.addArrangedSubview(UIStackView(.horizontal, spacing: 8, alignment: .center, [Classic.body(L("Сортировать по имени"), 17), UIView(), toggle]))
 
-        let frame = ClassicFrame(caption: "ДОСТУПНЫЕ")
+        let frame = ClassicFrame(caption: L("ДОСТУПНЫЕ"))
         let library = App.shared.library
         let needle = query.lowercased()
         let subscriptions = Prefs.arrangement.sorted(library.subscriptions.filter { !$0.nodes.isEmpty }, key: { Arrangement.subscription($0.id) }, name: { $0.name })
             .filter { needle.isEmpty || $0.name.lowercased().contains(needle) }
         if subscriptions.isEmpty {
-            frame.add(Classic.body("Подписок нет. Добавьте сервер или подписку.", 14, .regular, .secondaryLabel, lines: 0), insets: UIEdgeInsets(top: 18, left: 18, bottom: 18, right: 18))
+            frame.add(Classic.body(L("Подписок нет. Добавьте сервер или подписку."), 14, .regular, .secondaryLabel, lines: 0), insets: UIEdgeInsets(top: 18, left: 18, bottom: 18, right: 18))
         }
         for subscription in subscriptions {
             let id = subscription.id
@@ -305,17 +305,17 @@ final class ClassicManageViewController: ClassicPage {
             more.showsMenuAsPrimaryAction = true
             var actions: [UIMenuElement] = [UIAction(title: subscription.name, attributes: .disabled) { _ in }]
             if subscription.isRemote {
-                actions.append(UIAction(title: "Обновить", image: UIImage(systemName: "arrow.clockwise")) { _ in App.shared.refresh(id) })
-                actions.append(UIAction(title: "Скопировать ссылку", image: UIImage(systemName: "doc.on.doc")) { _ in UIPasteboard.general.string = subscription.url })
+                actions.append(UIAction(title: L("Обновить"), image: UIImage(systemName: "arrow.clockwise")) { _ in App.shared.refresh(id) })
+                actions.append(UIAction(title: L("Скопировать ссылку"), image: UIImage(systemName: "doc.on.doc")) { _ in UIPasteboard.general.string = subscription.url })
             }
-            actions.append(UIAction(title: "Проверить пинг", image: UIImage(systemName: "waveform.path.ecg")) { _ in App.shared.ping([subscription]) })
-            actions.append(UIAction(title: "На главный экран", image: UIImage(systemName: "house")) { _ in
+            actions.append(UIAction(title: L("Проверить пинг"), image: UIImage(systemName: "waveform.path.ecg")) { _ in App.shared.ping([subscription]) })
+            actions.append(UIAction(title: L("На главный экран"), image: UIImage(systemName: "house")) { _ in
                 if let node = App.shared.library.selectedNodeID(in: subscription) { App.shared.select(node: node, in: id) }
             })
-            actions.append(UIAction(title: "Удалить", image: UIImage(systemName: "trash"), attributes: .destructive) { [weak self] _ in
-                let alert = UIAlertController(title: nil, message: "Удалить «\(subscription.name)»?", preferredStyle: .alert)
-                alert.addAction(UIAlertAction(title: "Отмена", style: .cancel))
-                alert.addAction(UIAlertAction(title: "Удалить", style: .destructive) { _ in App.shared.delete(subscription: id) })
+            actions.append(UIAction(title: L("Удалить"), image: UIImage(systemName: "trash"), attributes: .destructive) { [weak self] _ in
+                let alert = UIAlertController(title: nil, message: Lf("Удалить «%@»?", "\(subscription.name)"), preferredStyle: .alert)
+                alert.addAction(UIAlertAction(title: L("Отмена"), style: .cancel))
+                alert.addAction(UIAlertAction(title: L("Удалить"), style: .destructive) { _ in App.shared.delete(subscription: id) })
                 self?.present(alert, animated: true)
             })
             more.menu = UIMenu(children: actions)
@@ -323,8 +323,8 @@ final class ClassicManageViewController: ClassicPage {
             frame.add(UIStackView(.horizontal, spacing: 8, alignment: .center, [head, more]), insets: UIEdgeInsets(top: 22, left: 18, bottom: 22, right: 8))
             guard open else { continue }
             let labels = App.shared.store.labels(for: subscription)
-            var lines: [UIView] = [Classic.body(Format.plural(subscription.nodes.count, "сервер", "сервера", "серверов") + " · обновлена " + Format.ago(subscription.updatedAt), 13, .regular, .secondaryLabel)]
-            if library.activeSubscription?.id == id { lines.append(Classic.body("На главном экране", 13, .regular, Theme.accent)) }
+            var lines: [UIView] = [Classic.body(Format.plural(subscription.nodes.count, L("сервер"), L("сервера"), L("серверов")) + L(" · обновлена ") + Format.ago(subscription.updatedAt), 13, .regular, .secondaryLabel)]
+            if library.activeSubscription?.id == id { lines.append(Classic.body(L("На главном экране"), 13, .regular, Theme.accent)) }
             for node in subscription.nodes {
                 lines.append(UIStackView(.vertical, spacing: 3, alignment: .leading, [
                     Classic.body(labels[node.id]?.text ?? node.name, 13), Classic.body(node.facts.summary, 12, .regular, .secondaryLabel),
@@ -388,43 +388,47 @@ final class ClassicSettingsViewController: ClassicPage {
 
     override func build() {
         let changed = { App.shared.networkSettingsChanged() }
-        content.addArrangedSubview(section("ВНЕШНИЙ ВИД", [
-            Classic.body("Интерфейс", 12, .regular, .secondaryLabel),
-            option("Классика", selected: true, boxed: false) {},
-            option("Минималистичный", selected: false, boxed: false) { Prefs.style = .minimal },
-            Classic.body("Тема", 12, .regular, .secondaryLabel),
-            option("Системная", selected: Prefs.theme == "system") { Prefs.theme = "system" },
-            option("Светлая", selected: Prefs.theme == "light") { Prefs.theme = "light" },
-            option("Тёмная", selected: Prefs.theme == "dark") { Prefs.theme = "dark" },
-            link("Цвета и шрифт") { ColorsViewController() },
+        content.addArrangedSubview(section(L("ВНЕШНИЙ ВИД"), [
+            Classic.body(L("Интерфейс"), 12, .regular, .secondaryLabel),
+            option(L("Классика"), selected: true, boxed: false) {},
+            option(L("Минималистичный"), selected: false, boxed: false) { Prefs.style = .minimal },
+            Classic.body(L("Тема"), 12, .regular, .secondaryLabel),
+            option(L("Системная"), selected: Prefs.theme == "system") { Prefs.theme = "system" },
+            option(L("Светлая"), selected: Prefs.theme == "light") { Prefs.theme = "light" },
+            option(L("Тёмная"), selected: Prefs.theme == "dark") { Prefs.theme = "dark" },
+            link(L("Цвета и шрифт")) { ColorsViewController() },
         ]))
-        content.addArrangedSubview(section("ЯЗЫК", [option("Русский", selected: true) {}]))
-        content.addArrangedSubview(section("ИЗМЕРЕНИЕ ЗАДЕРЖКИ", [
-            option("Основной", selected: Prefs.pingMode == "primary") { [weak self] in Prefs.pingMode = "primary"; self?.rebuild() },
-            option("Классика", selected: Prefs.pingMode == "classic") { [weak self] in Prefs.pingMode = "classic"; self?.rebuild() },
-            option("Альтернативный", selected: Prefs.pingMode == "alternative") { [weak self] in Prefs.pingMode = "alternative"; self?.rebuild() },
-            Classic.body("Тест только показывает задержку и не меняет выбранный сервер. Его можно остановить в любой момент.", 12, .regular, .secondaryLabel, lines: 0),
+        content.addArrangedSubview(section(L("ЯЗЫК"), [
+            option(L("Системный"), selected: Prefs.language == "system") { Prefs.language = "system" },
+            option("Русский", selected: Prefs.language == "ru") { Prefs.language = "ru" },
+            option("English", selected: Prefs.language == "en") { Prefs.language = "en" },
         ]))
-        content.addArrangedSubview(section("ПОДКЛЮЧЕНИЕ", [
-            toggle("Автоподключение", Prefs.autoConnect) { Prefs.autoConnect = $0; App.shared.tunnel.applySettings() },
-            toggle("Неизвестные Wi-Fi", Prefs.unknownWiFi) { Prefs.unknownWiFi = $0; App.shared.tunnel.applySettings() },
-            toggle("Автоматический failover", Prefs.autoFailover) { Prefs.autoFailover = $0 },
+        content.addArrangedSubview(section(L("ИЗМЕРЕНИЕ ЗАДЕРЖКИ"), [
+            option(L("Основной"), selected: Prefs.pingMode == "primary") { [weak self] in Prefs.pingMode = "primary"; self?.rebuild() },
+            option(L("Классика"), selected: Prefs.pingMode == "classic") { [weak self] in Prefs.pingMode = "classic"; self?.rebuild() },
+            option(L("Альтернативный"), selected: Prefs.pingMode == "alternative") { [weak self] in Prefs.pingMode = "alternative"; self?.rebuild() },
+            Classic.body(L("Тест только показывает задержку и не меняет выбранный сервер. Его можно остановить в любой момент."), 12, .regular, .secondaryLabel, lines: 0),
+        ]))
+        content.addArrangedSubview(section(L("ПОДКЛЮЧЕНИЕ"), [
+            toggle(L("Автоподключение"), Prefs.autoConnect) { Prefs.autoConnect = $0; App.shared.tunnel.applySettings() },
+            toggle(L("Неизвестные Wi-Fi"), Prefs.unknownWiFi) { Prefs.unknownWiFi = $0; App.shared.tunnel.applySettings() },
+            toggle(L("Автоматический failover"), Prefs.autoFailover) { Prefs.autoFailover = $0 },
         ], spacing: 14))
-        content.addArrangedSubview(section("МАРШРУТИЗАЦИЯ", [
-            toggle("Блокировка рекламы", Prefs.adBlocking) { Prefs.adBlocking = $0; changed() },
-            toggle("Обход российских сайтов", Prefs.bypassRussia) { Prefs.bypassRussia = $0; changed() },
-            toggle("Защищённый DNS", Prefs.secureDNS) { Prefs.secureDNS = $0; App.shared.tunnel.applySettings() },
-            toggle("Локальная сеть", Prefs.localNetwork) { Prefs.localNetwork = $0; changed() },
-            Classic.body("Серверы DNS берутся из конфигурации. После изменения системных маршрутов переподключите VPN.", 12, .regular, .secondaryLabel, lines: 0),
+        content.addArrangedSubview(section(L("МАРШРУТИЗАЦИЯ"), [
+            toggle(L("Блокировка рекламы"), Prefs.adBlocking) { Prefs.adBlocking = $0; changed() },
+            toggle(L("Обход российских сайтов"), Prefs.bypassRussia) { Prefs.bypassRussia = $0; changed() },
+            toggle(L("Защищённый DNS"), Prefs.secureDNS) { Prefs.secureDNS = $0; App.shared.tunnel.applySettings() },
+            toggle(L("Локальная сеть"), Prefs.localNetwork) { Prefs.localNetwork = $0; changed() },
+            Classic.body(L("Серверы DNS берутся из конфигурации. После изменения системных маршрутов переподключите VPN."), 12, .regular, .secondaryLabel, lines: 0),
         ], spacing: 14))
-        content.addArrangedSubview(section("БЕЗОПАСНОСТЬ", [toggle("Блокировка приложения", Prefs.appLock) { Prefs.appLock = $0 }]))
-        content.addArrangedSubview(section("ДАННЫЕ", [
-            link("Порядок серверов") { ServerOrderViewController() },
-            link("Проверка соединения") { DiagnosticsViewController() },
-            link("Журнал службы") { ServiceLogViewController() },
-            link("Резервные копии") { BackupViewController() },
-            link("Сетевая активность приложения") { NetworkActivityViewController() },
-            link("О приложении") { AboutViewController() },
+        content.addArrangedSubview(section(L("БЕЗОПАСНОСТЬ"), [toggle(L("Блокировка приложения"), Prefs.appLock) { Prefs.appLock = $0 }]))
+        content.addArrangedSubview(section(L("ДАННЫЕ"), [
+            link(L("Порядок серверов")) { ServerOrderViewController() },
+            link(L("Проверка соединения")) { DiagnosticsViewController() },
+            link(L("Журнал службы")) { ServiceLogViewController() },
+            link(L("Резервные копии")) { BackupViewController() },
+            link(L("Сетевая активность приложения")) { NetworkActivityViewController() },
+            link(L("О приложении")) { AboutViewController() },
         ], spacing: 0))
     }
 }

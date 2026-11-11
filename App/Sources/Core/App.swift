@@ -33,7 +33,7 @@ final class App {
             if let message { self?.notice.value = message }
         }
         if paths == nil {
-            notice.value = "Нет доступа к общей группе приложения (\(AppGroup.identifier)). Туннель не запустится: проверьте подпись."
+            notice.value = Lf("Нет доступа к общей группе приложения (%@). Туннель не запустится: проверьте подпись.", "\(AppGroup.identifier)")
         }
     }
 
@@ -131,8 +131,8 @@ final class App {
             let nodes = NodeAssembler.assemble(result.nodes)
             store.update { library in
                 let id = library.allocateID()
-                let name = result.suggestedName ?? nodes.first?.name ?? "Серверы"
-                library.subscriptions.append(Subscription(id: id, name: nodes.count == 1 ? name : "Серверы (\(nodes.count))", nodes: nodes, updatedAt: Date()))
+                let name = result.suggestedName ?? nodes.first?.name ?? L("Серверы")
+                library.subscriptions.append(Subscription(id: id, name: nodes.count == 1 ? name : Lf("Серверы (%@)", "\(nodes.count)"), nodes: nodes, updatedAt: Date()))
                 if library.activeSubscriptionID == nil { library.activeSubscriptionID = id }
             }
             completion(result.summary)

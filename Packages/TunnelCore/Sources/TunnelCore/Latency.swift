@@ -7,13 +7,13 @@ public enum ProbeFailure: String, Codable, Sendable, Equatable {
     public var title: String {
         switch self {
         case .dns: return "DNS"
-        case .timeout: return "таймаут"
-        case .refused: return "отказ"
+        case .timeout: return CoreText.t("таймаут")
+        case .refused: return CoreText.t("отказ")
         case .tls: return "TLS/Reality"
-        case .unreachable: return "нет маршрута"
-        case .noAddress: return "нет адреса"
-        case .unsupported: return "только с VPN"
-        case .other: return "ошибка"
+        case .unreachable: return CoreText.t("нет маршрута")
+        case .noAddress: return CoreText.t("нет адреса")
+        case .unsupported: return CoreText.t("только с VPN")
+        case .other: return CoreText.t("ошибка")
         }
     }
 

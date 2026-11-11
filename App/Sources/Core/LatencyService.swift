@@ -44,11 +44,11 @@ struct NetworkProbes: LatencyProbes {
         let box = ResultBox()
         if let report {
             // The server is named, never its address: the log leaves the app.
-            let name = label.map { "«\($0)»" } ?? "сервера"
+            let name = label.map { "«\($0)»" } ?? "«—»"
             box.explain = { failure, error, state, path in
-                var parts = ["Пинг \(name) напрямую (\(kind)): \(failure.title)"]
-                if let error { parts.append(NetworkProbes.describe(error)) } else { parts.append("нет ответа за \(String(format: "%g", timeout)) с, состояние \(state)") }
-                if let path { parts.append("путь: " + NetworkProbes.describe(path)) }
+                var parts = [Lf("Пинг %@ напрямую (%@): %@", "\(name)", "\(kind)", "\(failure.title)")]
+                if let error { parts.append(NetworkProbes.describe(error)) } else { parts.append(Lf("нет ответа за %@ с, состояние %@", "\(String(format: "%g", timeout))", "\(state)")) }
+                if let path { parts.append(L("путь: ") + NetworkProbes.describe(path)) }
                 report(parts.joined(separator: "; "))
             }
         }
@@ -115,16 +115,16 @@ struct NetworkProbes: LatencyProbes {
     private static func describe(_ path: NWPath) -> String {
         let status: String
         switch path.status {
-        case .satisfied: status = "есть"
+        case .satisfied: status = L("есть")
         case .unsatisfied:
             switch path.unsatisfiedReason {
-            case .cellularDenied: status = "нет (сотовые данные запрещены)"
-            case .wifiDenied: status = "нет (Wi-Fi запрещён)"
-            case .localNetworkDenied: status = "нет (локальная сеть запрещена)"
-            default: status = "нет"
+            case .cellularDenied: status = L("нет (сотовые данные запрещены)")
+            case .wifiDenied: status = L("нет (Wi-Fi запрещён)")
+            case .localNetworkDenied: status = L("нет (локальная сеть запрещена)")
+            default: status = L("нет")
             }
-        case .requiresConnection: status = "требует подключения"
-        @unknown default: status = "неизвестно"
+        case .requiresConnection: status = L("требует подключения")
+        @unknown default: status = L("неизвестно")
         }
         let interfaces = path.availableInterfaces.map { "\($0.name)/\(NetworkProbes.name($0.type))" }
         return interfaces.isEmpty ? status : status + ", " + interfaces.joined(separator: " ")
@@ -218,9 +218,9 @@ final class LatencyService {
 
     static func modeTitle(_ mode: String) -> String {
         switch mode {
-        case "classic": return "Классика"
-        case "alternative": return "Альтернативный"
-        default: return "Основной"
+        case "classic": return L("Классика")
+        case "alternative": return L("Альтернативный")
+        default: return L("Основной")
         }
     }
 
@@ -255,8 +255,8 @@ final class LatencyService {
         }
         let liveID = tunnelSubscription
         let total = items.count
-        let how = live.isEmpty ? "напрямую" : (direct.isEmpty ? "через туннель" : "\(live.count) через туннель, \(direct.count) напрямую")
-        log(4, "Проверка задержки: \(Format.plural(items.count, "сервер", "сервера", "серверов")) \(how); режим «\(LatencyService.modeTitle(Prefs.pingMode))», VPN \(tunnelUp ? "включён" : "выключен")")
+        let how = live.isEmpty ? L("напрямую") : (direct.isEmpty ? L("через туннель") : Lf("%@ через туннель, %@ напрямую", "\(live.count)", "\(direct.count)"))
+        log(4, Lf("Проверка задержки: %@ %@; режим «%@», VPN %@", "\(Format.plural(items.count, L("сервер"), L("сервера"), L("серверов")))", "\(how)", "\(LatencyService.modeTitle(Prefs.pingMode))", "\(tunnelUp ? L("включён") : L("выключен"))"))
         task = Task { [weak self] in
             let deliver: @Sendable ([String: ProbeResult], Int64?) async -> Void = { batch, subscription in
                 await MainActor.run {
@@ -283,7 +283,7 @@ final class LatencyService {
             await MainActor.run {
                 guard let self, !Task.isCancelled else { return }
                 let reasons = self.tally.sorted { $0.value > $1.value }.map { "\($0.key.title) ×\($0.value)" }
-                log(4, "Проверка задержки завершена: ответили \(self.answered) из \(total)" + (reasons.isEmpty ? "." : "; " + reasons.joined(separator: ", ")))
+                log(4, Lf("Проверка задержки завершена: ответили %@ из %@", "\(self.answered)", "\(total)") + (reasons.isEmpty ? "." : "; " + reasons.joined(separator: ", ")))
                 self.finish()
             }
         }

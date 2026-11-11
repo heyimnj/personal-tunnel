@@ -4,6 +4,7 @@ import UIKit
 final class RootViewController: UIViewController {
     private var current: UIViewController?
     private var shownStyle: InterfaceStyle?
+    private var shownLanguage: String?
 
     override func viewDidLoad() {
         super.viewDidLoad()
@@ -21,8 +22,10 @@ final class RootViewController: UIViewController {
         overrideUserInterfaceStyle = Theme.userInterfaceStyle
         view.backgroundColor = Theme.background
         view.tintColor = Theme.accent
-        guard shownStyle != Prefs.style else { return }
+        // A new style or language builds the interface again.
+        guard shownStyle != Prefs.style || shownLanguage != Language.code else { return }
         shownStyle = Prefs.style
+        shownLanguage = Language.code
         let next: UIViewController = Prefs.style == .classic ? ClassicRootViewController() : MinimalRootViewController()
         let previous = current
         addChild(next)

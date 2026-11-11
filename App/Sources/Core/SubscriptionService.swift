@@ -17,8 +17,8 @@ enum SubscriptionService {
     static func fetch(url text: String, sendIdentity: Bool) async throws -> Fetched {
         guard let url = URL(string: text.trimmingCharacters(in: .whitespacesAndNewlines)), let scheme = url.scheme?.lowercased(),
               scheme == "https" || scheme == "http"
-        else { throw ImportError("Это не адрес подписки.") }
-        var lastError: Error = ImportError("Подписка не загрузилась.")
+        else { throw ImportError(L("Это не адрес подписки.")) }
+        var lastError: Error = ImportError(L("Подписка не загрузилась."))
         for agent in userAgents {
             var request = URLRequest(url: url, cachePolicy: .reloadIgnoringLocalCacheData, timeoutInterval: 20)
             request.setValue(agent, forHTTPHeaderField: "User-Agent")
@@ -32,9 +32,9 @@ enum SubscriptionService {
             }
             do {
                 let (data, response) = try await URLSession.shared.data(for: request)
-                guard let http = response as? HTTPURLResponse else { throw ImportError("Сервер подписки не ответил.") }
+                guard let http = response as? HTTPURLResponse else { throw ImportError(L("Сервер подписки не ответил.")) }
                 guard (200 ..< 300).contains(http.statusCode) else {
-                    throw ImportError("Сервер подписки ответил кодом \(http.statusCode).")
+                    throw ImportError(Lf("Сервер подписки ответил кодом %@.", "\(http.statusCode)"))
                 }
                 var headers: [String: String] = [:]
                 for (key, value) in http.allHeaderFields { headers["\(key)"] = "\(value)" }

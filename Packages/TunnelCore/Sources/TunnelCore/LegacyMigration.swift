@@ -27,7 +27,7 @@ public enum LegacyMigration {
             if let text = profile.config, let document = try? JSONValue.parse(text), SingBoxImport.isSingBox(document) {
                 nodes = keepingTags(SingBoxImport.parse(document))
             } else {
-                warnings.append("Конфигурация 1.x не прочитана. Обновите подписку.")
+                warnings.append(CoreText.t("Конфигурация 1.x не прочитана. Обновите подписку."))
             }
             let url = profile.remoteURL?.trimmingCharacters(in: .whitespaces)
             library.subscriptions.append(Subscription(id: profile.id, name: profile.name, url: url?.isEmpty == false ? url : nil, nodes: nodes,

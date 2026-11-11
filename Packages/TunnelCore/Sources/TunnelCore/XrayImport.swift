@@ -44,7 +44,7 @@ public enum XrayImport {
         let proxies = (config["outbounds"]?.arrayValue ?? []).filter {
             proxyProtocols.contains($0["protocol"]?.stringValue?.lowercased() ?? "")
         }
-        guard !proxies.isEmpty else { throw ImportError("В конфигурации Xray нет прокси-сервера.") }
+        guard !proxies.isEmpty else { throw ImportError(CoreText.t("В конфигурации Xray нет прокси-сервера.")) }
 
         // Convert every proxy; a chain (`dialerProxy`) becomes a sing-box `detour`.
         var converted: [(tag: String, object: JSONValue, dialer: String?)] = []
@@ -59,7 +59,7 @@ public enum XrayImport {
                 if firstError == nil { firstError = error }
             }
         }
-        guard !converted.isEmpty else { throw firstError ?? ImportError("Сервер не удалось преобразовать.") }
+        guard !converted.isEmpty else { throw firstError ?? ImportError(CoreText.t("Сервер не удалось преобразовать.")) }
 
         let placeholders = Dictionary(converted.enumerated().map { ($1.tag, "#\($0)") }, uniquingKeysWith: { first, _ in first })
         var detourTargets = Set<String>()
@@ -111,17 +111,17 @@ public enum XrayImport {
 
         let listName = (kind == "vless" || kind == "vmess") ? "vnext" : "servers"
         let (server, user) = firstUserAndServer(settings, list: listName)
-        guard let host = server["address"]?.text, !host.isEmpty else { throw ImportError("В конфигурации Xray нет адреса сервера.") }
-        guard let port = server["port"]?.looseInt, port > 0, port < 65536 else { throw ImportError("В конфигурации Xray нет порта сервера.") }
+        guard let host = server["address"]?.text, !host.isEmpty else { throw ImportError(CoreText.t("В конфигурации Xray нет адреса сервера.")) }
+        guard let port = server["port"]?.looseInt, port > 0, port < 65536 else { throw ImportError(CoreText.t("В конфигурации Xray нет порта сервера.")) }
         if ["0.0.0.0", "127.0.0.1", "localhost", "::1"].contains(host.lowercased()) {
-            throw ImportError("Адрес сервера не настоящий (\(host)): провайдер вернул заглушку.")
+            throw ImportError(CoreText.f("Адрес сервера не настоящий (%@): провайдер вернул заглушку.", "\(host)"))
         }
         var outbound: [String: JSONValue] = ["server": .string(host), "server_port": .int(Int64(port))]
         let spec = try streamSpec(stream)
 
         switch kind {
         case "vless":
-            guard let uuid = user["id"]?.text, !uuid.isEmpty else { throw ImportError("VLESS: нет идентификатора пользователя.") }
+            guard let uuid = user["id"]?.text, !uuid.isEmpty else { throw ImportError(CoreText.t("VLESS: нет идентификатора пользователя.")) }
             outbound["type"] = "vless"
             outbound["uuid"] = .string(uuid)
             outbound["packet_encoding"] = "xudp"
@@ -133,18 +133,18 @@ public enum XrayImport {
                 outbound["encryption"] = .string(encryption)
             }
         case "vmess":
-            guard let uuid = user["id"]?.text, !uuid.isEmpty else { throw ImportError("VMess: нет идентификатора пользователя.") }
+            guard let uuid = user["id"]?.text, !uuid.isEmpty else { throw ImportError(CoreText.t("VMess: нет идентификатора пользователя.")) }
             outbound["type"] = "vmess"
             outbound["uuid"] = .string(uuid)
             outbound["security"] = .string((user["security"]?.stringValue).flatMap { $0.isEmpty ? nil : $0 } ?? "auto")
             if let alterID = user["alterId"]?.looseInt, alterID > 0 { outbound["alter_id"] = .int(Int64(alterID)) }
         case "trojan":
-            guard let password = server["password"]?.text, !password.isEmpty else { throw ImportError("Trojan: нет пароля.") }
+            guard let password = server["password"]?.text, !password.isEmpty else { throw ImportError(CoreText.t("Trojan: нет пароля.")) }
             outbound["type"] = "trojan"
             outbound["password"] = .string(password)
         case "shadowsocks":
             guard let method = server["method"]?.stringValue, let password = server["password"]?.text, !method.isEmpty else {
-                throw ImportError("Shadowsocks: нет метода или пароля.")
+                throw ImportError(CoreText.t("Shadowsocks: нет метода или пароля."))
             }
             outbound["type"] = "shadowsocks"
             outbound["method"] = .string(method.lowercased())
@@ -160,7 +160,7 @@ public enum XrayImport {
             if kind == "http", let tls = try spec.tls(server: host) { outbound["tls"] = tls }
             return .object(outbound)
         default:
-            throw ImportError("Протокол «\(kind)» не поддерживается.")
+            throw ImportError(CoreText.f("Протокол «%@» не поддерживается.", "\(kind)"))
         }
         if let tls = try spec.tls(server: host, required: kind == "trojan" && spec.security == "none" && stream["security"] == nil) {
             outbound["tls"] = tls
@@ -227,7 +227,7 @@ public enum XrayImport {
                 extra[key] = value
             }
             if extra["downloadSettings"] != nil {
-                throw ImportError("XHTTP с отдельным каналом загрузки (downloadSettings) не поддерживается ядром.")
+                throw ImportError(CoreText.t("XHTTP с отдельным каналом загрузки (downloadSettings) не поддерживается ядром."))
             }
             spec.xhttpExtra = .object(extra)
         case "h2", "http":
@@ -245,7 +245,7 @@ public enum XrayImport {
             break
         }
         if let mask = stream["finalmask"]?.objectValue, !mask.isEmpty {
-            throw ImportError("Маскировка finalmask не поддерживается ядром sing-box.")
+            throw ImportError(CoreText.t("Маскировка finalmask не поддерживается ядром sing-box."))
         }
         return spec
     }
@@ -274,7 +274,7 @@ public enum XrayImport {
     static func hysteria(_ xray: JSONValue, settings: JSONValue, stream: JSONValue) throws -> JSONValue {
         let hy = stream["hysteriaSettings"] ?? .object([:])
         guard let host = settings["address"]?.text, !host.isEmpty, let port = settings["port"]?.looseInt, port > 0 else {
-            throw ImportError("Hysteria: нет адреса или порта сервера.")
+            throw ImportError(CoreText.t("Hysteria: нет адреса или порта сервера."))
         }
         let version = settings["version"]?.looseInt ?? hy["version"]?.looseInt ?? (xray["protocol"]?.stringValue == "hysteria2" ? 2 : 1)
         let isV2 = version >= 2
@@ -294,7 +294,7 @@ public enum XrayImport {
             let options = item["settings"] ?? .object([:])
             switch type {
             case "salamander", "gecko":
-                guard obfsType == nil else { throw ImportError("Hysteria: два слоя обфускации не поддерживаются.") }
+                guard obfsType == nil else { throw ImportError(CoreText.t("Hysteria: два слоя обфускации не поддерживаются.")) }
                 obfsType = type
                 obfsPassword = options["password"]?.text
                 if let range = (options["packetSize"] ?? options["packet_size"]).flatMap(XHTTPOptions.range) {
@@ -303,14 +303,14 @@ public enum XrayImport {
                 }
             case "udphop":
                 if options["mode"]?.stringValue?.lowercased().contains("perconnremote") == true {
-                    throw ImportError("Hysteria: смена адресов сервера не поддерживается.")
+                    throw ImportError(CoreText.t("Hysteria: смена адресов сервера не поддерживается."))
                 }
                 if let ports = (options["remotePorts"] ?? options["ports"])?.text { hopPorts = ShareLink.portRanges(ports) }
                 hopInterval = duration(options["interval"]) ?? hopInterval
             case "":
                 continue
             default:
-                throw ImportError("Hysteria: маска «\(type)» не поддерживается ядром.")
+                throw ImportError(CoreText.f("Hysteria: маска «%@» не поддерживается ядром.", "\(type)"))
             }
         }
         if let quic = mask["quicParams"] {
@@ -357,7 +357,7 @@ public enum XrayImport {
         if let obfsType, !obfsType.isEmpty {
             if isV2 {
                 guard obfsType == "salamander" || obfsType == "gecko" else {
-                    throw ImportError("Hysteria2: обфускация «\(obfsType)» не поддерживается.")
+                    throw ImportError(CoreText.f("Hysteria2: обфускация «%@» не поддерживается.", "\(obfsType)"))
                 }
                 var object: [String: JSONValue] = ["type": .string(obfsType), "password": .string(obfsPassword ?? "")]
                 if obfsType == "gecko", let packetSize {
@@ -375,10 +375,10 @@ public enum XrayImport {
     // MARK: WireGuard
 
     static func wireguard(_ settings: JSONValue) throws -> JSONValue {
-        guard let key = settings["secretKey"]?.stringValue, !key.isEmpty else { throw ImportError("WireGuard: нет закрытого ключа.") }
+        guard let key = settings["secretKey"]?.stringValue, !key.isEmpty else { throw ImportError(CoreText.t("WireGuard: нет закрытого ключа.")) }
         guard let peer = settings["peers"]?.arrayValue?.first, let publicKey = peer["publicKey"]?.stringValue,
               let endpoint = peer["endpoint"]?.stringValue, let parts = LinkParts("wg://" + endpoint), let port = parts.port
-        else { throw ImportError("WireGuard: нет адреса или ключа сервера.") }
+        else { throw ImportError(CoreText.t("WireGuard: нет адреса или ключа сервера.")) }
         let addresses = (settings["address"]?.stringList ?? ["10.0.0.2/32"]).map { text in
             text.contains("/") ? text : text + (text.contains(":") ? "/128" : "/32")
         }

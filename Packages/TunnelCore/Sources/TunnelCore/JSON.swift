@@ -208,7 +208,7 @@ extension JSONValue: Codable {
 public struct JSONParseError: Error, CustomStringConvertible, Equatable {
     public let message: String
     public let offset: Int
-    public var description: String { "JSON: \(message) (байт \(offset))" }
+    public var description: String { CoreText.f("JSON: %@ (байт %@)", "\(message)", "\(offset)") }
 }
 
 public extension JSONValue {
@@ -238,7 +238,7 @@ private struct Parser {
     mutating func parseDocument() throws -> JSONValue {
         let value = try parseValue()
         skipTrivia()
-        guard index == bytes.count else { throw error("лишние данные после документа") }
+        guard index == bytes.count else { throw error(CoreText.t("лишние данные после документа")) }
         return value
     }
 
@@ -266,7 +266,7 @@ private struct Parser {
 
     mutating func parseValue() throws -> JSONValue {
         skipTrivia()
-        guard index < bytes.count else { throw error("неожиданный конец") }
+        guard index < bytes.count else { throw error(CoreText.t("неожиданный конец")) }
         switch bytes[index] {
         case 0x7B: return try parseObject()
         case 0x5B: return try parseArray()
@@ -281,7 +281,7 @@ private struct Parser {
     mutating func expect(_ word: String) throws {
         let expected = Array(word.utf8)
         guard index + expected.count <= bytes.count, Array(bytes[index ..< index + expected.count]) == expected else {
-            throw error("ожидалось \(word)")
+            throw error(CoreText.f("ожидалось %@", "\(word)"))
         }
         index += expected.count
     }
@@ -289,43 +289,43 @@ private struct Parser {
     mutating func parseObject() throws -> JSONValue {
         depth += 1
         defer { depth -= 1 }
-        guard depth < 200 else { throw error("слишком глубокая вложенность") }
+        guard depth < 200 else { throw error(CoreText.t("слишком глубокая вложенность")) }
         index += 1
         var result: [String: JSONValue] = [:]
         while true {
             skipTrivia()
-            guard index < bytes.count else { throw error("объект не закрыт") }
+            guard index < bytes.count else { throw error(CoreText.t("объект не закрыт")) }
             if bytes[index] == 0x7D { index += 1; return .object(result) }
-            guard bytes[index] == 0x22 else { throw error("ожидался ключ") }
+            guard bytes[index] == 0x22 else { throw error(CoreText.t("ожидался ключ")) }
             let key = try parseString()
             skipTrivia()
-            guard index < bytes.count, bytes[index] == 0x3A else { throw error("ожидалось двоеточие") }
+            guard index < bytes.count, bytes[index] == 0x3A else { throw error(CoreText.t("ожидалось двоеточие")) }
             index += 1
             result[key] = try parseValue()
             skipTrivia()
-            guard index < bytes.count else { throw error("объект не закрыт") }
+            guard index < bytes.count else { throw error(CoreText.t("объект не закрыт")) }
             if bytes[index] == 0x2C { index += 1; continue }
             if bytes[index] == 0x7D { index += 1; return .object(result) }
-            throw error("ожидалась запятая")
+            throw error(CoreText.t("ожидалась запятая"))
         }
     }
 
     mutating func parseArray() throws -> JSONValue {
         depth += 1
         defer { depth -= 1 }
-        guard depth < 200 else { throw error("слишком глубокая вложенность") }
+        guard depth < 200 else { throw error(CoreText.t("слишком глубокая вложенность")) }
         index += 1
         var result: [JSONValue] = []
         while true {
             skipTrivia()
-            guard index < bytes.count else { throw error("массив не закрыт") }
+            guard index < bytes.count else { throw error(CoreText.t("массив не закрыт")) }
             if bytes[index] == 0x5D { index += 1; return .array(result) }
             result.append(try parseValue())
             skipTrivia()
-            guard index < bytes.count else { throw error("массив не закрыт") }
+            guard index < bytes.count else { throw error(CoreText.t("массив не закрыт")) }
             if bytes[index] == 0x2C { index += 1; continue }
             if bytes[index] == 0x5D { index += 1; return .array(result) }
-            throw error("ожидалась запятая")
+            throw error(CoreText.t("ожидалась запятая"))
         }
     }
 
@@ -367,18 +367,18 @@ private struct Parser {
                     let scalar = Unicode.Scalar(unit) ?? Unicode.Scalar(0xFFFD)!
                     buffer.append(contentsOf: Array(String(Character(scalar)).utf8))
                 default:
-                    throw error("неизвестная экранирующая последовательность")
+                    throw error(CoreText.t("неизвестная экранирующая последовательность"))
                 }
                 continue
             }
             buffer.append(byte)
             index += 1
         }
-        throw error("строка не закрыта")
+        throw error(CoreText.t("строка не закрыта"))
     }
 
     mutating func parseHex4() throws -> UInt32 {
-        guard index + 4 <= bytes.count else { throw error("обрыв в \\u") }
+        guard index + 4 <= bytes.count else { throw error(CoreText.t("обрыв в \\u")) }
         var value: UInt32 = 0
         for _ in 0 ..< 4 {
             let byte = bytes[index]
@@ -387,7 +387,7 @@ private struct Parser {
             case 0x30 ... 0x39: digit = UInt32(byte - 0x30)
             case 0x41 ... 0x46: digit = UInt32(byte - 0x41 + 10)
             case 0x61 ... 0x66: digit = UInt32(byte - 0x61 + 10)
-            default: throw error("неверная цифра в \\u")
+            default: throw error(CoreText.t("неверная цифра в \\u"))
             }
             value = value * 16 + digit
             index += 1
@@ -410,10 +410,10 @@ private struct Parser {
                 break
             }
         }
-        guard index > start else { throw error("неожиданный символ") }
+        guard index > start else { throw error(CoreText.t("неожиданный символ")) }
         let literal = String(decoding: bytes[start ..< index], as: UTF8.self)
         if isInteger, let value = Int64(literal) { return .int(value) }
-        guard let value = Double(literal), value.isFinite else { throw error("неверное число") }
+        guard let value = Double(literal), value.isFinite else { throw error(CoreText.t("неверное число")) }
         return .double(value)
     }
 }

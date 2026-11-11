@@ -40,7 +40,7 @@ public enum ConfigBuilder {
 
     public static func build(subscription: Subscription, selected: String?, options: TunnelOptions) throws -> JSONValue {
         let nodes = subscription.nodes
-        guard !nodes.isEmpty else { throw ImportError("В подписке «\(subscription.name)» нет серверов.") }
+        guard !nodes.isEmpty else { throw ImportError(CoreText.f("В подписке «%@» нет серверов.", "\(subscription.name)")) }
 
         var outbounds: [JSONValue] = []
         var endpoints: [JSONValue] = []
@@ -51,13 +51,13 @@ public enum ConfigBuilder {
 
         func add(_ object: JSONValue) throws {
             guard let tag = object["tag"]?.stringValue, !tag.isEmpty, let type = object["type"]?.stringValue else {
-                throw ImportError("У сервера нет тега или типа: конфигурация повреждена.")
+                throw ImportError(CoreText.t("У сервера нет тега или типа: конфигурация повреждена."))
             }
-            guard !TagAllocator.reserved.contains(tag) else { throw ImportError("Имя сервера «\(tag)» занято самой конфигурацией.") }
+            guard !TagAllocator.reserved.contains(tag) else { throw ImportError(CoreText.f("Имя сервера «%@» занято самой конфигурацией.", "\(tag)")) }
             if let existing = added[tag] {
                 // 1.x kept every outbound once, so two servers may share a supporting one.
                 if existing == object { return }
-                throw ImportError("Два сервера с одним именем «\(tag)».")
+                throw ImportError(CoreText.f("Два сервера с одним именем «%@».", "\(tag)"))
             }
             added[tag] = object
             if ServerNode.endpointTypes.contains(type.lowercased()) {
@@ -125,7 +125,7 @@ public enum ConfigBuilder {
             selectable.append(node.id)
             if !group { leaves.append(node.id) }
         }
-        guard !selectable.isEmpty else { throw ImportError("В подписке «\(subscription.name)» нет рабочих серверов.") }
+        guard !selectable.isEmpty else { throw ImportError(CoreText.f("В подписке «%@» нет рабочих серверов.", "\(subscription.name)")) }
 
         let chosen = selected.flatMap { id in selectable.contains(id) ? id : nil } ?? selectable[0]
         let hasAuto = leaves.count > 1

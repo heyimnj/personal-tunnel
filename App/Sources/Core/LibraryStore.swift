@@ -88,7 +88,7 @@ final class LibraryStore {
     func writeActiveConfig() throws -> String {
         let current = library.value
         guard let subscription = current.activeSubscription else {
-            throw ImportError("Сначала добавьте сервер или подписку.")
+            throw ImportError(L("Сначала добавьте сервер или подписку."))
         }
         let config = try ConfigBuilder.build(subscription: subscription, selected: current.selectedNodeID(in: subscription), options: Prefs.tunnelOptions)
         let text = config.serialized()

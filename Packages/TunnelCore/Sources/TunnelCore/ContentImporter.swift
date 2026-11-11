@@ -115,7 +115,7 @@ public struct ImportResult: Equatable {
     public var summary: String? {
         guard !issues.isEmpty else { return nil }
         let reasons = Array(Set(issues.map(\.reason))).sorted().prefix(3).joined(separator: " ")
-        return "Добавлено \(nodes.count) из \(nodes.count + issues.count). Пропущено: \(issues.count). \(reasons)"
+        return CoreText.f("Добавлено %@ из %@. Пропущено: %@. %@", "\(nodes.count)", "\(nodes.count + issues.count)", "\(issues.count)", "\(reasons)")
     }
 }
 
@@ -128,14 +128,14 @@ public enum ContentImporter {
 
     private static func parse(_ raw: String, depth: Int) throws -> ImportResult {
         let text = raw.trimmingCharacters(in: CharacterSet.whitespacesAndNewlines.union(CharacterSet(charactersIn: "\u{FEFF}")))
-        guard !text.isEmpty else { throw ImportError("Пустой ответ: серверов нет.") }
+        guard !text.isEmpty else { throw ImportError(CoreText.t("Пустой ответ: серверов нет.")) }
 
         if text.hasPrefix("{") || text.hasPrefix("[") {
             let document: JSONValue
             do {
                 document = try JSONValue.parse(text)
             } catch {
-                throw ImportError("Файл похож на JSON, но прочитать его не удалось: \(error)")
+                throw ImportError(CoreText.f("Файл похож на JSON, но прочитать его не удалось: %@", "\(error)"))
             }
             if XrayImport.isXray(document) {
                 let (nodes, issues) = XrayImport.parse(document)
@@ -144,18 +144,18 @@ public enum ContentImporter {
             if SingBoxImport.isSingBox(document) {
                 return try finish(ImportResult(nodes: SingBoxImport.parse(document), issues: [], format: .singBox, suggestedName: nil))
             }
-            throw ImportError("В JSON нет серверов: это не конфигурация Xray или sing-box.")
+            throw ImportError(CoreText.t("В JSON нет серверов: это не конфигурация Xray или sing-box."))
         }
 
         let lower = text.prefix(400).lowercased()
         if lower.hasPrefix("<!doctype") || lower.hasPrefix("<html") || lower.contains("<head>") {
-            throw ImportError("Провайдер вернул веб-страницу вместо подписки. Проверьте ссылку.")
+            throw ImportError(CoreText.t("Провайдер вернул веб-страницу вместо подписки. Проверьте ссылку."))
         }
         if lower.contains("proxies:") || lower.contains("proxy-groups:") {
-            throw ImportError("Это конфигурация Clash (YAML). В этой версии она не поддерживается: используйте ссылку подписки или ссылки серверов.")
+            throw ImportError(CoreText.t("Это конфигурация Clash (YAML). В этой версии она не поддерживается: используйте ссылку подписки или ссылки серверов."))
         }
         if lower.contains("[interface]"), lower.contains("privatekey") {
-            throw ImportError("Это файл WireGuard (.conf). В этой версии он не поддерживается: добавьте сервер ссылкой wireguard://.")
+            throw ImportError(CoreText.t("Это файл WireGuard (.conf). В этой версии он не поддерживается: добавьте сервер ссылкой wireguard://."))
         }
 
         if text.contains("://") {
@@ -167,7 +167,7 @@ public enum ContentImporter {
                 guard ShareLink.isLink(link) else {
                     if link.contains("://"), !link.lowercased().hasPrefix("http") {
                         let scheme = link.components(separatedBy: "://").first ?? ""
-                        issues.append(ImportIssue(name: String(link.prefix(24)), reason: "Ссылки «\(scheme)://» не поддерживаются."))
+                        issues.append(ImportIssue(name: String(link.prefix(24)), reason: CoreText.f("Ссылки «%@://» не поддерживаются.", "\(scheme)")))
                     }
                     continue
                 }
@@ -187,7 +187,7 @@ public enum ContentImporter {
         if depth == 0, let decoded = TextCoding.decodeBase64String(text), !decoded.isEmpty {
             return try parse(decoded, depth: 1)
         }
-        throw ImportError("Не удалось распознать содержимое: это не ссылки серверов, не подписка и не JSON.")
+        throw ImportError(CoreText.t("Не удалось распознать содержимое: это не ссылки серверов, не подписка и не JSON."))
     }
 
     /// Words panels put into the names of fake servers that carry a message.
@@ -199,9 +199,9 @@ public enum ContentImporter {
     private static func finish(_ result: ImportResult) throws -> ImportResult {
         guard !result.nodes.isEmpty else {
             if let issue = result.issues.first {
-                throw ImportError(result.issues.count == 1 ? issue.reason : "Ни один сервер не подошёл. \(issue.reason)")
+                throw ImportError(result.issues.count == 1 ? issue.reason : CoreText.f("Ни один сервер не подошёл. %@", "\(issue.reason)"))
             }
-            throw ImportError("В содержимом нет серверов.")
+            throw ImportError(CoreText.t("В содержимом нет серверов."))
         }
         // Panels answer an unknown or over-limit device with servers that point
         // nowhere and whose names are the message.
@@ -214,7 +214,7 @@ public enum ContentImporter {
             let message = result.nodes.map(\.name).joined(separator: " · ")
             let mentionsReason = placeholderWords.contains { message.lowercased().contains($0) }
             if mentionsReason || result.nodes.allSatisfy({ ["0.0.0.0", "127.0.0.1", "localhost"].contains($0.outbound["server"]?.stringValue?.lowercased() ?? "") }) {
-                throw ImportError("Провайдер вернул сообщение вместо серверов: «\(message)». Проверьте лимит устройств и срок подписки.")
+                throw ImportError(CoreText.f("Провайдер вернул сообщение вместо серверов: «%@». Проверьте лимит устройств и срок подписки.", "\(message)"))
             }
         }
         return result

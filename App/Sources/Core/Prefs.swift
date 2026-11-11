@@ -5,7 +5,7 @@ enum InterfaceStyle: String {
     case classic
     case minimal = "modern"
 
-    var title: String { self == .classic ? "Классика" : "Минималистичный" }
+    var title: String { self == .classic ? L("Классика") : L("Минималистичный") }
 }
 
 /// Settings kept under the 1.x keys, so an update keeps the user's choices.
@@ -27,6 +27,16 @@ enum Prefs {
     static var style: InterfaceStyle {
         get { InterfaceStyle(rawValue: defaults.string(forKey: "personal.appearance") ?? "classic") ?? .classic }
         set { defaults.set(newValue.rawValue, forKey: "personal.appearance"); appearanceChanged.fire() }
+    }
+
+    /// Interface language: `system`, `ru` or `en` (1.x stored the same key).
+    static var language: String {
+        get { defaults.string(forKey: "personal.language") ?? "system" }
+        set {
+            defaults.set(newValue, forKey: "personal.language")
+            Language.apply()
+            appearanceChanged.fire()
+        }
     }
 
     /// `system`, `light` or `dark`.

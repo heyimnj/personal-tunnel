@@ -57,11 +57,11 @@ public struct StreamSpec: Equatable {
         if !protocols.isEmpty, !isReality { tls["alpn"] = JSONValue(protocols) }
         if isReality {
             guard let key = realityPublicKey, StreamSpec.isRealityKey(key) else {
-                throw ImportError("REALITY: в ссылке нет открытого ключа (pbk) или он неверный.")
+                throw ImportError(CoreText.t("REALITY: в ссылке нет открытого ключа (pbk) или он неверный."))
             }
             let shortID = realityShortID ?? ""
             guard shortID.count <= 16, shortID.count % 2 == 0, shortID.allSatisfy(\.isHexDigit) else {
-                throw ImportError("REALITY: неверный short ID.")
+                throw ImportError(CoreText.t("REALITY: неверный short ID."))
             }
             tls["reality"] = ["enabled": true, "public_key": .string(key), "short_id": .string(shortID)]
             // REALITY only works through uTLS.
@@ -145,9 +145,9 @@ public struct StreamSpec: Equatable {
         case "quic":
             return ["type": "quic"]
         case "kcp", "mkcp":
-            throw ImportError("Транспорт mKCP не поддерживается ядром sing-box.")
+            throw ImportError(CoreText.t("Транспорт mKCP не поддерживается ядром sing-box."))
         default:
-            throw ImportError("Неизвестный транспорт «\(network)».")
+            throw ImportError(CoreText.f("Неизвестный транспорт «%@».", "\(network)"))
         }
     }
 }

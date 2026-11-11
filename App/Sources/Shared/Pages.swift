@@ -10,8 +10,10 @@ final class DiagnosticsViewController: UIViewController {
     private let proxyDetail = UILabel(font: Theme.font(14), color: .secondaryLabel, lines: 0)
     private let internet = UILabel(font: Theme.font(20, .semibold), lines: 0)
     private let internetDetail = UILabel(font: Theme.font(14), color: .secondaryLabel, lines: 0)
-    private var proxyResult = "Не проверено"
-    private var internetResult = "Не проверено"
+    private var proxyResult = L("Не проверено")
+    private var internetResult = L("Не проверено")
+    private var proxyPassed = false
+    private var internetPassed = false
     private var checking = false
 
     override func viewDidLoad() {
@@ -32,17 +34,17 @@ final class DiagnosticsViewController: UIViewController {
         }
         func note(_ text: String) -> UILabel { UILabel(text, font: Theme.font(14), color: .secondaryLabel, lines: 0) }
         let stack = UIStackView(.vertical, spacing: 14, alignment: .fill, [
-            UILabel("СИСТЕМА", font: Theme.font(11, .medium), color: .secondaryLabel),
-            UILabel("Диагностика", font: Theme.font(26, .bold)),
-            note("Результаты измерений, а не состояние переключателя"),
+            UILabel(L("СИСТЕМА"), font: Theme.font(11, .medium), color: .secondaryLabel),
+            UILabel(L("Диагностика"), font: Theme.font(26, .bold)),
+            note(L("Результаты измерений, а не состояние переключателя")),
             tunnel, proxy, proxyDetail, internet, internetDetail,
-            note("При раздельной маршрутизации успешный системный запрос не доказывает работу прокси. DNS-утечки этой проверкой не измеряются."),
-            action("Проверить соединение", #selector(check)),
-            note("Проверка обращается к www.gstatic.com/generate_204: через выбранный outbound и через системный маршрут; таймаут до 8 секунд."),
-            action("Открыть журнал службы", #selector(openLog)),
-            action("Скопировать отчёт", #selector(copyReport)),
-            note("REALITY: проверьте SNI, ключ, short ID, время и ограничения версии Xray на сервере. Журнал показывает конкретную причину отказа."),
-            note("TLS: сертификат, SNI и доступность маскировочного сайта. DNS: резолвер и маршрут к нему. Транспорт: соответствие TCP/WS/gRPC и пути серверу."),
+            note(L("При раздельной маршрутизации успешный системный запрос не доказывает работу прокси. DNS-утечки этой проверкой не измеряются.")),
+            action(L("Проверить соединение"), #selector(check)),
+            note(L("Проверка обращается к www.gstatic.com/generate_204: через выбранный outbound и через системный маршрут; таймаут до 8 секунд.")),
+            action(L("Открыть журнал службы"), #selector(openLog)),
+            action(L("Скопировать отчёт"), #selector(copyReport)),
+            note(L("REALITY: проверьте SNI, ключ, short ID, время и ограничения версии Xray на сервере. Журнал показывает конкретную причину отказа.")),
+            note(L("TLS: сертификат, SNI и доступность маскировочного сайта. DNS: резолвер и маршрут к нему. Транспорт: соответствие TCP/WS/gRPC и пути серверу.")),
         ])
         stack.setCustomSpacing(4, after: stack.arrangedSubviews[0])
         stack.setCustomSpacing(4, after: proxy)
@@ -59,28 +61,32 @@ final class DiagnosticsViewController: UIViewController {
     }
 
     private func show() {
-        tunnel.text = App.shared.tunnel.state.value.isOn ? "Туннель запущен" : "Туннель остановлен"
-        proxy.text = "Прокси: " + (proxyResult.hasPrefix("Не") ? proxyResult : "проверено")
+        tunnel.text = App.shared.tunnel.state.value.isOn ? L("Туннель запущен") : L("Туннель остановлен")
+        proxy.text = L("Прокси: ") + (proxyPassed ? L("проверено") : proxyResult)
         proxyDetail.text = proxyResult
-        internet.text = "Интернет · системный маршрут: " + (internetResult.hasPrefix("Не") ? internetResult : "проверено")
+        internet.text = L("Интернет · системный маршрут: ") + (internetPassed ? L("проверено") : internetResult)
         internetDetail.text = internetResult
     }
 
     @objc private func check() {
         guard !checking else { return }
         checking = true
-        proxyResult = "Проверяется…"
-        internetResult = "Проверяется…"
+        proxyResult = L("Проверяется…")
+        internetResult = L("Проверяется…")
+        proxyPassed = false
+        internetPassed = false
         show()
         Task { @MainActor in
             let probes = NetworkProbes()
             if App.shared.tunnel.state.value == .connected, let node = App.shared.library.activeNode {
                 switch await LatencyRunner.deadline(seconds: 9, { await probes.url(tag: node.id, link: ConfigBuilder.probeURL, timeoutMs: 8000) }) {
-                case let .delay(value): self.proxyResult = "Ответ за \(value) мс через «\(node.name)»"
-                case let .failed(reason): self.proxyResult = "Не отвечает: \(reason.title)"
+                case let .delay(value):
+                    self.proxyResult = Lf("Ответ за %@ мс через «%@»", "\(value)", "\(node.name)")
+                    self.proxyPassed = true
+                case let .failed(reason): self.proxyResult = Lf("Не отвечает: %@", "\(reason.title)")
                 }
             } else {
-                self.proxyResult = "Не проверено: туннель не запущен"
+                self.proxyResult = L("Не проверено: туннель не запущен")
             }
             var request = URLRequest(url: URL(string: ConfigBuilder.probeURL)!, cachePolicy: .reloadIgnoringLocalCacheData, timeoutInterval: 8)
             request.httpMethod = "HEAD"
@@ -88,9 +94,10 @@ final class DiagnosticsViewController: UIViewController {
             do {
                 let (_, response) = try await URLSession.shared.data(for: request)
                 let code = (response as? HTTPURLResponse)?.statusCode ?? 0
-                self.internetResult = "HTTP \(code) за \(Int(Date().timeIntervalSince(start) * 1000)) мс"
+                self.internetResult = Lf("HTTP %@ за %@ мс", "\(code)", "\(Int(Date().timeIntervalSince(start) * 1000))")
+                self.internetPassed = true
             } catch {
-                self.internetResult = "Не отвечает: \(error.localizedDescription)"
+                self.internetResult = Lf("Не отвечает: %@", "\(error.localizedDescription)")
             }
             self.checking = false
             self.show()
@@ -104,8 +111,8 @@ final class DiagnosticsViewController: UIViewController {
     @objc private func copyReport() {
         let library = App.shared.library
         let report = [
-            "Personal Tunnel \(AboutViewController.version)", tunnel.text ?? "", "Прокси: \(proxyResult)", "Интернет: \(internetResult)",
-            "Протокол: \(library.activeNode?.facts.summary ?? "—")", "Режим пинга: \(Prefs.pingMode)",
+            "Personal Tunnel \(AboutViewController.version)", tunnel.text ?? "", Lf("Прокси: %@", "\(proxyResult)"), Lf("Интернет: %@", "\(internetResult)"),
+            Lf("Протокол: %@", "\(library.activeNode?.facts.summary ?? "—")"), Lf("Режим пинга: %@", "\(Prefs.pingMode)"),
         ].joined(separator: "\n")
         UIPasteboard.general.string = Redactor.redact(report)
         Haptics.result(true)
@@ -126,7 +133,7 @@ final class ServiceLogViewController: UIViewController, UITableViewDataSource, U
 
     override func viewDidLoad() {
         super.viewDidLoad()
-        title = "Журнал"
+        title = L("Журнал")
         navigationItem.largeTitleDisplayMode = .never
         view.backgroundColor = Theme.background
         func tool(_ symbol: String, _ selector: Selector?) -> UIButton {
@@ -151,12 +158,12 @@ final class ServiceLogViewController: UIViewController, UITableViewDataSource, U
         filter.menu = UIMenu(children: [
             UIDeferredMenuElement.uncached { [weak self] done in
                 let current = self?.minimumLevel ?? 7
-                done([("Все", Int32(7)), ("INFO и важнее", 4), ("WARN и важнее", 3), ("Только ошибки", 2)].map { title, level in
+                done([(L("Все"), Int32(7)), (L("INFO и важнее"), 4), (L("WARN и важнее"), 3), (L("Только ошибки"), 2)].map { title, level in
                     UIAction(title: title, state: level == current ? .on : .off) { _ in
                         self?.minimumLevel = level
                         self?.refilter()
                     }
-                } + [UIAction(title: "Очистить журнал", attributes: .destructive) { _ in App.shared.core.clearLogs() }])
+                } + [UIAction(title: L("Очистить журнал"), attributes: .destructive) { _ in App.shared.core.clearLogs() }])
             },
         ])
         let bar = UIStackView(.horizontal, spacing: 12, alignment: .center, [dot, live, UIView(), tool("magnifyingglass", #selector(toggleSearch)), pause, filter])
@@ -168,7 +175,7 @@ final class ServiceLogViewController: UIViewController, UITableViewDataSource, U
         bar.pin(to: panel, insets: UIEdgeInsets(top: 14, left: 24, bottom: 14, right: 16))
         let caption = UIStackView(.horizontal, spacing: 8, alignment: .center, [UILabel("SERVICE.LOG", font: Theme.font(20, .semibold)), UIView(), state])
         search.searchBarStyle = .minimal
-        search.placeholder = "Поиск"
+        search.placeholder = L("Поиск")
         search.delegate = self
         search.isHidden = true
         table.dataSource = self
@@ -252,7 +259,7 @@ final class ServerOrderViewController: UITableViewController {
 
     init() {
         super.init(style: .plain)
-        title = "Порядок серверов"
+        title = L("Порядок серверов")
     }
 
     @available(*, unavailable)
@@ -274,8 +281,8 @@ final class ServerOrderViewController: UITableViewController {
             Prefs.arrangement = next
             self?.reload()
         }, for: .valueChanged)
-        let row = UIStackView(.horizontal, spacing: 8, alignment: .center, [UILabel("Сортировать по имени", font: Theme.font(17)), UIView(), toggle])
-        let note = UILabel("Закреплённые серверы остаются сверху. Ручной порядок сохраняется при выборе сервера. Перетаскивание включает ручной порядок.", font: Theme.font(13), color: .secondaryLabel, lines: 0)
+        let row = UIStackView(.horizontal, spacing: 8, alignment: .center, [UILabel(L("Сортировать по имени"), font: Theme.font(17)), UIView(), toggle])
+        let note = UILabel(L("Закреплённые серверы остаются сверху. Ручной порядок сохраняется при выборе сервера. Перетаскивание включает ручной порядок."), font: Theme.font(13), color: .secondaryLabel, lines: 0)
         let header = UIStackView(.vertical, spacing: 12, alignment: .fill, [row, note])
         header.isLayoutMarginsRelativeArrangement = true
         header.layoutMargins = UIEdgeInsets(top: 8, left: 16, bottom: 12, right: 16)
@@ -304,7 +311,7 @@ final class ServerOrderViewController: UITableViewController {
 
     override func numberOfSections(in _: UITableView) -> Int { 1 + groups.count }
     override func tableView(_: UITableView, numberOfRowsInSection section: Int) -> Int { section == 0 ? subscriptions.count : groups[section - 1].nodes.count }
-    override func tableView(_: UITableView, titleForHeaderInSection section: Int) -> String? { section == 0 ? "Подписки" : groups[section - 1].name }
+    override func tableView(_: UITableView, titleForHeaderInSection section: Int) -> String? { section == 0 ? L("Подписки") : groups[section - 1].name }
 
     private func key(_ path: IndexPath) -> (key: String, title: String) {
         if path.section == 0 {
@@ -372,31 +379,31 @@ enum AddServerFlow {
     private static let picker = FilePicker()
 
     static func present(from host: UIViewController) {
-        let sheet = UIAlertController(title: "Добавить сервер или подписку", message: nil, preferredStyle: .actionSheet)
-        sheet.addAction(UIAlertAction(title: "Вставить из буфера обмена", style: .default) { _ in
+        let sheet = UIAlertController(title: L("Добавить сервер или подписку"), message: nil, preferredStyle: .actionSheet)
+        sheet.addAction(UIAlertAction(title: L("Вставить из буфера обмена"), style: .default) { _ in
             guard let text = UIPasteboard.general.string, !text.isEmpty else {
-                App.shared.notice.value = "Буфер обмена пуст."
+                App.shared.notice.value = L("Буфер обмена пуст.")
                 return
             }
             add(text, from: host)
         })
-        sheet.addAction(UIAlertAction(title: "Ввести ссылку или адрес подписки", style: .default) { _ in
-            let alert = UIAlertController(title: "Ссылка", message: "Адрес подписки (https://…) или ссылка сервера (vless://, ss://, hysteria2://…)", preferredStyle: .alert)
+        sheet.addAction(UIAlertAction(title: L("Ввести ссылку или адрес подписки"), style: .default) { _ in
+            let alert = UIAlertController(title: L("Ссылка"), message: L("Адрес подписки (https://…) или ссылка сервера (vless://, ss://, hysteria2://…)"), preferredStyle: .alert)
             alert.addTextField { $0.placeholder = "https://"; $0.autocapitalizationType = .none; $0.autocorrectionType = .no; $0.keyboardType = .URL }
-            alert.addAction(UIAlertAction(title: "Отмена", style: .cancel))
-            alert.addAction(UIAlertAction(title: "Добавить", style: .default) { _ in add(alert.textFields?.first?.text ?? "", from: host) })
+            alert.addAction(UIAlertAction(title: L("Отмена"), style: .cancel))
+            alert.addAction(UIAlertAction(title: L("Добавить"), style: .default) { _ in add(alert.textFields?.first?.text ?? "", from: host) })
             host.present(alert, animated: true)
         })
-        sheet.addAction(UIAlertAction(title: "Выбрать файл", style: .default) { _ in
+        sheet.addAction(UIAlertAction(title: L("Выбрать файл"), style: .default) { _ in
             picker.pick(from: host) { text in add(text, from: host) }
         })
-        sheet.addAction(UIAlertAction(title: "Отмена", style: .cancel))
+        sheet.addAction(UIAlertAction(title: L("Отмена"), style: .cancel))
         sheet.popoverPresentationController?.sourceView = host.view
         host.present(sheet, animated: true)
     }
 
     private static func add(_ text: String, from host: UIViewController) {
-        let progress = UIAlertController(title: nil, message: "Добавление…", preferredStyle: .alert)
+        let progress = UIAlertController(title: nil, message: L("Добавление…"), preferredStyle: .alert)
         host.present(progress, animated: true)
         App.shared.add(text: text) { message in
             progress.dismiss(animated: true) {
@@ -425,7 +432,7 @@ final class FilePicker: NSObject, UIDocumentPickerDelegate {
 
 /// «Управление подписками».
 final class SubscriptionsViewController: FormViewController {
-    init() { super.init(title: "Управление подписками") }
+    init() { super.init(title: L("Управление подписками")) }
 
     override func viewDidLoad() {
         super.viewDidLoad()
@@ -434,42 +441,42 @@ final class SubscriptionsViewController: FormViewController {
 
     override func build() -> [FormSection] {
         var sections = [FormSection([
-            .button(title: "Добавить сервер или подписку", destructive: false) { [weak self] in
+            .button(title: L("Добавить сервер или подписку"), destructive: false) { [weak self] in
                 if let self { AddServerFlow.present(from: self) }
             },
-            .button(title: "Обновить подписки", destructive: false) { App.shared.refreshAll() },
+            .button(title: L("Обновить подписки"), destructive: false) { App.shared.refreshAll() },
         ])]
         // Subscriptions without servers are not shown (1.x left empty placeholders behind).
         for subscription in App.shared.library.subscriptions where !subscription.nodes.isEmpty {
             var rows: [FormRow] = [
-                .value(title: Format.plural(subscription.nodes.count, "сервер", "сервера", "серверов"), detail: { "обновлена " + Format.ago(subscription.updatedAt) }),
+                .value(title: Format.plural(subscription.nodes.count, L("сервер"), L("сервера"), L("серверов")), detail: { L("обновлена ") + Format.ago(subscription.updatedAt) }),
             ]
             if let expires = subscription.info.expiresAt {
                 let formatter = DateFormatter()
-                formatter.locale = Locale(identifier: "ru_RU")
+                formatter.locale = Language.locale
                 formatter.dateStyle = .medium
-                rows.append(.value(title: "Действует до", detail: { formatter.string(from: expires) }))
+                rows.append(.value(title: L("Действует до"), detail: { formatter.string(from: expires) }))
             }
             if let used = subscription.info.usedBytes {
-                rows.append(.value(title: "Трафик", detail: {
-                    Format.bytes(used) + (subscription.info.isLimited ? " из " + Format.bytes(subscription.info.totalBytes ?? 0) : " · без лимита")
+                rows.append(.value(title: L("Трафик"), detail: {
+                    Format.bytes(used) + (subscription.info.isLimited ? L(" из ") + Format.bytes(subscription.info.totalBytes ?? 0) : L(" · без лимита"))
                 }))
             }
             let id = subscription.id
             if subscription.isRemote {
-                rows.append(.toggle(title: "Отправлять HWID", get: { App.shared.library.subscription(id)?.sendsDeviceIdentity ?? true }, set: { value in
+                rows.append(.toggle(title: L("Отправлять HWID"), get: { App.shared.library.subscription(id)?.sendsDeviceIdentity ?? true }, set: { value in
                     App.shared.store.update { library in
                         guard var current = library.subscription(id) else { return }
                         current.sendsDeviceIdentity = value
                         library.replace(current)
                     }
                 }))
-                rows.append(.button(title: "Обновить", destructive: false) { App.shared.refresh(id) })
+                rows.append(.button(title: L("Обновить"), destructive: false) { App.shared.refresh(id) })
             }
-            rows.append(.button(title: "Удалить", destructive: true) { [weak self] in
-                let alert = UIAlertController(title: nil, message: "Удалить «\(subscription.name)»?", preferredStyle: .alert)
-                alert.addAction(UIAlertAction(title: "Отмена", style: .cancel))
-                alert.addAction(UIAlertAction(title: "Удалить", style: .destructive) { _ in App.shared.delete(subscription: id) })
+            rows.append(.button(title: L("Удалить"), destructive: true) { [weak self] in
+                let alert = UIAlertController(title: nil, message: Lf("Удалить «%@»?", "\(subscription.name)"), preferredStyle: .alert)
+                alert.addAction(UIAlertAction(title: L("Отмена"), style: .cancel))
+                alert.addAction(UIAlertAction(title: L("Удалить"), style: .destructive) { _ in App.shared.delete(subscription: id) })
                 self?.present(alert, animated: true)
             })
             sections.append(FormSection(subscription.name, footer: subscription.warnings.first, rows))
@@ -482,12 +489,12 @@ final class SubscriptionsViewController: FormViewController {
 final class BackupViewController: FormViewController {
     private let picker = FilePicker()
 
-    init() { super.init(title: "Резервные копии") }
+    init() { super.init(title: L("Резервные копии")) }
 
     override func build() -> [FormSection] {
-        [FormSection(footer: "Копия содержит адреса подписок и ключи серверов. Храните её как пароль.", [
-            .button(title: "Сохранить копию в Файлы", destructive: false) { [weak self] in self?.export() },
-            .button(title: "Восстановить из файла", destructive: false) { [weak self] in self?.restore() },
+        [FormSection(footer: L("Копия содержит адреса подписок и ключи серверов. Храните её как пароль."), [
+            .button(title: L("Сохранить копию в Файлы"), destructive: false) { [weak self] in self?.export() },
+            .button(title: L("Восстановить из файла"), destructive: false) { [weak self] in self?.restore() },
         ])]
     }
 
@@ -504,23 +511,23 @@ final class BackupViewController: FormViewController {
         picker.pick(from: self) { text in
             if let library = try? JSONDecoder().decode(Library.self, from: Data(text.utf8)), !library.subscriptions.isEmpty {
                 App.shared.store.update { $0 = library }
-                App.shared.notice.value = "Восстановлено подписок: \(library.subscriptions.count)."
+                App.shared.notice.value = Lf("Восстановлено подписок: %@.", "\(library.subscriptions.count)")
             } else {
                 // Not a 2.0 backup: try it as servers or a configuration.
-                App.shared.add(text: text) { message in App.shared.notice.value = message ?? "Серверы из файла добавлены." }
+                App.shared.add(text: text) { message in App.shared.notice.value = message ?? L("Серверы из файла добавлены.") }
             }
         }
     }
 }
 
 final class NetworkActivityViewController: FormViewController {
-    init() { super.init(title: "Сетевая активность") }
+    init() { super.init(title: L("Сетевая активность")) }
 
     override func build() -> [FormSection] {
-        [FormSection(footer: "У приложения нет своего сервера. Само оно выходит в сеть только чтобы обновить подписки, проверить соединение по кнопке и измерить задержку серверов.", [
-            .value(title: "Обновление подписок", detail: { "по запросу" }),
-            .value(title: "Проверка соединения", detail: { "www.gstatic.com" }),
-            .value(title: "Пинг серверов", detail: { "TCP к серверу / через VPN" }),
+        [FormSection(footer: L("У приложения нет своего сервера. Само оно выходит в сеть только чтобы обновить подписки, проверить соединение по кнопке и измерить задержку серверов."), [
+            .value(title: L("Обновление подписок"), detail: { L("по запросу") }),
+            .value(title: L("Проверка соединения"), detail: { "www.gstatic.com" }),
+            .value(title: L("Пинг серверов"), detail: { L("TCP к серверу / через VPN") }),
             .value(title: "HWID", detail: { String(DeviceIdentity.hwid.prefix(4)) + "…" + String(DeviceIdentity.hwid.suffix(4)) }),
         ])]
     }
@@ -532,14 +539,14 @@ final class AboutViewController: FormViewController {
         return "\(info?["CFBundleShortVersionString"] as? String ?? "2.0") (\(info?["CFBundleVersion"] as? String ?? ""))"
     }
 
-    init() { super.init(title: "О приложении") }
+    init() { super.init(title: L("О приложении")) }
 
     override func build() -> [FormSection] {
-        [FormSection(footer: "Personal Tunnel — личный VPN-клиент на ядре sing-box (форк sing-box-lx). Лицензия GPL-3.0-or-later.", [
-            .value(title: "Версия", detail: { AboutViewController.version }),
-            .value(title: "Ядро", detail: { CoreInfo.version }),
-            .value(title: "Коммит", detail: { (Bundle.main.object(forInfoDictionaryKey: "PersonalSourceCommit") as? String).flatMap { $0.isEmpty ? nil : $0 } ?? "—" }),
-            .value(title: "Группа", detail: { AppGroup.identifier }),
+        [FormSection(footer: L("Personal Tunnel — личный VPN-клиент на ядре sing-box (форк sing-box-lx). Лицензия GPL-3.0-or-later."), [
+            .value(title: L("Версия"), detail: { AboutViewController.version }),
+            .value(title: L("Ядро"), detail: { CoreInfo.version }),
+            .value(title: L("Коммит"), detail: { (Bundle.main.object(forInfoDictionaryKey: "PersonalSourceCommit") as? String).flatMap { $0.isEmpty ? nil : $0 } ?? "—" }),
+            .value(title: L("Группа"), detail: { AppGroup.identifier }),
         ])]
     }
 }

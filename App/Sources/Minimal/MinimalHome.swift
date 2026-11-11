@@ -55,7 +55,7 @@ final class MinimalHomeViewController: UIViewController, UIScrollViewDelegate, U
             let control = TapControl()
             control.addSubview(dot)
             control.onTap = { [weak self] in self?.go(to: index, animated: true) }
-            control.accessibilityLabel = index == 0 ? "Подключение" : "Аналитика"
+            control.accessibilityLabel = index == 0 ? L("Подключение") : L("Аналитика")
             // As in 1.5.0 the dots show only while the page moves.
             control.alpha = 0
             control.isUserInteractionEnabled = false
@@ -300,7 +300,7 @@ final class MinimalConnectionView: UIView {
             view.isUserInteractionEnabled = false
             button.addSubview(view)
         }
-        button.accessibilityLabel = "Подключение"
+        button.accessibilityLabel = L("Подключение")
         button.onTap = { [weak self] in
             // Without a subscription the button leads to the server panel, as in 1.5.0.
             if App.shared.library.activeSubscription == nil { self?.onChooseServer?() } else { App.shared.toggleConnection() }
@@ -380,14 +380,14 @@ final class MinimalConnectionView: UIView {
 
     private func show(_ state: TunnelState) {
         switch state {
-        case .connected: status.text = "Подключено"; dot.backgroundColor = Theme.connected
-        case .connecting: status.text = "Подключение…"; dot.backgroundColor = .systemOrange
-        case .disconnecting: status.text = "Отключение…"; dot.backgroundColor = .systemOrange
-        case .reasserting: status.text = "Смена сервера…"; dot.backgroundColor = .systemOrange
-        case .disconnected: status.text = "Не подключено"; dot.backgroundColor = UIColor.systemGray.withAlphaComponent(0.8)
+        case .connected: status.text = L("Подключено"); dot.backgroundColor = Theme.connected
+        case .connecting: status.text = L("Подключение…"); dot.backgroundColor = .systemOrange
+        case .disconnecting: status.text = L("Отключение…"); dot.backgroundColor = .systemOrange
+        case .reasserting: status.text = L("Смена сервера…"); dot.backgroundColor = .systemOrange
+        case .disconnected: status.text = L("Не подключено"); dot.backgroundColor = UIColor.systemGray.withAlphaComponent(0.8)
         }
         if state.isBusy { spinner.startAnimating() } else { spinner.stopAnimating() }
-        button.accessibilityLabel = state.isOn ? "Отключить" : "Подключить"
+        button.accessibilityLabel = state.isOn ? L("Отключить") : L("Подключить")
         button.accessibilityValue = status.text
         setNeedsLayout()
     }
@@ -395,7 +395,7 @@ final class MinimalConnectionView: UIView {
     private func showServer() {
         let library = App.shared.library
         guard let subscription = library.activeSubscription, let node = library.activeNode else {
-            name.text = "Выбрать сервер"
+            name.text = L("Выбрать сервер")
             flag.isHidden = true
             mark.isHidden = false
             mark.image = UIImage(systemName: "plus.circle.fill")
@@ -403,7 +403,7 @@ final class MinimalConnectionView: UIView {
             return
         }
         let label = App.shared.store.label(of: node, in: subscription)
-        name.text = Prefs.autoSelect ? "Автовыбор" : label.text
+        name.text = Prefs.autoSelect ? L("Автовыбор") : label.text
         let emoji = Theme.flag(label.countryCode)
         flag.text = emoji
         flag.isHidden = emoji == nil

@@ -29,7 +29,7 @@ final class SceneDelegate: UIResponder, UIWindowSceneDelegate {
         view.frame = window.bounds
         view.autoresizingMask = [.flexibleWidth, .flexibleHeight]
         let button = UIButton(type: .system)
-        button.setTitle("Разблокировать", for: .normal)
+        button.setTitle(L("Разблокировать"), for: .normal)
         button.titleLabel?.font = Theme.font(17, .semibold)
         button.addAction(UIAction { [weak self] _ in self?.authenticate() }, for: .touchUpInside)
         button.translatesAutoresizingMaskIntoConstraints = false
@@ -54,7 +54,7 @@ final class SceneDelegate: UIResponder, UIWindowSceneDelegate {
             cover = nil
             return
         }
-        context.evaluatePolicy(.deviceOwnerAuthentication, localizedReason: "Открыть Personal Tunnel") { [weak self] ok, _ in
+        context.evaluatePolicy(.deviceOwnerAuthentication, localizedReason: L("Открыть Personal Tunnel")) { [weak self] ok, _ in
             DispatchQueue.main.async {
                 guard ok else { return }
                 self?.cover?.removeFromSuperview()

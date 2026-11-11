@@ -26,10 +26,10 @@ public enum ShareLink {
 
     /// Schemes that are recognised only to say why they cannot be used.
     static let rejected: [String: String] = [
-        "ssr": "ShadowsocksR не входит в сборку ядра.",
-        "mieru": "Mieru не входит в сборку ядра.",
-        "openvpn": "OpenVPN не входит в сборку ядра.",
-        "tailscale": "Tailscale не входит в сборку ядра.",
+        "ssr": CoreText.t("ShadowsocksR не входит в сборку ядра."),
+        "mieru": CoreText.t("Mieru не входит в сборку ядра."),
+        "openvpn": CoreText.t("OpenVPN не входит в сборку ядра."),
+        "tailscale": CoreText.t("Tailscale не входит в сборку ядра."),
     ]
 
     public static func isLink(_ text: String) -> Bool {
@@ -40,7 +40,7 @@ public enum ShareLink {
 
     public static func parse(_ raw: String) throws -> ParsedNode {
         let link = raw.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard let end = link.range(of: "://") else { throw ImportError("Это не ссылка сервера.") }
+        guard let end = link.range(of: "://") else { throw ImportError(CoreText.t("Это не ссылка сервера.")) }
         let scheme = link[..<end.lowerBound].lowercased()
         if let reason = rejected[scheme] { throw ImportError(reason) }
         var node: ParsedNode
@@ -57,7 +57,7 @@ public enum ShareLink {
         case "anytls": node = try anytls(link)
         case "naive+https", "naive+quic": node = try naive(link, quic: scheme == "naive+quic")
         case "http-proxy", "https-proxy": node = try httpProxy(link, tls: scheme == "https-proxy")
-        default: throw ImportError("Ссылки «\(scheme)://» не поддерживаются.")
+        default: throw ImportError(CoreText.f("Ссылки «%@://» не поддерживаются.", "\(scheme)"))
         }
         node.link = link
         return node
@@ -66,13 +66,13 @@ public enum ShareLink {
     // MARK: Helpers
 
     private static func parts(_ link: String) throws -> LinkParts {
-        guard let parts = LinkParts(link) else { throw ImportError("Ссылка повреждена.") }
+        guard let parts = LinkParts(link) else { throw ImportError(CoreText.t("Ссылка повреждена.")) }
         return parts
     }
 
     private static func endpoint(_ parts: LinkParts, defaultPort: Int? = nil) throws -> (String, Int) {
-        guard !parts.host.isEmpty else { throw ImportError("В ссылке нет адреса сервера.") }
-        guard let port = parts.port ?? defaultPort, port > 0, port < 65536 else { throw ImportError("В ссылке нет порта сервера.") }
+        guard !parts.host.isEmpty else { throw ImportError(CoreText.t("В ссылке нет адреса сервера.")) }
+        guard let port = parts.port ?? defaultPort, port > 0, port < 65536 else { throw ImportError(CoreText.t("В ссылке нет порта сервера.")) }
         return (parts.host, port)
     }
 
@@ -108,7 +108,7 @@ public enum ShareLink {
         let parts = try parts(link)
         let (host, port) = try endpoint(parts)
         let uuid = TextCoding.percentDecode(parts.userInfo ?? "")
-        guard !uuid.isEmpty else { throw ImportError("VLESS: в ссылке нет идентификатора пользователя.") }
+        guard !uuid.isEmpty else { throw ImportError(CoreText.t("VLESS: в ссылке нет идентификатора пользователя.")) }
         let spec = stream(from: parts, defaultSecurity: "none")
         var outbound: [String: JSONValue] = [
             "type": "vless", "server": .string(host), "server_port": .int(Int64(port)), "uuid": .string(uuid),
@@ -136,7 +136,7 @@ public enum ShareLink {
         let parts = try parts(link)
         let (host, port) = try endpoint(parts)
         let uuid = TextCoding.percentDecode(parts.userInfo ?? "")
-        guard !uuid.isEmpty else { throw ImportError("VMess: ссылка повреждена.") }
+        guard !uuid.isEmpty else { throw ImportError(CoreText.t("VMess: ссылка повреждена.")) }
         let spec = stream(from: parts, defaultSecurity: "none")
         var outbound: [String: JSONValue] = [
             "type": "vmess", "server": .string(host), "server_port": .int(Int64(port)), "uuid": .string(uuid),
@@ -150,9 +150,9 @@ public enum ShareLink {
 
     private static func vmess(json: JSONValue) throws -> ParsedNode {
         guard let host = json["add"]?.text, !host.isEmpty, let port = json["port"]?.looseInt, port > 0 else {
-            throw ImportError("VMess: в ссылке нет адреса или порта.")
+            throw ImportError(CoreText.t("VMess: в ссылке нет адреса или порта."))
         }
-        guard let uuid = json["id"]?.text, !uuid.isEmpty else { throw ImportError("VMess: в ссылке нет идентификатора пользователя.") }
+        guard let uuid = json["id"]?.text, !uuid.isEmpty else { throw ImportError(CoreText.t("VMess: в ссылке нет идентификатора пользователя.")) }
         var spec = StreamSpec()
         spec.network = json["net"]?.text ?? "tcp"
         spec.headerType = json["type"]?.text
@@ -184,7 +184,7 @@ public enum ShareLink {
         let parts = try parts(link)
         let (host, port) = try endpoint(parts, defaultPort: 443)
         let password = TextCoding.percentDecode(parts.userInfo ?? "")
-        guard !password.isEmpty else { throw ImportError("Trojan: в ссылке нет пароля.") }
+        guard !password.isEmpty else { throw ImportError(CoreText.t("Trojan: в ссылке нет пароля.")) }
         let spec = stream(from: parts, defaultSecurity: "tls")
         var outbound: [String: JSONValue] = [
             "type": "trojan", "server": .string(host), "server_port": .int(Int64(port)), "password": .string(password),
@@ -203,7 +203,7 @@ public enum ShareLink {
         if !main.contains("@") {
             // Old form: ss://base64(method:password@host:port)#name
             guard let decoded = TextCoding.decodeBase64String(String(main)), decoded.contains("@") else {
-                throw ImportError("Shadowsocks: ссылка повреждена.")
+                throw ImportError(CoreText.t("Shadowsocks: ссылка повреждена."))
             }
             source = "ss://" + decoded + body.dropFirst(main.count)
         }
@@ -216,12 +216,12 @@ public enum ShareLink {
         } else if let decoded = TextCoding.decodeBase64String(userInfo) {
             pair = decoded
         } else {
-            throw ImportError("Shadowsocks: не удалось прочитать метод и пароль.")
+            throw ImportError(CoreText.t("Shadowsocks: не удалось прочитать метод и пароль."))
         }
-        guard let colon = pair.firstIndex(of: ":") else { throw ImportError("Shadowsocks: не удалось прочитать метод и пароль.") }
+        guard let colon = pair.firstIndex(of: ":") else { throw ImportError(CoreText.t("Shadowsocks: не удалось прочитать метод и пароль.")) }
         let method = String(pair[..<colon]).lowercased()
         let password = String(pair[pair.index(after: colon)...])
-        guard !method.isEmpty, !password.isEmpty else { throw ImportError("Shadowsocks: пустой метод или пароль.") }
+        guard !method.isEmpty, !password.isEmpty else { throw ImportError(CoreText.t("Shadowsocks: пустой метод или пароль.")) }
         var outbound: [String: JSONValue] = [
             "type": "shadowsocks", "server": .string(host), "server_port": .int(Int64(port)),
             "method": .string(method), "password": .string(password),
@@ -231,7 +231,7 @@ public enum ShareLink {
             var pluginName = pieces[0]
             if pluginName == "simple-obfs" || pluginName == "obfs" { pluginName = "obfs-local" }
             guard pluginName == "obfs-local" || pluginName == "v2ray-plugin" else {
-                throw ImportError("Shadowsocks: плагин «\(pluginName)» не поддерживается.")
+                throw ImportError(CoreText.f("Shadowsocks: плагин «%@» не поддерживается.", "\(pluginName)"))
             }
             outbound["plugin"] = .string(pluginName)
             if pieces.count > 1 { outbound["plugin_opts"] = .string(pieces[1]) }
@@ -281,7 +281,7 @@ public enum ShareLink {
         ]
         if !password.isEmpty { outbound["password"] = .string(password) }
         if let obfs = parts.value("obfs"), obfs != "none" {
-            guard obfs == "salamander" || obfs == "gecko" else { throw ImportError("Hysteria2: обфускация «\(obfs)» не поддерживается.") }
+            guard obfs == "salamander" || obfs == "gecko" else { throw ImportError(CoreText.f("Hysteria2: обфускация «%@» не поддерживается.", "\(obfs)")) }
             outbound["obfs"] = ["type": .string(obfs), "password": .string(parts.value("obfs-password", "obfsParam") ?? "")]
         }
         if let ranges = (parts.value("mport", "ports") ?? hopPorts).map(portRanges), !ranges.isEmpty {
@@ -295,7 +295,7 @@ public enum ShareLink {
     static func hysteria(_ link: String) throws -> ParsedNode {
         let parts = try parts(link)
         let (host, port) = try endpoint(parts)
-        if let proto = parts.value("protocol"), proto != "udp" { throw ImportError("Hysteria: протокол «\(proto)» не поддерживается.") }
+        if let proto = parts.value("protocol"), proto != "udp" { throw ImportError(CoreText.f("Hysteria: протокол «%@» не поддерживается.", "\(proto)")) }
         var tls: [String: JSONValue] = ["enabled": true]
         if let sni = parts.value("peer", "sni") { tls["server_name"] = .string(sni) } else if !TextCoding.isIPAddress(host) { tls["server_name"] = .string(host) }
         if parts.flag("insecure", "allowInsecure") { tls["insecure"] = true }
@@ -317,7 +317,7 @@ public enum ShareLink {
         let (host, port) = try endpoint(parts)
         let userInfo = parts.userInfo ?? ""
         let pieces = userInfo.split(separator: ":", maxSplits: 1, omittingEmptySubsequences: false).map { TextCoding.percentDecode(String($0)) }
-        guard let uuid = pieces.first, !uuid.isEmpty else { throw ImportError("TUIC: в ссылке нет идентификатора пользователя.") }
+        guard let uuid = pieces.first, !uuid.isEmpty else { throw ImportError(CoreText.t("TUIC: в ссылке нет идентификатора пользователя.")) }
         var tls: [String: JSONValue] = ["enabled": true]
         if let sni = parts.value("sni", "peer") { tls["server_name"] = .string(sni) } else if !TextCoding.isIPAddress(host) { tls["server_name"] = .string(host) }
         if parts.flag("allow_insecure", "allowInsecure", "insecure") { tls["insecure"] = true }
@@ -347,8 +347,8 @@ public enum ShareLink {
         let parts = try parts(link)
         let (host, port) = try endpoint(parts, defaultPort: 51820)
         let privateKey = TextCoding.percentDecode(parts.userInfo ?? parts.value("privatekey", "private_key") ?? "")
-        guard !privateKey.isEmpty else { throw ImportError("WireGuard: в ссылке нет закрытого ключа.") }
-        guard let publicKey = parts.value("publickey", "public_key", "peer") else { throw ImportError("WireGuard: в ссылке нет открытого ключа сервера.") }
+        guard !privateKey.isEmpty else { throw ImportError(CoreText.t("WireGuard: в ссылке нет закрытого ключа.")) }
+        guard let publicKey = parts.value("publickey", "public_key", "peer") else { throw ImportError(CoreText.t("WireGuard: в ссылке нет открытого ключа сервера.")) }
         let addresses = (parts.value("address", "ip") ?? "10.0.0.2/32").split(separator: ",").map { item -> String in
             let text = item.trimmingCharacters(in: .whitespaces)
             return text.contains("/") ? text : text + (text.contains(":") ? "/128" : "/32")
@@ -418,7 +418,7 @@ public enum ShareLink {
         let parts = try parts(link)
         let (host, port) = try endpoint(parts, defaultPort: 443)
         let password = TextCoding.percentDecode(parts.userInfo ?? "")
-        guard !password.isEmpty else { throw ImportError("AnyTLS: в ссылке нет пароля.") }
+        guard !password.isEmpty else { throw ImportError(CoreText.t("AnyTLS: в ссылке нет пароля.")) }
         var spec = stream(from: parts, defaultSecurity: "tls")
         spec.network = "tcp"
         var outbound: [String: JSONValue] = [

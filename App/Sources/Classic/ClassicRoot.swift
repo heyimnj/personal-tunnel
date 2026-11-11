@@ -8,7 +8,7 @@ final class ClassicRootViewController: UIViewController {
     static let tabBarHeight: CGFloat = 46
 
     private let pages: [UIViewController] = [ClassicHomeViewController(), ClassicServersViewController(), ClassicManageViewController(), ClassicSettingsViewController()]
-    private let titles = ["Главная", "Серверы", "Управление", "Настройки"]
+    private let titles = [L("Главная"), L("Серверы"), L("Управление"), L("Настройки")]
     private let counter = Classic.micro("VPN / 01")
     private let container = UIView()
     private let bar = UIStackView(.horizontal, spacing: 0, alignment: .fill, [])
@@ -110,11 +110,11 @@ final class ClassicHomeViewController: UIViewController {
     override func viewDidLoad() {
         super.viewDidLoad()
         view.backgroundColor = Theme.background
-        let all = ClassicRow(Classic.text("ВСЕ ЛОКАЦИИ →", 10, .semibold, Theme.text.withAlphaComponent(0.75), tracking: 0.5)) { [weak self] in
+        let all = ClassicRow(Classic.text(L("ВСЕ ЛОКАЦИИ →"), 10, .semibold, Theme.text.withAlphaComponent(0.75), tracking: 0.5)) { [weak self] in
             (self?.parent as? ClassicRootViewController)?.select(1)
         }
         all.setContentHuggingPriority(.required, for: .horizontal)
-        let heading = UIStackView(.horizontal, spacing: 8, alignment: .firstBaseline, [Classic.text("Локация", 20, .semibold, tracking: -0.4), UIView(), all])
+        let heading = UIStackView(.horizontal, spacing: 8, alignment: .firstBaseline, [Classic.text(L("Локация"), 20, .semibold, tracking: -0.4), UIView(), all])
         heading.heightAnchor.constraint(greaterThanOrEqualToConstant: 24).isActive = true
 
         listScroll.showsVerticalScrollIndicator = false
@@ -198,11 +198,11 @@ final class ClassicHomeViewController: UIViewController {
         let on = state.isOn
         let stateText: String
         switch state {
-        case .connected: stateText = "Туннель запущен"
-        case .reasserting: stateText = "Восстановление туннеля"
-        case .connecting: stateText = "Запуск туннеля"
-        case .disconnecting: stateText = "Туннель останавливается"
-        case .disconnected: stateText = "Туннель остановлен"
+        case .connected: stateText = L("Туннель запущен")
+        case .reasserting: stateText = L("Восстановление туннеля")
+        case .connecting: stateText = L("Запуск туннеля")
+        case .disconnecting: stateText = L("Туннель останавливается")
+        case .disconnected: stateText = L("Туннель остановлен")
         }
         let stateColor: UIColor = state.isBusy ? .systemOrange : (on ? .systemGreen : Theme.danger)
         let label = subscription.flatMap { s in node.map { app.store.label(of: $0, in: s) } }
@@ -237,12 +237,12 @@ final class ClassicHomeViewController: UIViewController {
             line.minimumScaleFactor = 0.8
             place = UIStackView(.horizontal, spacing: 6, alignment: .center, [Classic.flag(label.countryCode, width: 18, height: 12), line])
         } else {
-            place = Classic.text(state.isBusy ? "Определяем…" : "Локация не выбрана", 13, .medium, .secondaryLabel)
+            place = Classic.text(state.isBusy ? L("Определяем…") : L("Локация не выбрана"), 13, .medium, .secondaryLabel)
         }
         let headline = Classic.text(stateText, 20, .semibold, lines: 2, tracking: -0.5)
         let left = UIStackView(.vertical, spacing: 5, alignment: .leading, [
             headline, place,
-            UIStackView(.horizontal, spacing: 12, alignment: .top, [metric("СЕАНС", session), metric("ТРАФИК", traffic), metric("ПИНГ", pingValue)]),
+            UIStackView(.horizontal, spacing: 12, alignment: .top, [metric(L("СЕАНС"), session), metric(L("ТРАФИК"), traffic), metric(L("ПИНГ"), pingValue)]),
         ])
         let button = ClassicConnectButton(on: on, busy: state.isBusy)
         let cardBody = UIStackView(.horizontal, spacing: 12, alignment: .center, [left, button])
@@ -262,7 +262,7 @@ final class ClassicHomeViewController: UIViewController {
         card.pin(to: cardBox)
 
         // Location list: the mode card, the chosen server, then up to nine more.
-        list.addArrangedSubview(ClassicModeCard(title: Prefs.autoSelect ? "Автовыбор" : "Пользовательский",
+        list.addArrangedSubview(ClassicModeCard(title: Prefs.autoSelect ? L("Автовыбор") : L("Пользовательский"),
                                                 subtitle: (label?.text ?? "—").uppercased(),
                                                 ping: entry?.result.milliseconds.map { "\($0) MS" } ?? "— MS"))
         if let subscription {
@@ -290,7 +290,7 @@ final class ClassicHomeViewController: UIViewController {
         folderConfig.image = UIImage(systemName: "folder")
         folderConfig.imagePadding = 8
         folderConfig.contentInsets = .zero
-        folderConfig.title = subscription?.name ?? "Выбрать подписку"
+        folderConfig.title = subscription?.name ?? L("Выбрать подписку")
         folderConfig.titleTextAttributesTransformer = UIConfigurationTextAttributesTransformer { attributes in
             var attributes = attributes
             attributes.font = Theme.font(.body)
@@ -305,11 +305,11 @@ final class ClassicHomeViewController: UIViewController {
         refresh.setImage(UIImage(systemName: "arrow.clockwise", withConfiguration: UIImage.SymbolConfiguration(textStyle: .body)), for: .normal)
         refresh.tintColor = Theme.accent
         refresh.isEnabled = !app.latency.progress.value.running
-        refresh.accessibilityLabel = "Обновить пинг"
+        refresh.accessibilityLabel = L("Обновить пинг")
         refresh.addAction(UIAction { _ in if let subscription = App.shared.library.activeSubscription { App.shared.ping([subscription]) } }, for: .touchUpInside)
         refresh.setContentHuggingPriority(.required, for: .horizontal)
         let check = UIButton(type: .system)
-        check.setTitle("Проверка соединения и журнал", for: .normal)
+        check.setTitle(L("Проверка соединения и журнал"), for: .normal)
         check.titleLabel?.font = Theme.font(.body)
         check.tintColor = Theme.accent
         check.contentHorizontalAlignment = .leading
@@ -320,13 +320,13 @@ final class ClassicHomeViewController: UIViewController {
         }, for: .touchUpInside)
         var quickLines: [UIView] = [
             UIStackView(.horizontal, spacing: 8, alignment: .center, [folder, UIView(), refresh]),
-            UILabel("Прокси: Не проверено · Интернет: Не проверено", font: Theme.font(.caption1), color: .secondaryLabel, lines: 0),
+            UILabel(L("Прокси: Не проверено · Интернет: Не проверено"), font: Theme.font(.caption1), color: .secondaryLabel, lines: 0),
             check,
         ]
         if let entry {
-            quickLines.append(UILabel("Задержка: " + (app.tunnelSubscription != nil ? "HTTPS " : "TCP ") + Format.ago(entry.date), font: Theme.font(.caption2), color: .secondaryLabel))
+            quickLines.append(UILabel(L("Задержка: ") + (app.tunnelSubscription != nil ? "HTTPS " : "TCP ") + Format.ago(entry.date), font: Theme.font(.caption2), color: .secondaryLabel))
         }
-        quickLines.append(UILabel("Пинг и счётчики трафика не подтверждают доступ в интернет.", font: Theme.font(.caption2), color: .secondaryLabel, lines: 0))
+        quickLines.append(UILabel(L("Пинг и счётчики трафика не подтверждают доступ в интернет."), font: Theme.font(.caption2), color: .secondaryLabel, lines: 0))
         let quick = UIStackView(.vertical, spacing: 12, alignment: .fill, quickLines)
         let quickFrame = UIView()
         quickFrame.layer.borderWidth = 1
@@ -351,7 +351,7 @@ private final class ClassicConnectButton: TapControl {
         let core = UIView()
         core.backgroundColor = .black
         core.layer.cornerRadius = 5.5
-        let title = Classic.text(busy ? "ОТМЕНА" : (on ? "DISCONNECT" : "CONNECT"), 10, .bold, .black)
+        let title = Classic.text(busy ? L("ОТМЕНА") : (on ? "DISCONNECT" : "CONNECT"), 10, .bold, .black)
         title.adjustsFontSizeToFitWidth = true
         title.minimumScaleFactor = 0.7
         title.textAlignment = .center
@@ -376,7 +376,7 @@ private final class ClassicConnectButton: TapControl {
         alpha = busy ? 0.85 : 1
         setContentHuggingPriority(.required, for: .horizontal)
         setContentCompressionResistancePriority(.required, for: .horizontal)
-        accessibilityLabel = busy ? "ОТМЕНА" : (on ? "DISCONNECT" : "CONNECT")
+        accessibilityLabel = busy ? L("ОТМЕНА") : (on ? "DISCONNECT" : "CONNECT")
         onTap = { App.shared.toggleConnection() }
     }
 }
@@ -432,7 +432,7 @@ private final class ClassicLocationRow: TapControl {
         name.lineBreakMode = .byTruncatingTail
         let texts = UIStackView(.vertical, spacing: 2, alignment: .leading, [name, Classic.text(meta, 9, .medium, .secondaryLabel, tracking: 0.3)])
         if !limited {
-            let note = Classic.text("ЛИМИТ НЕ УКАЗАН", 10, .medium, Theme.accent)
+            let note = Classic.text(L("ЛИМИТ НЕ УКАЗАН"), 10, .medium, Theme.accent)
             texts.addArrangedSubview(note)
             texts.setCustomSpacing(6, after: texts.arrangedSubviews[1])
         }
@@ -502,20 +502,20 @@ final class ClassicSubscriptionsSheet: ClassicPage {
         dash.backgroundColor = Theme.accent
         dash.translatesAutoresizingMaskIntoConstraints = false
         NSLayoutConstraint.activate([dash.widthAnchor.constraint(equalToConstant: 14), dash.heightAnchor.constraint(equalToConstant: 2)])
-        let title = Classic.text("Подписки", 34, .semibold)
+        let title = Classic.text(L("Подписки"), 34, .semibold)
         title.adjustsFontSizeToFitWidth = true
         title.minimumScaleFactor = 0.8
         content.addArrangedSubview(UIStackView(.horizontal, spacing: 12, alignment: .bottom, [
             UIStackView(.vertical, spacing: 5, alignment: .leading, [
-                UIStackView(.horizontal, spacing: 7, alignment: .center, [Classic.micro("01", Theme.accent), dash, Classic.micro("ПОДКЛЮЧЕНИЕ / ПОДПИСКИ")]),
-                title, Classic.text("Сохранённые профили на этом устройстве", 11, .medium, .secondaryLabel),
+                UIStackView(.horizontal, spacing: 7, alignment: .center, [Classic.micro("01", Theme.accent), dash, Classic.micro(L("ПОДКЛЮЧЕНИЕ / ПОДПИСКИ"))]),
+                title, Classic.text(L("Сохранённые профили на этом устройстве"), 11, .medium, .secondaryLabel),
             ]), UIView(), close,
         ]))
         content.setCustomSpacing(15, after: content.arrangedSubviews[0])
         content.addArrangedSubview(Classic.rule())
         let visible = library.subscriptions.filter { !$0.nodes.isEmpty }
         let count = UIStackView(.horizontal, spacing: 8, alignment: .center, [
-            Classic.micro("ДОБАВЛЕННЫЕ ПОДПИСКИ", Theme.text), UIView(), Classic.micro(String(format: "%02d", visible.count), Theme.accent),
+            Classic.micro(L("ДОБАВЛЕННЫЕ ПОДПИСКИ"), Theme.text), UIView(), Classic.micro(String(format: "%02d", visible.count), Theme.accent),
         ])
         count.heightAnchor.constraint(equalToConstant: 36).isActive = true
         content.setCustomSpacing(18, after: content.arrangedSubviews[1])
@@ -524,7 +524,7 @@ final class ClassicSubscriptionsSheet: ClassicPage {
         let list = UIStackView(.vertical, spacing: 1, alignment: .fill, [])
         let active = library.activeSubscription?.id
         let formatter = DateFormatter()
-        formatter.locale = Locale(identifier: "ru_RU")
+        formatter.locale = Language.locale
         formatter.dateStyle = .medium
         let dark = traitCollection.userInterfaceStyle == .dark
         for subscription in visible {
@@ -534,12 +534,12 @@ final class ClassicSubscriptionsSheet: ClassicPage {
             tile.backgroundColor = dark ? .tertiarySystemBackground : (isActive ? Theme.text : UIColor.white.withAlphaComponent(0.72))
             tile.translatesAutoresizingMaskIntoConstraints = false
             NSLayoutConstraint.activate([tile.widthAnchor.constraint(equalToConstant: 48), tile.heightAnchor.constraint(equalToConstant: 42)])
-            var detail = (subscription.isRemote ? "Внешний провайдер" : "Добавлено вручную") + " · " + Format.plural(subscription.nodes.count, "локация", "локации", "локаций")
+            var detail = (subscription.isRemote ? L("Внешний провайдер") : L("Добавлено вручную")) + " · " + Format.plural(subscription.nodes.count, L("локация"), L("локации"), L("локаций"))
             if let expires = subscription.info.expiresAt { detail += " · " + formatter.string(from: expires) }
             let name = Classic.text(subscription.name, 13, .semibold)
             name.lineBreakMode = .byTruncatingTail
             var titleViews: [UIView] = [name]
-            if isActive { titleViews.append(Classic.micro("АКТИВНА", Theme.accent)) }
+            if isActive { titleViews.append(Classic.micro(L("АКТИВНА"), Theme.accent)) }
             let mark = UIImageView(image: UIImage(systemName: isActive ? "checkmark" : "arrow.right", withConfiguration: UIImage.SymbolConfiguration(pointSize: 11, weight: .bold)))
             mark.tintColor = isActive ? Theme.accent : .secondaryLabel
             mark.setContentHuggingPriority(.required, for: .horizontal)

@@ -49,6 +49,15 @@ final class MiscTests: XCTestCase {
         XCTAssertEqual(library.nextID, 8)
     }
 
+    func testCoreTextFormatsAndPlurals() {
+        XCTAssertEqual(CoreText.fill("Есть %@ из %@ (100%%)", ["1", "2"]), "Есть 1 из 2 (100%)")
+        XCTAssertEqual(CoreText.f("%@ с назад", "5"), "5 с назад")
+        CoreText.russianPlurals = false
+        defer { CoreText.russianPlurals = true }
+        XCTAssertEqual(Format.plural(21, "server", "servers", "servers"), "21 servers")
+        XCTAssertEqual(Format.plural(1, "server", "servers", "servers"), "1 server")
+    }
+
     func testEmptySubscriptionIsNeverActive() {
         let server = ServerNode(id: "a", name: "a", outbound: ["type": "socks", "tag": "a", "server": "h", "server_port": 1])
         let library = Library(subscriptions: [Subscription(id: 1, name: "VPN Direct Free"), Subscription(id: 2, name: "B", nodes: [server])],

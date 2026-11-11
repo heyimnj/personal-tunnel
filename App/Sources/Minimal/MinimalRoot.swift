@@ -59,11 +59,11 @@ final class MinimalRootViewController: UITabBarController, UITabBarControllerDel
     private func updateItems() {
         let labels = !Prefs.hideTabLabels
         home.tabBarItem.image = MinimalIcons.home
-        home.tabBarItem.title = labels ? "Главная" : nil
-        home.tabBarItem.accessibilityLabel = "Главная"
+        home.tabBarItem.title = labels ? L("Главная") : nil
+        home.tabBarItem.accessibilityLabel = L("Главная")
         settings.tabBarItem.image = MinimalIcons.settings.withRenderingMode(.alwaysTemplate)
-        settings.tabBarItem.title = labels ? "Настройки" : nil
-        settings.tabBarItem.accessibilityLabel = "Настройки"
+        settings.tabBarItem.title = labels ? L("Настройки") : nil
+        settings.tabBarItem.accessibilityLabel = L("Настройки")
         tabBar.tintColor = Theme.accent
         let custom = !(Prefs.fontFile ?? "").isEmpty
         let attributes: [NSAttributedString.Key: Any]? = custom ? [.font: Theme.fixed(10, .medium)] : nil
