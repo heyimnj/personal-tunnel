@@ -141,11 +141,7 @@ jobs:
             build > build/xcodebuild.log 2>&1
           status=$?
           set -e
-          echo "::group::Ошибки компилятора"
-          grep -E "error:|fatal error|Undefined symbol|ld: " build/xcodebuild.log | sed "s|$PWD/||" | sort -u | head -200 || true
-          echo "::endgroup::"
-          grep -E "warning: " build/xcodebuild.log | grep -E "App/Sources|PacketTunnel/|Packages/TunnelCore" | sed "s|$PWD/||" | sort -u | head -60 || true
-          tail -5 build/xcodebuild.log
+          grep -E "BUILD (SUCCEEDED|FAILED)" build/xcodebuild.log || true
           exit $status
 
       - name: Упаковка IPA
@@ -184,9 +180,15 @@ jobs:
 
       - name: Выложить журнал сборки
         if: always()
+        continue-on-error: true
         uses: actions/upload-artifact@v4
         with:
           name: build-log-${{ github.run_number }}
           path: build/xcodebuild.log
           if-no-files-found: ignore
           retention-days: 7
+
+      - name: Ошибки компилятора
+        if: failure()
+        run: |
+          grep -E "error: |Undefined symbol" build/xcodebuild.log | grep -v "^ " | sed "s|$PWD/||" | cut -c1-260 | sort -u | head -40 || true

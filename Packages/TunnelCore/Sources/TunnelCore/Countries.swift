@@ -276,6 +276,11 @@ public enum ServerLabels {
     public struct Label: Hashable, Sendable {
         public var text: String
         public var countryCode: String?
+
+        public init(text: String, countryCode: String?) {
+            self.text = text
+            self.countryCode = countryCode
+        }
     }
 
     public static func make(for nodes: [ServerNode]) -> [String: Label] {
