@@ -10,6 +10,19 @@ private struct FakeProbes: LatencyProbes {
     func url(tag: String, link: String, timeoutMs: Int) async -> ProbeResult { .delay(tag.count) }
 }
 
+/// Remembers the names the runner gives a direct probe for its log.
+private final class LabelProbes: LatencyProbes, @unchecked Sendable {
+    private let lock = NSLock()
+    private var seen: [String?] = []
+    var labels: [String?] { lock.lock(); defer { lock.unlock() }; return seen }
+    func tcp(host _: String, port _: Int, timeout _: TimeInterval) async -> ProbeResult { .failed(.other) }
+    func tcp(host _: String, port _: Int, timeout _: TimeInterval, label: String?) async -> ProbeResult {
+        lock.lock(); seen.append(label); lock.unlock()
+        return .failed(.timeout)
+    }
+    func url(tag _: String, link _: String, timeoutMs _: Int) async -> ProbeResult { .delay(1) }
+}
+
 private actor Sink {
     var all: [String: ProbeResult] = [:]
     var batches = 0
@@ -37,6 +50,16 @@ final class LatencyTests: XCTestCase {
         let all = await sink.all
         XCTAssertEqual(all["abc"], .delay(3))
         XCTAssertEqual(all["x"], .failed(.refused))
+    }
+
+    func testDirectProbeGetsTheServerNameAndOneRetry() async {
+        let probes = LabelProbes()
+        let sink = Sink()
+        await LatencyRunner(probes: probes).run([.init(tag: "1:a", host: "h", port: 1, udp: false, label: "США")],
+                                                mode: .named(nil), tunnel: false) { await sink.add($0) }
+        let all = await sink.all
+        XCTAssertEqual(all["1:a"], .failed(.timeout))
+        XCTAssertEqual(probes.labels, ["США", "США"])
     }
 
     func testHangingProbeEndsWithTimeout() async {

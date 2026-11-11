@@ -61,8 +61,16 @@ public struct LatencyMode: Equatable, Sendable {
 public protocol LatencyProbes: Sendable {
     /// TCP connect straight to the server, outside the tunnel.
     func tcp(host: String, port: Int, timeout: TimeInterval) async -> ProbeResult
+    /// The same, with the server's name for the log.
+    func tcp(host: String, port: Int, timeout: TimeInterval, label: String?) async -> ProbeResult
     /// URL test through the running tunnel's outbound.
     func url(tag: String, link: String, timeoutMs: Int) async -> ProbeResult
+}
+
+public extension LatencyProbes {
+    func tcp(host: String, port: Int, timeout: TimeInterval, label _: String?) async -> ProbeResult {
+        await tcp(host: host, port: port, timeout: timeout)
+    }
 }
 
 /// Runs one latency test. Every probe has a hard deadline, the whole run is
@@ -73,8 +81,10 @@ public actor LatencyRunner {
         public var host: String?
         public var port: Int?
         public var udp: Bool
-        public init(tag: String, host: String?, port: Int?, udp: Bool) {
-            self.tag = tag; self.host = host; self.port = port; self.udp = udp
+        /// The server's name, for the log (never its address).
+        public var label: String?
+        public init(tag: String, host: String?, port: Int?, udp: Bool, label: String? = nil) {
+            self.tag = tag; self.host = host; self.port = port; self.udp = udp; self.label = label
         }
     }
 
@@ -113,7 +123,7 @@ public actor LatencyRunner {
     static func measure(_ target: Target, probes: LatencyProbes, mode: LatencyMode, tunnel: Bool) async -> ProbeResult {
         if tunnel {
             if mode.tcpFilter, !target.udp, let host = target.host, let port = target.port {
-                if case let .failed(reason) = await deadline(seconds: 2) { await probes.tcp(host: host, port: port, timeout: 1.5) } {
+                if case let .failed(reason) = await deadline(seconds: 2) { await probes.tcp(host: host, port: port, timeout: 1.5, label: target.label) } {
                     return .failed(reason)
                 }
             }
@@ -123,9 +133,10 @@ public actor LatencyRunner {
         }
         guard !target.udp else { return .failed(.unsupported) }
         guard let host = target.host, let port = target.port else { return .failed(.noAddress) }
-        var result = await deadline(seconds: mode.directTimeout + 1) { await probes.tcp(host: host, port: port, timeout: mode.directTimeout) }
+        let label = target.label
+        var result = await deadline(seconds: mode.directTimeout + 1) { await probes.tcp(host: host, port: port, timeout: mode.directTimeout, label: label) }
         if case .failed = result, !Task.isCancelled {
-            result = await deadline(seconds: mode.directTimeout + 1) { await probes.tcp(host: host, port: port, timeout: mode.directTimeout) }
+            result = await deadline(seconds: mode.directTimeout + 1) { await probes.tcp(host: host, port: port, timeout: mode.directTimeout, label: label) }
         }
         return result
     }

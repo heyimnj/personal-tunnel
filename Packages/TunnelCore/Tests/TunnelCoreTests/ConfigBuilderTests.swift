@@ -107,6 +107,9 @@ final class ConfigBuilderTests: XCTestCase {
                                                                    config: Self.legacyConfig)], selectedProfileID: 3, preferredTag: "Эстония")
         let subscription = try XCTUnwrap(library.subscriptions.first)
         XCTAssertEqual(subscription.nodes.map(\.id), ["США", "Эстония", "Лучший"])
+        // A group of groups is probed at its first server.
+        XCTAssertEqual(subscription.nodes[2].address?.host, "us.example.net")
+        XCTAssertEqual(subscription.nodes[1].address?.host, "ee.example.net")
         let config = try ConfigBuilder.build(subscription: subscription, selected: "Эстония", options: TunnelOptions())
         let text = config.serialized(pretty: false)
         XCTAssertFalse(text.contains("dns-local"))

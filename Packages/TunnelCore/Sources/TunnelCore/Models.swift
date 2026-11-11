@@ -46,14 +46,25 @@ public extension ServerNode {
 
     static let endpointTypes: Set<String> = ["wireguard", "awg", "amneziawg"]
 
-    /// The object a direct probe should reach: the node itself or its first member.
+    /// The object a direct probe should reach: the node itself or, for a group, its
+    /// first server, looked up through nested groups as 1.5.0 did (1.x locations are
+    /// groups of groups).
     var probeObject: JSONValue {
         guard isGroup else { return outbound }
-        let wanted = outbound["outbounds"]?.stringList ?? []
-        for tag in wanted {
-            if let member = members.first(where: { $0["tag"]?.stringValue == tag }) { return member }
+        func grouped(_ object: JSONValue) -> Bool {
+            let type = object["type"]?.stringValue?.lowercased() ?? ""
+            return type == "urltest" || type == "selector"
         }
-        return members.first ?? outbound
+        func leaf(in group: JSONValue, depth: Int) -> JSONValue? {
+            guard depth < 6 else { return nil }
+            for tag in group["outbounds"]?.stringList ?? [] {
+                guard let member = members.first(where: { $0["tag"]?.stringValue == tag }) else { continue }
+                if !grouped(member) { return member }
+                if let found = leaf(in: member, depth: depth + 1) { return found }
+            }
+            return nil
+        }
+        return leaf(in: outbound, depth: 0) ?? members.first { !grouped($0) } ?? outbound
     }
 
     /// Address a TCP probe connects to, if the node has one.

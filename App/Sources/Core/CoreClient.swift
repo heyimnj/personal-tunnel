@@ -73,6 +73,11 @@ final class CoreClient {
         store = nil
     }
 
+    /// A line from the app itself; the core's own lines arrive over the socket.
+    func note(_ text: String, level: Int32 = 4) {
+        append([(level, "[app] " + text)])
+    }
+
     func clearLogs() {
         logs = []
         logsChanged.fire()
