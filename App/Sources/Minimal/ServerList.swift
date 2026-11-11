@@ -529,19 +529,28 @@ final class ServerListView: UIScrollView {
     /// A drag completes every running disclosure at once (as 1.5.0 did): the list
     /// is then as long as it really is, and a flick right after opening carries on
     /// through the servers instead of stopping where the motion had got to.
+    /// Only openings: a closing subscription keeps its motion. (A touch that stops
+    /// the list's own scrolling also begins a drag; it used to end a closing at once.)
     @objc private func dragged(_ pan: UIPanGestureRecognizer) {
         guard pan.state == .began, link != nil else { return }
-        finishDisclosures()
+        finishOpenings()
     }
 
-    private func finishDisclosures() {
+    private func finishOpenings() {
+        var moving = false
         for (id, spring) in springs where !spring.isSettled || spring.value != spring.target {
-            springs[id] = DisclosureSpring(spring.target)
+            if spring.target > 0.5 {
+                springs[id] = DisclosureSpring(spring.target)
+                travel[id] = nil
+                anchors[id] = nil
+            } else {
+                moving = true
+            }
         }
-        travel.removeAll()
-        anchors.removeAll()
-        link?.invalidate()
-        link = nil
+        if !moving {
+            link?.invalidate()
+            link = nil
+        }
         layoutList()
     }
 

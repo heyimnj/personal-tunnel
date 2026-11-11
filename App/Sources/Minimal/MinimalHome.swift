@@ -5,8 +5,13 @@ import UIKit
 final class HandoffScrollView: UIScrollView {
     override func gestureRecognizerShouldBegin(_ gestureRecognizer: UIGestureRecognizer) -> Bool {
         if gestureRecognizer === panGestureRecognizer {
+            let top = -adjustedContentInset.top
+            // Still settling at the top edge (the bounce after a flick, while the
+            // scroll indicator shows): a touch here would only catch that bounce,
+            // so the page takes the drag at once.
+            if isDecelerating, contentOffset.y <= top + 0.5 { return false }
             let velocity = panGestureRecognizer.velocity(in: self)
-            if contentOffset.y <= -adjustedContentInset.top + 0.5, velocity.y > 0, abs(velocity.y) > abs(velocity.x) { return false }
+            if contentOffset.y <= top + 0.5, velocity.y > 0, abs(velocity.y) > abs(velocity.x) { return false }
         }
         return super.gestureRecognizerShouldBegin(gestureRecognizer)
     }
