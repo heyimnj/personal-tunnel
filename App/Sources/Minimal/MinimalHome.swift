@@ -19,7 +19,11 @@ final class MinimalHomeViewController: UIViewController, UIScrollViewDelegate, U
     private let analytics = MinimalAnalyticsViewController()
     private lazy var analyticsNavigation = UINavigationController(rootViewController: analytics)
     private let dots = [UIView(), UIView()]
+    private var dotControls: [TapControl] = []
     private var page = 0
+    /// A programmatic page change is running its spring.
+    private var animatingPage = false
+    private var hideDots: DispatchWorkItem?
 
     override func viewDidLoad() {
         super.viewDidLoad()
@@ -42,11 +46,16 @@ final class MinimalHomeViewController: UIViewController, UIScrollViewDelegate, U
         }
         for (index, dot) in dots.enumerated() {
             dot.layer.cornerRadius = 3
+            dot.isUserInteractionEnabled = false
             let control = TapControl()
             control.addSubview(dot)
             control.onTap = { [weak self] in self?.go(to: index, animated: true) }
-            control.tag = index
+            control.accessibilityLabel = index == 0 ? "Подключение" : "Аналитика"
+            // As in 1.5.0 the dots show only while the page moves.
+            control.alpha = 0
+            control.isUserInteractionEnabled = false
             view.addSubview(control)
+            dotControls.append(control)
         }
         updateDots()
         Prefs.appearanceChanged.observe(self) { [weak self] in
@@ -59,21 +68,78 @@ final class MinimalHomeViewController: UIViewController, UIScrollViewDelegate, U
         super.viewDidLayoutSubviews()
         connection.safeInsets = view.safeAreaInsets
         let size = view.bounds.size
-        guard pager.frame.size != size else { layoutDots(); return }
-        pager.frame = view.bounds
-        pager.contentSize = CGSize(width: size.width, height: size.height * 2)
-        connection.frame = CGRect(origin: .zero, size: size)
-        analyticsNavigation.view.frame = CGRect(x: 0, y: size.height, width: size.width, height: size.height)
-        pager.contentOffset = CGPoint(x: 0, y: CGFloat(page) * size.height)
+        if pager.frame.size != size {
+            pager.frame = view.bounds
+            pager.contentSize = CGSize(width: size.width, height: size.height * 2)
+            connection.frame = CGRect(origin: .zero, size: size)
+            analyticsNavigation.view.frame = CGRect(x: 0, y: size.height, width: size.width, height: size.height)
+            pager.contentOffset = CGPoint(x: 0, y: CGFloat(page) * size.height)
+        }
         layoutDots()
+        applyAnalyticsInsets()
     }
 
+    override func viewSafeAreaInsetsDidChange() {
+        super.viewSafeAreaInsetsDidChange()
+        applyAnalyticsInsets()
+    }
+
+    private var pageMoving: Bool { animatingPage || pager.isDragging || pager.isDecelerating }
+
+    /// The analytics page lives inside the pager, below the screen, so UIKit does
+    /// not give it the status bar and tab bar insets of the screen. They are made
+    /// up explicitly (as 1.5.0 did): only the part UIKit did not provide, and
+    /// never while the page moves, so nothing shifts during the transition.
+    private func applyAnalyticsInsets() {
+        guard !pageMoving, view.window != nil else { return }
+        let desired = view.safeAreaInsets
+        let applied = analyticsNavigation.additionalSafeAreaInsets
+        let actual = analyticsNavigation.view.safeAreaInsets
+        let next = UIEdgeInsets(top: max(0, desired.top - (actual.top - applied.top)), left: 0,
+                                bottom: max(0, desired.bottom - (actual.bottom - applied.bottom)), right: 0)
+        guard abs(next.top - applied.top) > 0.5 || abs(next.bottom - applied.bottom) > 0.5 else { return }
+        analyticsNavigation.additionalSafeAreaInsets = next
+    }
+
+    /// 1.5.0 `ModernPagerDots`: two 6 pt dots in 22 pt targets, 4 pt apart,
+    /// 20 pt from the trailing edge and from the bottom of the safe area.
     private func layoutDots() {
-        let bottom = view.bounds.height - view.safeAreaInsets.bottom - 8
-        for control in view.subviews.compactMap({ $0 as? TapControl }) where control.subviews.first.map({ dots.contains($0) }) == true {
-            control.frame = CGRect(x: view.bounds.width - 42, y: bottom - CGFloat(2 - control.tag) * 26, width: 22, height: 22)
+        let last = view.bounds.height - view.safeAreaInsets.bottom - 20
+        for (index, control) in dotControls.enumerated() {
+            let y = last - 22 - CGFloat(1 - index) * 26
+            control.frame = CGRect(x: view.bounds.width - 20 - 22, y: y, width: 22, height: 22)
             control.subviews.first?.frame = CGRect(x: 8, y: 8, width: 6, height: 6)
         }
+    }
+
+    /// Shows the dots at once when a page change starts.
+    private func showDots() {
+        hideDots?.cancel()
+        hideDots = nil
+        guard dotControls.first?.alpha != 1 else { return }
+        UIView.animate(withDuration: UIAccessibility.isReduceMotionEnabled ? 0 : 0.14, delay: 0, options: [.curveEaseOut, .beginFromCurrentState, .allowUserInteraction]) {
+            for control in self.dotControls { control.alpha = 1 }
+        }
+        for control in dotControls { control.isUserInteractionEnabled = true }
+    }
+
+    /// Fades them out a second after the page has settled.
+    private func scheduleHideDots() {
+        hideDots?.cancel()
+        let work = DispatchWorkItem { [weak self] in
+            guard let self, !self.pageMoving else { return }
+            for control in self.dotControls { control.isUserInteractionEnabled = false }
+            UIView.animate(withDuration: UIAccessibility.isReduceMotionEnabled ? 0 : 0.14, delay: 0, options: [.curveEaseOut, .beginFromCurrentState]) {
+                for control in self.dotControls { control.alpha = 0 }
+            }
+        }
+        hideDots = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.0, execute: work)
+    }
+
+    private func settled() {
+        applyAnalyticsInsets()
+        scheduleHideDots()
     }
 
     private func updateDots() {
@@ -85,8 +151,13 @@ final class MinimalHomeViewController: UIViewController, UIScrollViewDelegate, U
     private func go(to next: Int, animated: Bool) {
         guard pager.bounds.height > 0 else { return }
         if animated {
+            animatingPage = true
+            showDots()
             UIView.animate(withDuration: 0.5, delay: 0, usingSpringWithDamping: 0.9, initialSpringVelocity: 0, options: [.allowUserInteraction, .beginFromCurrentState]) {
                 self.pager.contentOffset = CGPoint(x: 0, y: CGFloat(next) * self.pager.bounds.height)
+            } completion: { _ in
+                self.animatingPage = false
+                self.settled()
             }
         } else {
             pager.contentOffset = CGPoint(x: 0, y: CGFloat(next) * pager.bounds.height)
@@ -99,6 +170,21 @@ final class MinimalHomeViewController: UIViewController, UIScrollViewDelegate, U
         page = next
         updateDots()
         analytics.setVisible(next == 1)
+    }
+
+    func scrollViewWillBeginDragging(_ scrollView: UIScrollView) {
+        guard scrollView === pager else { return }
+        showDots()
+    }
+
+    func scrollViewDidEndDragging(_ scrollView: UIScrollView, willDecelerate decelerate: Bool) {
+        guard scrollView === pager, !decelerate else { return }
+        settled()
+    }
+
+    func scrollViewDidEndDecelerating(_ scrollView: UIScrollView) {
+        guard scrollView === pager else { return }
+        settled()
     }
 
     func scrollViewDidScroll(_ scrollView: UIScrollView) {
@@ -122,7 +208,7 @@ final class MinimalHomeViewController: UIViewController, UIScrollViewDelegate, U
         let isRoot = viewController === analytics
         pager.isScrollEnabled = isRoot
         navigationController.setNavigationBarHidden(isRoot, animated: animated)
-        for control in view.subviews.compactMap({ $0 as? TapControl }) { control.isHidden = !isRoot }
+        for control in dotControls { control.isHidden = !isRoot }
     }
 }
 
