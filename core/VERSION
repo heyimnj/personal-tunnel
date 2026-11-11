@@ -1,8 +1,14 @@
-# Закреплённое ядро sing-box для Personal Tunnel. Любое изменение здесь пересобирает Libbox в CI.
+# Закреплённые ядра Personal Tunnel. Любое изменение здесь пересобирает Libbox в CI.
+# sing-box (туннель) и Xray-core собираются вместе с мостом core/bridge в одну библиотеку:
+# у двух фреймворков gomobile было бы два рантайма Go с одинаковыми символами.
 SING_BOX_REMOTE=https://github.com/Leadaxe/sing-box-lx.git
 SING_BOX_TAG=v1.14.0-lx.36
 SING_BOX_COMMIT=cbcc7935f7230e67691155bd6f3da6a9cc2d3e0b
-GO_VERSION=1.26.6
+XRAY_REMOTE=https://github.com/XTLS/Xray-core.git
+XRAY_TAG=v26.11.9
+XRAY_COMMIT=676eaf66f8f05d4d558ee7a74b4736623d3feeb9
+# Xray-core v26.9+ требует Go 1.27.
+GO_VERSION=1.27.4
 GOMOBILE_VERSION=v0.1.12
 IOS_MIN_VERSION=15.0
 # Те же теги, что у 1.5.0: VLESS (Reality, Vision), VMess, Trojan, Shadowsocks, Hysteria/Hysteria2, TUIC,

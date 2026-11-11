@@ -52,10 +52,12 @@ jobs:
           key: sing-box-check-${{ runner.os }}-${{ hashFiles('core/VERSION', 'scripts/build-check-core.sh', 'scripts/core-env.sh') }}
 
       - uses: actions/setup-go@v5
-        if: steps.check-core.outputs.cache-hit != 'true'
         with:
           go-version: ${{ steps.pins.outputs.go }}
           cache: false
+
+      - name: Тесты моста (sing-box + Xray-core)
+        run: bash scripts/test-bridge.sh
 
       - name: Сборка проверочного ядра
         if: steps.check-core.outputs.cache-hit != 'true'
@@ -101,7 +103,7 @@ jobs:
         uses: actions/cache/restore@v4
         with:
           path: Libbox.xcframework
-          key: libbox-${{ runner.arch }}-${{ steps.xcode.outputs.stamp }}-${{ hashFiles('core/VERSION', 'scripts/build-libbox.sh', 'scripts/core-env.sh') }}
+          key: libbox-${{ runner.arch }}-${{ steps.xcode.outputs.stamp }}-${{ hashFiles('core/VERSION', 'core/bridge/**', 'scripts/build-libbox.sh', 'scripts/core-env.sh') }}
 
       - uses: actions/setup-go@v5
         if: steps.libbox.outputs.cache-hit != 'true'
@@ -118,7 +120,7 @@ jobs:
         uses: actions/cache/save@v4
         with:
           path: Libbox.xcframework
-          key: libbox-${{ runner.arch }}-${{ steps.xcode.outputs.stamp }}-${{ hashFiles('core/VERSION', 'scripts/build-libbox.sh', 'scripts/core-env.sh') }}
+          key: libbox-${{ runner.arch }}-${{ steps.xcode.outputs.stamp }}-${{ hashFiles('core/VERSION', 'core/bridge/**', 'scripts/build-libbox.sh', 'scripts/core-env.sh') }}
 
       - name: Проект Xcode
         run: |
