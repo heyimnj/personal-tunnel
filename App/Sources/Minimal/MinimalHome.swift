@@ -28,7 +28,12 @@ final class MinimalHomeViewController: UIViewController, UIScrollViewDelegate, U
     override func viewDidLoad() {
         super.viewDidLoad()
         view.backgroundColor = Theme.background
-        pager.isPagingEnabled = true
+        // Paging is ours (see scrollViewWillEndDragging): the page settles with a
+        // spring that carries the finger's speed, and while it does the new page
+        // already takes touches, so a second swipe scrolls analytics at once
+        // instead of being spent on stopping the pager's deceleration.
+        pager.isPagingEnabled = false
+        pager.decelerationRate = .fast
         pager.showsVerticalScrollIndicator = false
         pager.contentInsetAdjustmentBehavior = .never
         pager.delegate = self
@@ -149,19 +154,33 @@ final class MinimalHomeViewController: UIViewController, UIScrollViewDelegate, U
         }
     }
 
-    private func go(to next: Int, animated: Bool) {
+    private var pageAnimator: UIViewPropertyAnimator?
+
+    /// `velocity`: the finger's speed in points per second, carried into the spring.
+    private func go(to next: Int, animated: Bool, velocity: CGFloat = 0) {
         guard pager.bounds.height > 0 else { return }
-        if animated {
+        pageAnimator?.stopAnimation(true)
+        pageAnimator = nil
+        let target = CGPoint(x: 0, y: CGFloat(next) * pager.bounds.height)
+        if animated, !UIAccessibility.isReduceMotionEnabled {
             animatingPage = true
             showDots()
-            UIView.animate(withDuration: 0.5, delay: 0, usingSpringWithDamping: 0.9, initialSpringVelocity: 0, options: [.allowUserInteraction, .beginFromCurrentState]) {
-                self.pager.contentOffset = CGPoint(x: 0, y: CGFloat(next) * self.pager.bounds.height)
-            } completion: { _ in
+            let distance = target.y - pager.contentOffset.y
+            let relative = abs(distance) > 1 ? max(-12, min(12, velocity / distance)) : 0
+            let timing = UISpringTimingParameters(dampingRatio: 0.9, initialVelocity: CGVector(dx: 0, dy: relative))
+            let animator = UIViewPropertyAnimator(duration: 0.48, timingParameters: timing)
+            animator.isInterruptible = true
+            animator.addAnimations { self.pager.contentOffset = target }
+            animator.addCompletion { [weak self] position in
+                guard let self, position == .end else { return }
+                self.pageAnimator = nil
                 self.animatingPage = false
                 self.settled()
             }
+            pageAnimator = animator
+            animator.startAnimation()
         } else {
-            pager.contentOffset = CGPoint(x: 0, y: CGFloat(next) * pager.bounds.height)
+            pager.contentOffset = target
         }
         setPage(next)
     }
@@ -187,12 +206,33 @@ final class MinimalHomeViewController: UIViewController, UIScrollViewDelegate, U
 
     func scrollViewWillBeginDragging(_ scrollView: UIScrollView) {
         guard scrollView === pager else { return }
+        // Caught mid-way: continue from where the page is on screen.
+        if let animator = pageAnimator {
+            let shown = pager.layer.presentation()?.bounds.origin.y ?? pager.contentOffset.y
+            animator.stopAnimation(true)
+            pageAnimator = nil
+            animatingPage = false
+            pager.contentOffset = CGPoint(x: 0, y: shown)
+        }
         showDots()
     }
 
+    func scrollViewWillEndDragging(_ scrollView: UIScrollView, withVelocity velocity: CGPoint, targetContentOffset: UnsafeMutablePointer<CGPoint>) {
+        guard scrollView === pager, pager.bounds.height > 0 else { return }
+        // velocity is in points per millisecond here.
+        let speed = velocity.y * 1000
+        let position = pager.contentOffset.y / pager.bounds.height
+        let next: Int
+        if speed > 300 { next = 1 } else if speed < -300 { next = 0 } else { next = position > 0.5 ? 1 : 0 }
+        // No deceleration: the spring takes it from here.
+        targetContentOffset.pointee = pager.contentOffset
+        DispatchQueue.main.async { self.go(to: next, animated: true, velocity: speed) }
+    }
+
     func scrollViewDidEndDragging(_ scrollView: UIScrollView, willDecelerate decelerate: Bool) {
-        guard scrollView === pager, !decelerate else { return }
-        settled()
+        guard scrollView === pager, !decelerate, !animatingPage, pageAnimator == nil else { return }
+        // A drag that ended exactly on a page.
+        if pager.contentOffset.y.truncatingRemainder(dividingBy: max(1, pager.bounds.height)) == 0 { settled() }
     }
 
     func scrollViewDidEndDecelerating(_ scrollView: UIScrollView) {
@@ -201,7 +241,7 @@ final class MinimalHomeViewController: UIViewController, UIScrollViewDelegate, U
     }
 
     func scrollViewDidScroll(_ scrollView: UIScrollView) {
-        guard scrollView === pager, pager.bounds.height > 0, pager.isDragging || pager.isDecelerating else { return }
+        guard scrollView === pager, pager.bounds.height > 0, pager.isDragging else { return }
         setPage(pager.contentOffset.y > pager.bounds.height / 2 ? 1 : 0)
     }
 

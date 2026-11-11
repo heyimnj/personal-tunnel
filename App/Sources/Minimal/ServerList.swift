@@ -413,6 +413,7 @@ final class ServerListView: UIScrollView {
         alwaysBounceVertical = true
         delaysContentTouches = false
         backgroundColor = .clear
+        panGestureRecognizer.addTarget(self, action: #selector(dragged(_:)))
         let hold = UILongPressGestureRecognizer(target: self, action: #selector(held(_:)))
         hold.minimumPressDuration = 0.4
         addGestureRecognizer(hold)
@@ -524,6 +525,25 @@ final class ServerListView: UIScrollView {
     }
 
     private static func key(_ subscription: Int64, _ node: String) -> String { "\(subscription):\(node)" }
+
+    /// A drag completes every running disclosure at once (as 1.5.0 did): the list
+    /// is then as long as it really is, and a flick right after opening carries on
+    /// through the servers instead of stopping where the motion had got to.
+    @objc private func dragged(_ pan: UIPanGestureRecognizer) {
+        guard pan.state == .began, link != nil else { return }
+        finishDisclosures()
+    }
+
+    private func finishDisclosures() {
+        for (id, spring) in springs where !spring.isSettled || spring.value != spring.target {
+            springs[id] = DisclosureSpring(spring.target)
+        }
+        travel.removeAll()
+        anchors.removeAll()
+        link?.invalidate()
+        link = nil
+        layoutList()
+    }
 
     // MARK: Clock
 

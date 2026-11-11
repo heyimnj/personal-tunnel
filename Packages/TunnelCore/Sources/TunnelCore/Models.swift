@@ -95,6 +95,19 @@ public extension ServerNode {
         default: return object.at("transport", "type")?.stringValue?.lowercased() == "quic"
         }
     }
+
+    /// The name a direct probe puts in its TLS ClientHello: the server's SNI, or for
+    /// REALITY the site it borrows. Without VPN a bare TCP connect proves nothing
+    /// where the network answers handshakes itself or drops them; a TLS handshake
+    /// with this name cannot be faked by the network and gives a real round trip.
+    var tlsServerName: String? {
+        let object = probeObject
+        guard !isUDPBased, object.at("tls", "enabled")?.looseBool == true else { return nil }
+        if let name = object.at("tls", "server_name")?.stringValue, !name.isEmpty { return name }
+        // TLS without a name: the server's own host, when it is a name and not an address.
+        guard let host = object["server"]?.stringValue, host.contains(where: \.isLetter), !host.contains(":") else { return nil }
+        return host
+    }
 }
 
 /// What the provider reports about the subscription itself.

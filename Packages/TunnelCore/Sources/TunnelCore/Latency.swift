@@ -63,6 +63,8 @@ public protocol LatencyProbes: Sendable {
     func tcp(host: String, port: Int, timeout: TimeInterval) async -> ProbeResult
     /// The same, with the server's name for the log.
     func tcp(host: String, port: Int, timeout: TimeInterval, label: String?) async -> ProbeResult
+    /// A TLS handshake with `serverName` (SNI) instead of a bare connect, when given.
+    func handshake(host: String, port: Int, serverName: String?, timeout: TimeInterval, label: String?) async -> ProbeResult
     /// URL test through the running tunnel's outbound.
     func url(tag: String, link: String, timeoutMs: Int) async -> ProbeResult
 }
@@ -70,6 +72,10 @@ public protocol LatencyProbes: Sendable {
 public extension LatencyProbes {
     func tcp(host: String, port: Int, timeout: TimeInterval, label _: String?) async -> ProbeResult {
         await tcp(host: host, port: port, timeout: timeout)
+    }
+
+    func handshake(host: String, port: Int, serverName _: String?, timeout: TimeInterval, label: String?) async -> ProbeResult {
+        await tcp(host: host, port: port, timeout: timeout, label: label)
     }
 }
 
@@ -83,8 +89,10 @@ public actor LatencyRunner {
         public var udp: Bool
         /// The server's name, for the log (never its address).
         public var label: String?
-        public init(tag: String, host: String?, port: Int?, udp: Bool, label: String? = nil) {
-            self.tag = tag; self.host = host; self.port = port; self.udp = udp; self.label = label
+        /// SNI for a TLS handshake probe; nil probes with a bare TCP connect.
+        public var tlsName: String?
+        public init(tag: String, host: String?, port: Int?, udp: Bool, label: String? = nil, tlsName: String? = nil) {
+            self.tag = tag; self.host = host; self.port = port; self.udp = udp; self.label = label; self.tlsName = tlsName
         }
     }
 
@@ -133,10 +141,12 @@ public actor LatencyRunner {
         }
         guard !target.udp else { return .failed(.unsupported) }
         guard let host = target.host, let port = target.port else { return .failed(.noAddress) }
-        let label = target.label
-        var result = await deadline(seconds: mode.directTimeout + 1) { await probes.tcp(host: host, port: port, timeout: mode.directTimeout, label: label) }
+        let label = target.label, name = target.tlsName
+        // A handshake takes two round trips, so it gets more time than a connect.
+        let timeout = name == nil ? mode.directTimeout : mode.directTimeout + 2
+        var result = await deadline(seconds: timeout + 1) { await probes.handshake(host: host, port: port, serverName: name, timeout: timeout, label: label) }
         if case .failed = result, !Task.isCancelled {
-            result = await deadline(seconds: mode.directTimeout + 1) { await probes.tcp(host: host, port: port, timeout: mode.directTimeout, label: label) }
+            result = await deadline(seconds: timeout + 1) { await probes.handshake(host: host, port: port, serverName: name, timeout: timeout, label: label) }
         }
         return result
     }

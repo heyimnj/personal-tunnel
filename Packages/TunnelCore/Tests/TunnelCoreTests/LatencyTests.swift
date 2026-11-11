@@ -62,6 +62,17 @@ final class LatencyTests: XCTestCase {
         XCTAssertEqual(probes.labels, ["США", "США"])
     }
 
+    func testTLSNameForDirectProbes() throws {
+        let reality = NodeAssembler.assemble([try ShareLink.parse("vless://11111111-2222-3333-4444-555555555555@1.2.3.4:443?security=reality&sni=www.apple.com&pbk=SbVKOEMjK0sIlbwg4akyBg5mL5KZwwB-ed4eEE7YnRc&sid=ab&type=tcp#R")])[0]
+        XCTAssertEqual(reality.tlsServerName, "www.apple.com")
+        let tlsByHost = NodeAssembler.assemble([try ShareLink.parse("trojan://pw@tr.example.com:443#T")])[0]
+        XCTAssertEqual(tlsByHost.tlsServerName, "tr.example.com")
+        let plain = NodeAssembler.assemble([try ShareLink.parse("ss://" + Data("aes-256-gcm:secret".utf8).base64EncodedString() + "@1.2.3.4:8388#SS")])[0]
+        XCTAssertNil(plain.tlsServerName)
+        let quic = NodeAssembler.assemble([try ShareLink.parse("hy2://pass@hy.example.com:443#H")])[0]
+        XCTAssertNil(quic.tlsServerName)
+    }
+
     func testHangingProbeEndsWithTimeout() async {
         let result = await LatencyRunner.deadline(seconds: 0.2) { try? await Task.sleep(nanoseconds: 30_000_000_000); return .delay(1) }
         XCTAssertEqual(result, .failed(.timeout))

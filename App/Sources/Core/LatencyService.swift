@@ -1,6 +1,7 @@
 import Foundation
 import Libbox
 import Network
+import Security
 import TunnelCore
 
 /// Real probes: a TCP connect outside the tunnel and the core's URL test.
@@ -18,8 +19,26 @@ struct NetworkProbes: LatencyProbes {
     }
 
     func tcp(host: String, port: Int, timeout: TimeInterval, label: String?) async -> ProbeResult {
+        await connect(host: host, port: port, parameters: .tcp, kind: "TCP", timeout: timeout, label: label)
+    }
+
+    /// A full TLS handshake with the server's SNI. Where the network answers TCP
+    /// handshakes itself (a few ms whatever the server) or drops them, only this
+    /// measures the server. Any certificate is accepted: REALITY shows the
+    /// borrowed site's, and the point is the round trip, not trust.
+    func handshake(host: String, port: Int, serverName: String?, timeout: TimeInterval, label: String?) async -> ProbeResult {
+        guard let serverName else { return await tcp(host: host, port: port, timeout: timeout, label: label) }
+        let tls = NWProtocolTLS.Options()
+        let options = tls.securityProtocolOptions
+        sec_protocol_options_set_tls_server_name(options, serverName)
+        sec_protocol_options_add_tls_application_protocol(options, "h2")
+        sec_protocol_options_add_tls_application_protocol(options, "http/1.1")
+        sec_protocol_options_set_verify_block(options, { _, _, complete in complete(true) }, NetworkProbes.blocking)
+        return await connect(host: host, port: port, parameters: NWParameters(tls: tls, tcp: NWProtocolTCP.Options()), kind: "TLS", timeout: timeout, label: label)
+    }
+
+    private func connect(host: String, port: Int, parameters: NWParameters, kind: String, timeout: TimeInterval, label: String?) async -> ProbeResult {
         guard let nwPort = NWEndpoint.Port(rawValue: UInt16(clamping: port)) else { return .failed(.noAddress) }
-        let parameters = NWParameters.tcp
         if avoidTunnel { parameters.prohibitedInterfaceTypes = [.other] }
         let connection = NWConnection(host: NWEndpoint.Host(host), port: nwPort, using: parameters)
         let box = ResultBox()
@@ -27,7 +46,7 @@ struct NetworkProbes: LatencyProbes {
             // The server is named, never its address: the log leaves the app.
             let name = label.map { "«\($0)»" } ?? "сервера"
             box.explain = { failure, error, state, path in
-                var parts = ["Пинг \(name) напрямую: \(failure.title)"]
+                var parts = ["Пинг \(name) напрямую (\(kind)): \(failure.title)"]
                 if let error { parts.append(NetworkProbes.describe(error)) } else { parts.append("нет ответа за \(String(format: "%g", timeout)) с, состояние \(state)") }
                 if let path { parts.append("путь: " + NetworkProbes.describe(path)) }
                 report(parts.joined(separator: "; "))
@@ -229,7 +248,8 @@ final class LatencyService {
         var owner: [String: Int64] = [:]
         for item in items {
             let address = item.node.address
-            let target = LatencyRunner.Target(tag: item.node.id, host: address?.host, port: address?.port, udp: item.node.isUDPBased, label: item.node.name)
+            let target = LatencyRunner.Target(tag: item.node.id, host: address?.host, port: address?.port, udp: item.node.isUDPBased,
+                                              label: item.node.name, tlsName: item.node.tlsServerName)
             owner[LatencyService.key(item.subscription.id, item.node.id)] = item.subscription.id
             if item.subscription.id == tunnelSubscription { live.append(target) } else { direct.append(TargetKeyed.wrap(target, item.subscription.id)) }
         }
@@ -286,6 +306,6 @@ final class LatencyService {
 /// Direct targets carry their subscription in the tag so results map back.
 private enum TargetKeyed {
     static func wrap(_ target: LatencyRunner.Target, _ subscription: Int64) -> LatencyRunner.Target {
-        LatencyRunner.Target(tag: LatencyService.key(subscription, target.tag), host: target.host, port: target.port, udp: target.udp, label: target.label)
+        LatencyRunner.Target(tag: LatencyService.key(subscription, target.tag), host: target.host, port: target.port, udp: target.udp, label: target.label, tlsName: target.tlsName)
     }
 }
