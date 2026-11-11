@@ -211,8 +211,10 @@ public struct Library: Codable, Hashable, Sendable {
         return subscriptions.first { $0.id == id }
     }
 
+    /// The chosen subscription, or the first usable one. A subscription without
+    /// servers is never active: 1.x left empty placeholders behind.
     public var activeSubscription: Subscription? {
-        subscription(activeSubscriptionID) ?? subscriptions.first { !$0.isDisabled && !$0.nodes.isEmpty }
+        subscription(activeSubscriptionID).flatMap { $0.nodes.isEmpty ? nil : $0 } ?? subscriptions.first { !$0.isDisabled && !$0.nodes.isEmpty }
     }
 
     public func selectedNodeID(in subscription: Subscription) -> String? {

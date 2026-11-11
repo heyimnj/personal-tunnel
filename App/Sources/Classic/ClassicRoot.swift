@@ -1,32 +1,48 @@
 import TunnelCore
 import UIKit
 
-/// «Классика»: PERSONAL TUNNEL header, four numbered tabs.
+/// «Классика»: PERSONAL TUNNEL header, four numbered tabs. Metrics are 1.5.0's:
+/// a 58 pt app bar under the status bar and a 46 pt tab bar above the home indicator.
 final class ClassicRootViewController: UIViewController {
+    static let appBarHeight: CGFloat = 58
+    static let tabBarHeight: CGFloat = 46
+
     private let pages: [UIViewController] = [ClassicHomeViewController(), ClassicServersViewController(), ClassicManageViewController(), ClassicSettingsViewController()]
     private let titles = ["Главная", "Серверы", "Управление", "Настройки"]
-    private let counter = Classic.mono("VPN / 01", 10)
+    private let counter = Classic.micro("VPN / 01")
     private let container = UIView()
     private let bar = UIStackView(.horizontal, spacing: 0, alignment: .fill, [])
-    private var tabs: [TapControl] = []
+    private var tabs: [(control: TapControl, number: UILabel, title: UILabel)] = []
     private var index = 0
 
     override func viewDidLoad() {
         super.viewDidLoad()
         view.backgroundColor = Theme.background
-        let name = Classic.text("PERSONAL TUNNEL", 18, .heavy)
-        let header = UIStackView(.horizontal, spacing: 8, alignment: .center, [
-            UIStackView(.vertical, spacing: 2, alignment: .leading, [name, Classic.mono("PRIVATE NETWORK", 10)]), UIView(), counter,
+        let name = Classic.text("PERSONAL TUNNEL", 15, .bold)
+        let header = UIView()
+        let brand = UIStackView(.vertical, spacing: 1, alignment: .leading, [name, Classic.micro("PRIVATE NETWORK")])
+        for item in [brand, counter] as [UIView] {
+            item.translatesAutoresizingMaskIntoConstraints = false
+            header.addSubview(item)
+        }
+        NSLayoutConstraint.activate([
+            brand.leadingAnchor.constraint(equalTo: header.leadingAnchor, constant: 20), brand.centerYAnchor.constraint(equalTo: header.centerYAnchor),
+            counter.trailingAnchor.constraint(equalTo: header.trailingAnchor, constant: -20), counter.centerYAnchor.constraint(equalTo: header.centerYAnchor),
+            brand.trailingAnchor.constraint(lessThanOrEqualTo: counter.leadingAnchor, constant: -8),
         ])
         let top = Classic.rule()
         let bottom = Classic.rule()
         bar.distribution = .fillEqually
         for (offset, title) in titles.enumerated() {
-            let number = Classic.mono(String(format: "%02d", offset + 1), 10)
-            let label = Classic.text(title, 13)
-            let stack = UIStackView(.vertical, spacing: 6, alignment: .center, [number, label])
-            let tab = ClassicRow(Classic.padded(stack, UIEdgeInsets(top: 12, left: 0, bottom: 0, right: 0))) { [weak self] in self?.select(offset) }
-            tabs.append(tab)
+            let number = Classic.micro(String(format: "%02d", offset + 1))
+            let label = Classic.text(title, 11)
+            let stack = UIStackView(.vertical, spacing: 3, alignment: .center, [number, label])
+            let holder = UIView()
+            holder.addSubview(stack)
+            stack.translatesAutoresizingMaskIntoConstraints = false
+            NSLayoutConstraint.activate([stack.centerXAnchor.constraint(equalTo: holder.centerXAnchor), stack.centerYAnchor.constraint(equalTo: holder.centerYAnchor)])
+            let tab = ClassicRow(holder) { [weak self] in self?.select(offset) }
+            tabs.append((tab, number, label))
             bar.addArrangedSubview(tab)
         }
         for item in [header, top, container, bottom, bar] as [UIView] {
@@ -34,14 +50,17 @@ final class ClassicRootViewController: UIViewController {
             view.addSubview(item)
         }
         NSLayoutConstraint.activate([
-            header.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor, constant: 14),
-            header.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 20), header.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -20),
-            top.topAnchor.constraint(equalTo: header.bottomAnchor, constant: 12), top.leadingAnchor.constraint(equalTo: view.leadingAnchor), top.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+            header.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor),
+            header.leadingAnchor.constraint(equalTo: view.leadingAnchor), header.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+            header.heightAnchor.constraint(equalToConstant: Self.appBarHeight - 1),
+            top.topAnchor.constraint(equalTo: header.bottomAnchor), top.leadingAnchor.constraint(equalTo: view.leadingAnchor), top.trailingAnchor.constraint(equalTo: view.trailingAnchor),
             container.topAnchor.constraint(equalTo: top.bottomAnchor), container.leadingAnchor.constraint(equalTo: view.leadingAnchor), container.trailingAnchor.constraint(equalTo: view.trailingAnchor),
             container.bottomAnchor.constraint(equalTo: bottom.topAnchor),
             bottom.leadingAnchor.constraint(equalTo: view.leadingAnchor), bottom.trailingAnchor.constraint(equalTo: view.trailingAnchor),
             bar.topAnchor.constraint(equalTo: bottom.bottomAnchor), bar.leadingAnchor.constraint(equalTo: view.leadingAnchor), bar.trailingAnchor.constraint(equalTo: view.trailingAnchor),
-            bar.bottomAnchor.constraint(equalTo: view.bottomAnchor), bar.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.bottomAnchor, constant: -46),
+            // The bar keeps its height on every device; below it the page colour reaches the edge.
+            bar.bottomAnchor.constraint(equalTo: view.safeAreaLayoutGuide.bottomAnchor),
+            bar.heightAnchor.constraint(equalToConstant: Self.tabBarHeight - 1),
         ])
         for page in pages {
             addChild(page)
@@ -66,31 +85,99 @@ final class ClassicRootViewController: UIViewController {
         for (offset, page) in pages.enumerated() { page.view.isHidden = offset != next }
         for (offset, tab) in tabs.enumerated() {
             let active = offset == next
-            tab.backgroundColor = active ? Theme.accent.withAlphaComponent(0.16) : .clear
-            let labels = (tab.subviews.first?.subviews.first as? UIStackView)?.arrangedSubviews.compactMap { $0 as? UILabel } ?? []
-            labels.first?.textColor = active ? Theme.accent : .secondaryLabel
-            labels.last?.font = Theme.font(13, active ? .bold : .regular)
+            tab.control.backgroundColor = active ? Theme.accent.withAlphaComponent(0.14) : .clear
+            tab.number.textColor = active ? Theme.accent : .secondaryLabel
+            tab.title.font = Theme.fixed(11, active ? .semibold : .regular)
         }
     }
 }
 
-/// 01 Главная.
-final class ClassicHomeViewController: ClassicPage {
-    private let session = UILabel(font: Theme.mono(12, .medium))
-    private let traffic = UILabel(font: Theme.mono(12, .medium))
+/// 01 Главная, laid out as 1.5.0 did on one screen: the status card, «Локация»,
+/// the location list (it scrolls inside its frame) and the subscription card at the bottom.
+final class ClassicHomeViewController: UIViewController {
+    private let session = UILabel(font: Theme.fixedMono(13, .semibold))
+    private let traffic = UILabel(font: Theme.fixedMono(13, .semibold))
+    private let cardBox = UIView()
+    private let listHolder = UIView()
+    private let listScroll = UIScrollView()
+    private let list = UIStackView(.vertical, spacing: 0, alignment: .fill, [])
+    private let quickBox = UIView()
+    private let fade = CAGradientLayer()
     private var timer: Timer?
 
     override func viewDidLoad() {
         super.viewDidLoad()
+        view.backgroundColor = Theme.background
+        let all = ClassicRow(Classic.text("ВСЕ ЛОКАЦИИ →", 10, .semibold, Theme.text.withAlphaComponent(0.75), tracking: 0.5)) { [weak self] in
+            (self?.parent as? ClassicRootViewController)?.select(1)
+        }
+        all.setContentHuggingPriority(.required, for: .horizontal)
+        let heading = UIStackView(.horizontal, spacing: 8, alignment: .firstBaseline, [Classic.text("Локация", 20, .semibold, tracking: -0.4), UIView(), all])
+        heading.heightAnchor.constraint(greaterThanOrEqualToConstant: 24).isActive = true
+
+        listScroll.showsVerticalScrollIndicator = false
+        listScroll.alwaysBounceVertical = false
+        listHolder.addSubview(listScroll)
+        listScroll.pin(to: listHolder)
+        let framed = UIView()
+        framed.layer.borderWidth = 1
+        framed.layer.borderColor = Theme.text.cgColor
+        framed.addSubview(list)
+        list.pin(to: framed)
+        listScroll.addSubview(framed)
+        framed.translatesAutoresizingMaskIntoConstraints = false
+        NSLayoutConstraint.activate([
+            framed.topAnchor.constraint(equalTo: listScroll.contentLayoutGuide.topAnchor),
+            framed.bottomAnchor.constraint(equalTo: listScroll.contentLayoutGuide.bottomAnchor, constant: -8),
+            framed.leadingAnchor.constraint(equalTo: listScroll.frameLayoutGuide.leadingAnchor),
+            framed.trailingAnchor.constraint(equalTo: listScroll.frameLayoutGuide.trailingAnchor),
+        ])
+        fade.colors = [UIColor.black.cgColor, UIColor.black.cgColor, UIColor.clear.cgColor]
+        fade.locations = [0, 0.9, 1]
+
+        let stack = UIStackView(.vertical, spacing: 0, alignment: .fill, [cardBox, heading, listHolder, quickBox])
+        stack.setCustomSpacing(14, after: cardBox)
+        stack.setCustomSpacing(10, after: heading)
+        stack.setCustomSpacing(8, after: listHolder)
+        // The list takes what is left; everything else keeps its height.
+        listHolder.setContentHuggingPriority(.defaultLow - 1, for: .vertical)
+        listHolder.setContentCompressionResistancePriority(.defaultLow - 1, for: .vertical)
+        for item in [cardBox, heading, quickBox] as [UIView] {
+            item.setContentHuggingPriority(.required, for: .vertical)
+            item.setContentCompressionResistancePriority(.required, for: .vertical)
+        }
+        view.addSubview(stack)
+        stack.pin(to: view, insets: UIEdgeInsets(top: 24, left: 20, bottom: 12, right: 20))
+
         let app = App.shared
         app.tunnel.state.observe(self, fireNow: false) { [weak self] _ in self?.rebuild() }
         app.store.library.observe(self, fireNow: false) { [weak self] _ in self?.rebuild() }
         app.latency.changed.observe(self, fireNow: false) { [weak self] _ in self?.rebuild() }
+        Prefs.appearanceChanged.observe(self) { [weak self, weak framed] in
+            self?.view.backgroundColor = Theme.background
+            framed?.layer.borderColor = Theme.text.cgColor
+            self?.rebuild()
+        }
         // Only the two labels follow the clock and the counters.
         app.core.status.observe(self) { [weak self] status in
-            self?.traffic.text = Format.bytes((status?.downlinkTotal ?? 0) + (status?.uplinkTotal ?? 0))
+            self?.traffic.text = Classic.traffic((status?.downlinkTotal ?? 0) + (status?.uplinkTotal ?? 0))
         }
         timer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in self?.tick() }
+        rebuild()
+    }
+
+    override func traitCollectionDidChange(_ previous: UITraitCollection?) {
+        super.traitCollectionDidChange(previous)
+        // Layer colours do not follow the appearance by themselves.
+        if previous?.userInterfaceStyle != traitCollection.userInterfaceStyle { rebuild() }
+    }
+
+    override func viewDidLayoutSubviews() {
+        super.viewDidLayoutSubviews()
+        // Fade only the bottom edge, and only when the list really scrolls.
+        let scrolls = listScroll.contentSize.height > listScroll.bounds.height + 28
+        fade.frame = listHolder.bounds
+        listHolder.layer.mask = scrolls ? fade : nil
     }
 
     private func tick() {
@@ -98,7 +185,9 @@ final class ClassicHomeViewController: ClassicPage {
         session.text = Format.duration(since.map { Int(Date().timeIntervalSince($0)) } ?? 0)
     }
 
-    override func build() {
+    private func rebuild() {
+        for box in [cardBox, quickBox] { box.subviews.forEach { $0.removeFromSuperview() } }
+        list.arrangedSubviews.forEach { $0.removeFromSuperview() }
         let app = App.shared
         let library = app.library
         let state = app.tunnel.state.value
@@ -107,134 +196,273 @@ final class ClassicHomeViewController: ClassicPage {
         let on = state.isOn
         let stateText: String
         switch state {
-        case .connected, .reasserting: stateText = "Туннель запущен"
-        case .connecting: stateText = "Туннель запускается"
+        case .connected: stateText = "Туннель запущен"
+        case .reasserting: stateText = "Восстановление туннеля"
+        case .connecting: stateText = "Запуск туннеля"
         case .disconnecting: stateText = "Туннель останавливается"
         case .disconnected: stateText = "Туннель остановлен"
         }
-        let stateColor: UIColor = on ? Theme.connected : (state.isBusy ? .systemYellow : Theme.danger)
+        let stateColor: UIColor = state.isBusy ? .systemOrange : (on ? .systemGreen : Theme.danger)
         let label = subscription.flatMap { s in node.map { app.store.label(of: $0, in: s) } }
         let entry = subscription.flatMap { s in node.flatMap { app.latency.entry(s.id, $0.id) } }
+        let ink = Theme.text
 
-        // Status frame
-        let frame = ClassicFrame(border: .label, width: 2)
-        let short = String((subscription?.name ?? "—").prefix(6)).uppercased()
-        let position = subscription.flatMap { s in node.flatMap { n in s.nodes.firstIndex { $0.id == n.id } } }.map { $0 + 1 } ?? 0
-        frame.add(UIStackView(.horizontal, spacing: 6, alignment: .center, [
-            Classic.mono("● " + stateText.uppercased(), 11, stateColor, weight: .bold), UIView(), Classic.mono("\(short) / \(String(format: "%02d", position))", 11, Theme.text),
-        ]), insets: UIEdgeInsets(top: 12, left: 16, bottom: 12, right: 16))
-        frame.stack.addArrangedSubview(Classic.rule())
-        func metric(_ caption: String, _ value: UIView) -> UIView { UIStackView(.vertical, spacing: 4, alignment: .leading, [Classic.mono(caption, 9), value]) }
-        let pingValue = UILabel(Classic.ping(entry, testing: false), font: Theme.mono(12, .medium))
+        // Status card
+        func dot(_ color: UIColor, _ side: CGFloat) -> UIView {
+            let view = UIView()
+            view.backgroundColor = color
+            view.layer.cornerRadius = side / 2
+            view.translatesAutoresizingMaskIntoConstraints = false
+            NSLayoutConstraint.activate([view.widthAnchor.constraint(equalToConstant: side), view.heightAnchor.constraint(equalToConstant: side)])
+            return view
+        }
+        let short = String((subscription?.name ?? "").uppercased().prefix(6))
+        let slot = Classic.mono((short.isEmpty ? "IMPORT" : short) + " / 01", 11, ink.withAlphaComponent(0.85), weight: .regular)
+        let status = Classic.text(stateText.uppercased(), 11, .semibold, stateColor, tracking: 0.3)
+        let cardHeader = UIStackView(.horizontal, spacing: 6, alignment: .center, [dot(stateColor, 6), status, UIView(), slot])
+        func metric(_ caption: String, _ value: UILabel) -> UIView {
+            value.textColor = ink
+            value.adjustsFontSizeToFitWidth = true
+            value.minimumScaleFactor = 0.75
+            return UIStackView(.vertical, spacing: 2, alignment: .leading, [Classic.mono(caption, 9, .secondaryLabel, weight: .medium, tracking: 0.4), value])
+        }
+        let pingValue = UILabel(entry?.result.milliseconds.map { "\($0) MS" } ?? "— MS", font: Theme.fixedMono(13, .semibold))
         tick()
-        let info = UIStackView(.vertical, spacing: 8, alignment: .leading, [
-            Classic.text(stateText, 22, .semibold),
-            UIStackView(.horizontal, spacing: 8, alignment: .center, [Classic.flag(label?.countryCode, width: 22), Classic.text(label?.text ?? "Сервер не выбран", 16)]),
-            UIStackView(.horizontal, spacing: 16, alignment: .top, [metric("СЕАНС", session), metric("ТРАФИК", traffic), metric("ПИНГ", pingValue)]),
+        let place: UIView
+        if let label {
+            let line = Classic.text(label.text, 13, .medium)
+            line.adjustsFontSizeToFitWidth = true
+            line.minimumScaleFactor = 0.8
+            place = UIStackView(.horizontal, spacing: 6, alignment: .center, [Classic.flag(label.countryCode, width: 18, height: 12), line])
+        } else {
+            place = Classic.text(state.isBusy ? "Определяем…" : "Локация не выбрана", 13, .medium, .secondaryLabel)
+        }
+        let headline = Classic.text(stateText, 20, .semibold, lines: 2, tracking: -0.5)
+        let left = UIStackView(.vertical, spacing: 5, alignment: .leading, [
+            headline, place,
+            UIStackView(.horizontal, spacing: 12, alignment: .top, [metric("СЕАНС", session), metric("ТРАФИК", traffic), metric("ПИНГ", pingValue)]),
         ])
-        let button = ClassicRow(UIStackView(.vertical, spacing: 8, alignment: .center, [
-            { () -> UIView in
-                let icon = UIImageView(image: UIImage(systemName: "record.circle", withConfiguration: UIImage.SymbolConfiguration(pointSize: 30, weight: .regular)))
-                icon.tintColor = .label
-                return icon
-            }(),
-            Classic.text(on || state == .connecting ? "DISCONNECT" : "CONNECT", 11, .heavy),
-        ]), insets: UIEdgeInsets(top: 22, left: 6, bottom: 18, right: 6)) { App.shared.toggleConnection() }
-        button.layer.borderWidth = 2
-        button.layer.borderColor = UIColor.label.cgColor
-        button.backgroundColor = on ? Theme.accent : .clear
-        button.widthAnchor.constraint(equalToConstant: 98).isActive = true
-        frame.add(UIStackView(.horizontal, spacing: 12, alignment: .center, [info, UIView(), button]), insets: UIEdgeInsets(top: 12, left: 16, bottom: 12, right: 12))
-        frame.stack.addArrangedSubview(Classic.rule())
-        frame.add(UIStackView(.horizontal, spacing: 6, alignment: .center, [
-            Classic.mono("● " + stateText, 11, Theme.text), UIView(), Classic.mono(Prefs.autoSelect ? "PROXY · AUTO" : "PROXY · MANUAL", 11, Theme.text),
-        ]), insets: UIEdgeInsets(top: 10, left: 16, bottom: 10, right: 16))
-        content.addArrangedSubview(frame)
+        let button = ClassicConnectButton(on: on, busy: state.isBusy)
+        let cardBody = UIStackView(.horizontal, spacing: 12, alignment: .center, [left, button])
+        let footer = UIStackView(.horizontal, spacing: 6, alignment: .center, [
+            dot(on ? ink : .secondaryLabel, 5), Classic.mono(stateText, 10, ink.withAlphaComponent(0.85), tracking: 0.4), UIView(),
+            Classic.mono(Prefs.autoSelect ? "PROXY · AUTO" : "PROXY · MANUAL", 10, ink.withAlphaComponent(0.85), tracking: 0.3),
+        ])
+        let card = UIStackView(.vertical, spacing: 0, alignment: .fill, [
+            Classic.padded(cardHeader, UIEdgeInsets(top: 9, left: 14, bottom: 9, right: 14)), Classic.rule(UIColor.black.withAlphaComponent(0.10)),
+            Classic.padded(cardBody, UIEdgeInsets(top: 12, left: 14, bottom: 12, right: 12)), Classic.rule(UIColor.black.withAlphaComponent(0.10)),
+            Classic.padded(footer, UIEdgeInsets(top: 8, left: 14, bottom: 8, right: 14)),
+        ])
+        card.backgroundColor = .secondarySystemGroupedBackground
+        card.layer.borderWidth = 1
+        card.layer.borderColor = ink.cgColor
+        cardBox.addSubview(card)
+        card.pin(to: cardBox)
 
-        // Location
-        let all = ClassicRow(Classic.text("ВСЕ ЛОКАЦИИ →", 11, .semibold)) { [weak self] in (self?.parent as? ClassicRootViewController)?.select(1) }
-        content.addArrangedSubview(UIStackView(.horizontal, spacing: 8, alignment: .lastBaseline, [Classic.text("Локация", 22, .bold), UIView(), all]))
-        let list = ClassicFrame(border: Theme.line)
-        let modeIcon = UIImageView(image: UIImage(systemName: "scope", withConfiguration: UIImage.SymbolConfiguration(pointSize: 20, weight: .medium)))
-        modeIcon.tintColor = Theme.panel
-        modeIcon.contentMode = .center
-        modeIcon.backgroundColor = Theme.accent
-        modeIcon.translatesAutoresizingMaskIntoConstraints = false
-        NSLayoutConstraint.activate([modeIcon.widthAnchor.constraint(equalToConstant: 42), modeIcon.heightAnchor.constraint(equalToConstant: 42)])
-        let mode = UIStackView(.horizontal, spacing: 14, alignment: .center, [
-            modeIcon,
-            UIStackView(.vertical, spacing: 4, alignment: .leading, [Classic.text(Prefs.autoSelect ? "Автовыбор" : "Пользовательский", 16, .semibold, .white), Classic.mono((label?.text ?? "—").uppercased(), 9, .lightGray)]),
-            UIView(),
-            UIStackView(.vertical, spacing: 4, alignment: .trailing, [Classic.text(Classic.ping(entry, testing: false), 14, .semibold, Theme.accent), Classic.mono("BEST", 9, .white, weight: .bold)]),
-        ])
-        let modeBox = Classic.padded(mode, UIEdgeInsets(top: 12, left: 12, bottom: 12, right: 14))
-        modeBox.backgroundColor = Theme.panel
-        list.stack.addArrangedSubview(modeBox)
+        // Location list: the mode card, the chosen server, then up to nine more.
+        list.addArrangedSubview(ClassicModeCard(title: Prefs.autoSelect ? "Автовыбор" : "Пользовательский",
+                                                subtitle: (label?.text ?? "—").uppercased(),
+                                                ping: entry?.result.milliseconds.map { "\($0) MS" } ?? "— MS"))
         if let subscription {
             let labels = app.store.labels(for: subscription)
             let selected = library.selectedNodeID(in: subscription)
-            // The chosen server first, then the next one in list order.
-            var shown = subscription.nodes.filter { $0.id == selected }
-            shown += subscription.nodes.filter { $0.id != selected }.prefix(1)
-            for item in shown {
+            let shown = subscription.nodes.filter { $0.id == selected } + subscription.nodes.filter { $0.id != selected }.prefix(9)
+            let rows = UIStackView(.vertical, spacing: 0, alignment: .fill, [])
+            rows.backgroundColor = Theme.background
+            for (offset, item) in shown.enumerated() {
+                if offset > 0 { rows.addArrangedSubview(Classic.rule()) }
                 let itemEntry = app.latency.entry(subscription.id, item.id)
-                let box = UIView()
-                box.layer.borderWidth = 1.5
-                box.layer.borderColor = UIColor.label.cgColor
-                box.backgroundColor = item.id == selected ? Theme.accent : .clear
-                if item.id == selected {
-                    let check = UIImageView(image: UIImage(systemName: "checkmark", withConfiguration: UIImage.SymbolConfiguration(pointSize: 11, weight: .bold)))
-                    check.tintColor = .label
-                    check.contentMode = .center
-                    box.addSubview(check)
-                    check.pin(to: box)
-                }
-                box.translatesAutoresizingMaskIntoConstraints = false
-                NSLayoutConstraint.activate([box.widthAnchor.constraint(equalToConstant: 20), box.heightAnchor.constraint(equalToConstant: 20)])
-                let row = UIStackView(.horizontal, spacing: 12, alignment: .top, [
-                    Classic.flag(labels[item.id]?.countryCode),
-                    UIStackView(.vertical, spacing: 5, alignment: .leading, [
-                        Classic.text(labels[item.id]?.text ?? item.name, 16, .bold), Classic.text(item.facts.summary, 10, .regular, .secondaryLabel),
-                        Classic.text(subscription.info.isLimited ? "ЛИМИТНЫЙ" : "ЛИМИТ НЕ УКАЗАН", 10, .medium, Theme.accent),
-                    ]),
-                    UIView(), Classic.text(Classic.ping(itemEntry, testing: app.latency.isTesting(subscription.id, item.id), upper: false), 14), box,
-                ])
                 let id = subscription.id, tag = item.id
-                list.stack.addArrangedSubview(ClassicRow(row, insets: UIEdgeInsets(top: 14, left: 10, bottom: 12, right: 10)) { App.shared.select(node: tag, in: id) })
-                list.stack.addArrangedSubview(Classic.rule())
+                rows.addArrangedSubview(ClassicLocationRow(
+                    title: labels[item.id]?.text ?? item.name, meta: item.facts.summary, flag: labels[item.id]?.countryCode,
+                    ping: Classic.ping(itemEntry, testing: app.latency.isTesting(subscription.id, item.id), upper: false),
+                    limited: subscription.info.isLimited, selected: item.id == selected
+                ) { App.shared.select(node: tag, in: id) })
             }
+            list.addArrangedSubview(rows)
         }
-        content.addArrangedSubview(list)
 
-        // Subscription card
-        let card = ClassicFrame(border: Theme.line)
-        let folder = UIImageView(image: UIImage(systemName: "folder", withConfiguration: UIImage.SymbolConfiguration(pointSize: 18)))
-        folder.tintColor = .label
-        folder.setContentHuggingPriority(.required, for: .horizontal)
-        let refresh = UIButton(type: .system)
-        refresh.setImage(UIImage(systemName: "arrow.clockwise", withConfiguration: UIImage.SymbolConfiguration(pointSize: 17)), for: .normal)
-        refresh.tintColor = .label
-        refresh.addAction(UIAction { _ in if let id = subscription?.id { App.shared.refresh(id) } }, for: .touchUpInside)
-        refresh.setContentHuggingPriority(.required, for: .horizontal)
-        let nameLabel = Classic.text(subscription?.name ?? "Нет подписок", 18)
-        nameLabel.lineBreakMode = .byTruncatingTail
-        let head = ClassicRow(UIStackView(.horizontal, spacing: 12, alignment: .center, [folder, nameLabel])) { [weak self] in
-            self?.present(ClassicSubscriptionsSheet.wrapped(), animated: true)
+        // Subscription card: system text sizes, as in 1.5.0.
+        let folder = UIButton(type: .system)
+        var folderConfig = UIButton.Configuration.plain()
+        folderConfig.image = UIImage(systemName: "folder")
+        folderConfig.imagePadding = 8
+        folderConfig.contentInsets = .zero
+        folderConfig.title = subscription?.name ?? "Выбрать подписку"
+        folderConfig.titleTextAttributesTransformer = UIConfigurationTextAttributesTransformer { attributes in
+            var attributes = attributes
+            attributes.font = Theme.font(.body)
+            return attributes
         }
-        let delayText = entry.map { "Задержка: " + (app.tunnelSubscription != nil ? "HTTPS " : "TCP ") + Format.ago($0.date) } ?? "Задержка: не измерялась"
-        let check = ClassicRow(Classic.text("Проверка соединения и журнал", 18)) { [weak self] in
+        folderConfig.titleLineBreakMode = .byTruncatingTail
+        folder.configuration = folderConfig
+        folder.tintColor = Theme.accent
+        folder.contentHorizontalAlignment = .leading
+        folder.addAction(UIAction { [weak self] _ in self?.present(ClassicSubscriptionsSheet.wrapped(), animated: true) }, for: .touchUpInside)
+        let refresh = UIButton(type: .system)
+        refresh.setImage(UIImage(systemName: "arrow.clockwise", withConfiguration: UIImage.SymbolConfiguration(textStyle: .body)), for: .normal)
+        refresh.tintColor = Theme.accent
+        refresh.isEnabled = !app.latency.progress.value.running
+        refresh.accessibilityLabel = "Обновить пинг"
+        refresh.addAction(UIAction { _ in if let subscription = App.shared.library.activeSubscription { App.shared.ping([subscription]) } }, for: .touchUpInside)
+        refresh.setContentHuggingPriority(.required, for: .horizontal)
+        let check = UIButton(type: .system)
+        check.setTitle("Проверка соединения и журнал", for: .normal)
+        check.titleLabel?.font = Theme.font(.body)
+        check.tintColor = Theme.accent
+        check.contentHorizontalAlignment = .leading
+        check.addAction(UIAction { [weak self] _ in
             let root = DiagnosticsViewController()
             root.navigationItem.rightBarButtonItem = UIBarButtonItem(systemItem: .done, primaryAction: UIAction { [weak root] _ in root?.dismiss(animated: true) })
             self?.present(UINavigationController(rootViewController: root), animated: true)
+        }, for: .touchUpInside)
+        var quickLines: [UIView] = [
+            UIStackView(.horizontal, spacing: 8, alignment: .center, [folder, UIView(), refresh]),
+            UILabel("Прокси: Не проверено · Интернет: Не проверено", font: Theme.font(.caption1), color: .secondaryLabel, lines: 0),
+            check,
+        ]
+        if let entry {
+            quickLines.append(UILabel("Задержка: " + (app.tunnelSubscription != nil ? "HTTPS " : "TCP ") + Format.ago(entry.date), font: Theme.font(.caption2), color: .secondaryLabel))
         }
-        let body = UIStackView(.vertical, spacing: 10, alignment: .fill, [
-            UIStackView(.horizontal, spacing: 8, alignment: .center, [head, refresh]),
-            Classic.text("Прокси: Не проверено · Интернет: Не проверено", 12, .regular, .secondaryLabel), check,
-            Classic.text(delayText, 11, .regular, .secondaryLabel),
-            Classic.text("Пинг и счётчики трафика не подтверждают доступ в интернет.", 11, .regular, .secondaryLabel, lines: 0),
+        quickLines.append(UILabel("Пинг и счётчики трафика не подтверждают доступ в интернет.", font: Theme.font(.caption2), color: .secondaryLabel, lines: 0))
+        let quick = UIStackView(.vertical, spacing: 12, alignment: .fill, quickLines)
+        let quickFrame = UIView()
+        quickFrame.layer.borderWidth = 1
+        quickFrame.layer.borderColor = Theme.line.cgColor
+        quickFrame.addSubview(quick)
+        quick.pin(to: quickFrame, insets: UIEdgeInsets(top: 12, left: 12, bottom: 12, right: 12))
+        quickBox.addSubview(quickFrame)
+        quickFrame.pin(to: quickBox)
+        view.setNeedsLayout()
+    }
+}
+
+/// The 96 pt square that connects and disconnects (1.5.0 `DirectHomeConnectButton`).
+private final class ClassicConnectButton: TapControl {
+    init(on: Bool, busy: Bool) {
+        super.init(frame: .zero)
+        pressScale = 1
+        let ring = UIView()
+        ring.layer.borderWidth = 2
+        ring.layer.borderColor = UIColor.black.cgColor
+        ring.layer.cornerRadius = 12
+        let core = UIView()
+        core.backgroundColor = .black
+        core.layer.cornerRadius = 5.5
+        let title = Classic.text(busy ? "ОТМЕНА" : (on ? "DISCONNECT" : "CONNECT"), 10, .bold, .black)
+        title.adjustsFontSizeToFitWidth = true
+        title.minimumScaleFactor = 0.7
+        title.textAlignment = .center
+        for item in [ring, core, title] as [UIView] {
+            item.translatesAutoresizingMaskIntoConstraints = false
+            item.isUserInteractionEnabled = false
+            addSubview(item)
+        }
+        // Glyph (24) + 10 + title, centred in the square.
+        NSLayoutConstraint.activate([
+            widthAnchor.constraint(equalToConstant: 96), heightAnchor.constraint(equalToConstant: 96),
+            ring.widthAnchor.constraint(equalToConstant: 24), ring.heightAnchor.constraint(equalToConstant: 24),
+            ring.centerXAnchor.constraint(equalTo: centerXAnchor), ring.bottomAnchor.constraint(equalTo: centerYAnchor, constant: -1),
+            core.widthAnchor.constraint(equalToConstant: 11), core.heightAnchor.constraint(equalToConstant: 11),
+            core.centerXAnchor.constraint(equalTo: ring.centerXAnchor), core.centerYAnchor.constraint(equalTo: ring.centerYAnchor),
+            title.topAnchor.constraint(equalTo: ring.bottomAnchor, constant: 10),
+            title.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 6), title.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -6),
         ])
-        card.add(body, insets: UIEdgeInsets(top: 14, left: 12, bottom: 14, right: 12))
-        content.addArrangedSubview(card)
+        backgroundColor = busy ? UIColor.systemOrange.withAlphaComponent(0.9) : (on ? Theme.accent : .white)
+        layer.borderWidth = 1.5
+        layer.borderColor = Theme.text.cgColor
+        alpha = busy ? 0.85 : 1
+        setContentHuggingPriority(.required, for: .horizontal)
+        setContentCompressionResistancePriority(.required, for: .horizontal)
+        accessibilityLabel = busy ? "ОТМЕНА" : (on ? "DISCONNECT" : "CONNECT")
+        onTap = { App.shared.toggleConnection() }
+    }
+}
+
+/// Dark mode card at the top of the location list (1.5.0 `DirectHomeAutoLocationCard`).
+private final class ClassicModeCard: UIView {
+    init(title: String, subtitle: String, ping: String) {
+        super.init(frame: .zero)
+        backgroundColor = Theme.panel
+        let tile = UIView()
+        tile.backgroundColor = Theme.accent
+        tile.layer.borderWidth = 1.4
+        tile.layer.borderColor = Theme.text.cgColor
+        tile.translatesAutoresizingMaskIntoConstraints = false
+        NSLayoutConstraint.activate([tile.widthAnchor.constraint(equalToConstant: 40), tile.heightAnchor.constraint(equalToConstant: 40)])
+        let circles: [(side: CGFloat, filled: Bool)] = [(20, false), (11, false), (4.5, true)]
+        for (side, filled) in circles {
+            let circle = UIView()
+            circle.layer.cornerRadius = side / 2
+            if filled { circle.backgroundColor = .black } else { circle.layer.borderWidth = 1.7; circle.layer.borderColor = UIColor.black.cgColor }
+            circle.translatesAutoresizingMaskIntoConstraints = false
+            tile.addSubview(circle)
+            NSLayoutConstraint.activate([
+                circle.widthAnchor.constraint(equalToConstant: side), circle.heightAnchor.constraint(equalToConstant: side),
+                circle.centerXAnchor.constraint(equalTo: tile.centerXAnchor), circle.centerYAnchor.constraint(equalTo: tile.centerYAnchor),
+            ])
+        }
+        let texts = UIStackView(.vertical, spacing: 3, alignment: .leading, [
+            Classic.text(title, 15, .semibold, .white), Classic.text(subtitle, 9, .medium, UIColor.white.withAlphaComponent(0.45), tracking: 0.5),
+        ])
+        let right = UIStackView(.vertical, spacing: 2, alignment: .trailing, [
+            Classic.text(ping, 13, .semibold, Theme.accent), Classic.text("BEST", 9, .semibold, .white, tracking: 0.6),
+        ])
+        right.setContentHuggingPriority(.required, for: .horizontal)
+        right.setContentCompressionResistancePriority(.required, for: .horizontal)
+        let row = UIStackView(.horizontal, spacing: 12, alignment: .center, [tile, texts, UIView(), right])
+        addSubview(row)
+        row.pin(to: self, insets: UIEdgeInsets(top: 12, left: 12, bottom: 12, right: 12))
+    }
+
+    @available(*, unavailable)
+    required init?(coder _: NSCoder) { fatalError() }
+}
+
+/// A server of the home list (1.5.0 `DirectHomeLocationRow`).
+private final class ClassicLocationRow: TapControl {
+    init(title: String, meta: String, flag: String?, ping: String, limited: Bool, selected: Bool, action: @escaping () -> Void) {
+        super.init(frame: .zero)
+        pressScale = 1
+        let flagView = Classic.flag(flag)
+        let flagBox = Classic.padded(flagView, UIEdgeInsets(top: 1, left: 0, bottom: 0, right: 12))
+        let name = Classic.text(title, 15, .semibold)
+        name.lineBreakMode = .byTruncatingTail
+        let texts = UIStackView(.vertical, spacing: 2, alignment: .leading, [name, Classic.text(meta, 9, .medium, .secondaryLabel, tracking: 0.3)])
+        if !limited {
+            let note = Classic.text("ЛИМИТ НЕ УКАЗАН", 10, .medium, Theme.accent)
+            texts.addArrangedSubview(note)
+            texts.setCustomSpacing(6, after: texts.arrangedSubviews[1])
+        }
+        let box = UIView()
+        box.backgroundColor = selected ? Theme.accent : .white
+        box.layer.borderWidth = 1.35
+        box.layer.borderColor = Theme.text.cgColor
+        if selected {
+            let check = UIImageView(image: UIImage(systemName: "checkmark", withConfiguration: UIImage.SymbolConfiguration(pointSize: 10, weight: .bold)))
+            check.tintColor = .black
+            check.contentMode = .center
+            box.addSubview(check)
+            check.pin(to: box)
+        }
+        box.translatesAutoresizingMaskIntoConstraints = false
+        NSLayoutConstraint.activate([box.widthAnchor.constraint(equalToConstant: 18), box.heightAnchor.constraint(equalToConstant: 18)])
+        let pingLabel = Classic.text(ping, 12)
+        let right = UIStackView(.vertical, spacing: 5, alignment: .trailing, [UIStackView(.horizontal, spacing: 8, alignment: .center, [pingLabel, box])])
+        if !limited {
+            let dash = Classic.text("—", 12)
+            dash.textAlignment = .center
+            dash.widthAnchor.constraint(equalToConstant: 18).isActive = true
+            right.addArrangedSubview(dash)
+        }
+        right.setContentHuggingPriority(.required, for: .horizontal)
+        right.setContentCompressionResistancePriority(.required, for: .horizontal)
+        let rightBox = Classic.padded(right, UIEdgeInsets(top: 1, left: 10, bottom: 0, right: 0))
+        let row = UIStackView(.horizontal, spacing: 0, alignment: .top, [flagBox, texts, UIView(), rightBox])
+        row.isUserInteractionEnabled = false
+        addSubview(row)
+        row.pin(to: self, insets: UIEdgeInsets(top: 11, left: 10, bottom: 11, right: 10))
+        onTap = action
     }
 }
 
@@ -258,8 +486,9 @@ final class ClassicSubscriptionsSheet: ClassicPage {
 
     override func build() {
         let library = App.shared.library
+        content.spacing = 0
         let close = ClassicRow({ () -> UIView in
-            let icon = UIImageView(image: UIImage(systemName: "xmark", withConfiguration: UIImage.SymbolConfiguration(pointSize: 14, weight: .semibold)))
+            let icon = UIImageView(image: UIImage(systemName: "xmark", withConfiguration: UIImage.SymbolConfiguration(pointSize: 12, weight: .bold)))
             icon.tintColor = Theme.accent
             icon.contentMode = .center
             return icon
@@ -267,50 +496,66 @@ final class ClassicSubscriptionsSheet: ClassicPage {
         close.backgroundColor = Theme.panel
         close.translatesAutoresizingMaskIntoConstraints = false
         NSLayoutConstraint.activate([close.widthAnchor.constraint(equalToConstant: 38), close.heightAnchor.constraint(equalToConstant: 38)])
-        content.addArrangedSubview(UIStackView(.horizontal, spacing: 8, alignment: .bottom, [
-            UIStackView(.vertical, spacing: 6, alignment: .leading, [
-                Classic.mono("01 —— ПОДКЛЮЧЕНИЕ / ПОДПИСКИ", 9, Theme.accent), Classic.text("Подписки", 34, .bold),
-                Classic.text("Сохранённые профили на этом устройстве", 12, .regular, .secondaryLabel),
+        let dash = UIView()
+        dash.backgroundColor = Theme.accent
+        dash.translatesAutoresizingMaskIntoConstraints = false
+        NSLayoutConstraint.activate([dash.widthAnchor.constraint(equalToConstant: 14), dash.heightAnchor.constraint(equalToConstant: 2)])
+        let title = Classic.text("Подписки", 34, .semibold)
+        title.adjustsFontSizeToFitWidth = true
+        title.minimumScaleFactor = 0.8
+        content.addArrangedSubview(UIStackView(.horizontal, spacing: 12, alignment: .bottom, [
+            UIStackView(.vertical, spacing: 5, alignment: .leading, [
+                UIStackView(.horizontal, spacing: 7, alignment: .center, [Classic.micro("01", Theme.accent), dash, Classic.micro("ПОДКЛЮЧЕНИЕ / ПОДПИСКИ")]),
+                title, Classic.text("Сохранённые профили на этом устройстве", 11, .medium, .secondaryLabel),
             ]), UIView(), close,
         ]))
-        content.addArrangedSubview(Classic.rule(.label))
-        content.addArrangedSubview(UIStackView(.horizontal, spacing: 8, alignment: .center, [
-            Classic.mono("ДОБАВЛЕННЫЕ ПОДПИСКИ", 9, Theme.text, weight: .bold), UIView(), Classic.mono(String(format: "%02d", library.subscriptions.count), 9, Theme.accent),
-        ]))
-        let list = UIStackView(.vertical, spacing: 0, alignment: .fill, [])
+        content.setCustomSpacing(15, after: content.arrangedSubviews[0])
+        content.addArrangedSubview(Classic.rule())
+        let visible = library.subscriptions.filter { !$0.nodes.isEmpty }
+        let count = UIStackView(.horizontal, spacing: 8, alignment: .center, [
+            Classic.micro("ДОБАВЛЕННЫЕ ПОДПИСКИ", Theme.text), UIView(), Classic.micro(String(format: "%02d", visible.count), Theme.accent),
+        ])
+        count.heightAnchor.constraint(equalToConstant: 36).isActive = true
+        content.setCustomSpacing(18, after: content.arrangedSubviews[1])
+        content.addArrangedSubview(Classic.rule(Theme.text))
+        content.addArrangedSubview(count)
+        let list = UIStackView(.vertical, spacing: 1, alignment: .fill, [])
         let active = library.activeSubscription?.id
         let formatter = DateFormatter()
         formatter.locale = Locale(identifier: "ru_RU")
         formatter.dateStyle = .medium
-        for subscription in library.subscriptions {
+        let dark = traitCollection.userInterfaceStyle == .dark
+        for subscription in visible {
             let isActive = subscription.id == active
-            let tile = Classic.text("URL", 11, .bold, isActive ? Theme.accent : Theme.text)
+            let tile = Classic.mono("URL", 10, isActive ? Theme.accent : Theme.text, weight: .bold)
             tile.textAlignment = .center
-            tile.backgroundColor = isActive ? .black : UIColor.systemBackground
+            tile.backgroundColor = dark ? .tertiarySystemBackground : (isActive ? Theme.text : UIColor.white.withAlphaComponent(0.72))
             tile.translatesAutoresizingMaskIntoConstraints = false
-            NSLayoutConstraint.activate([tile.widthAnchor.constraint(equalToConstant: 46), tile.heightAnchor.constraint(equalToConstant: 40)])
+            NSLayoutConstraint.activate([tile.widthAnchor.constraint(equalToConstant: 48), tile.heightAnchor.constraint(equalToConstant: 42)])
             var detail = (subscription.isRemote ? "Внешний провайдер" : "Добавлено вручную") + " · " + Format.plural(subscription.nodes.count, "локация", "локации", "локаций")
             if let expires = subscription.info.expiresAt { detail += " · " + formatter.string(from: expires) }
-            let name = Classic.text(subscription.name, 15, .semibold)
+            let name = Classic.text(subscription.name, 13, .semibold)
             name.lineBreakMode = .byTruncatingTail
             var titleViews: [UIView] = [name]
-            if isActive { titleViews.append(Classic.mono("АКТИВНА", 9, Theme.accent)) }
-            let mark = UIImageView(image: UIImage(systemName: isActive ? "checkmark" : "arrow.right", withConfiguration: UIImage.SymbolConfiguration(pointSize: 13, weight: .medium)))
+            if isActive { titleViews.append(Classic.micro("АКТИВНА", Theme.accent)) }
+            let mark = UIImageView(image: UIImage(systemName: isActive ? "checkmark" : "arrow.right", withConfiguration: UIImage.SymbolConfiguration(pointSize: 11, weight: .bold)))
             mark.tintColor = isActive ? Theme.accent : .secondaryLabel
             mark.setContentHuggingPriority(.required, for: .horizontal)
-            let detailLabel = Classic.text(detail, 11, .regular, .secondaryLabel)
+            let detailLabel = Classic.text(detail, 10, .regular, .secondaryLabel)
             detailLabel.lineBreakMode = .byTruncatingTail
             let row = UIStackView(.horizontal, spacing: 12, alignment: .center, [
-                tile, UIStackView(.vertical, spacing: 5, alignment: .leading, [UIStackView(.horizontal, spacing: 8, alignment: .center, titleViews), detailLabel]), UIView(), mark,
+                tile, UIStackView(.vertical, spacing: 4, alignment: .leading, [UIStackView(.horizontal, spacing: 7, alignment: .center, titleViews), detailLabel]), UIView(), mark,
             ])
+            row.heightAnchor.constraint(greaterThanOrEqualToConstant: 68).isActive = true
             let id = subscription.id
-            let control = ClassicRow(row, insets: UIEdgeInsets(top: 12, left: 12, bottom: 12, right: 14)) {
+            let control = ClassicRow(row, insets: UIEdgeInsets(top: 0, left: 12, bottom: 0, right: 12)) { [weak self] in
                 guard let target = App.shared.library.subscription(id), let node = App.shared.library.selectedNodeID(in: target) else { return }
                 App.shared.select(node: node, in: id)
+                self?.dismiss(animated: true)
             }
             control.layer.borderWidth = 1
             control.layer.borderColor = (isActive ? Theme.accent : Theme.line).cgColor
-            control.backgroundColor = isActive ? Theme.accent.withAlphaComponent(0.16) : UIColor.secondarySystemGroupedBackground
+            control.backgroundColor = isActive ? Theme.accent.withAlphaComponent(0.16) : (dark ? .secondarySystemBackground : UIColor.white.withAlphaComponent(0.72))
             list.addArrangedSubview(control)
         }
         content.addArrangedSubview(list)

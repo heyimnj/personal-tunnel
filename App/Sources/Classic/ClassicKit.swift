@@ -2,20 +2,40 @@ import TunnelCore
 import UIKit
 
 /// Building blocks of the Classic look: thin frames, monospaced captions, dark slabs.
+/// Sizes are 1.5.0's and stay fixed: its Classic screens did not follow the text size.
+/// Only the form pages (03, 04) did, through `body`.
 enum Classic {
-    static func mono(_ text: String, _ size: CGFloat = 10, _ color: UIColor = .secondaryLabel, weight: UIFont.Weight = .medium) -> UILabel {
-        let label = UILabel(text, font: Theme.mono(size, weight), color: color)
-        label.attributedText = NSAttributedString(string: text, attributes: [.kern: 0.6])
+    static func mono(_ text: String, _ size: CGFloat = 10, _ color: UIColor = .secondaryLabel, weight: UIFont.Weight = .medium, tracking: CGFloat = 0) -> UILabel {
+        let label = UILabel(text, font: Theme.fixedMono(size, weight), color: color)
+        if tracking != 0 { label.attributedText = NSAttributedString(string: text, attributes: [.kern: tracking]) }
         return label
     }
 
-    static func text(_ text: String, _ size: CGFloat, _ weight: UIFont.Weight = .regular, _ color: UIColor = Theme.text, lines: Int = 1) -> UILabel {
+    /// 1.5.0 `microLabel`: 9 pt semibold monospaced.
+    static func micro(_ text: String, _ color: UIColor = .secondaryLabel) -> UILabel {
+        mono(text, 9, color, weight: .semibold)
+    }
+
+    static func text(_ text: String, _ size: CGFloat, _ weight: UIFont.Weight = .regular, _ color: UIColor = Theme.text, lines: Int = 1, tracking: CGFloat = 0) -> UILabel {
+        let label = UILabel(text, font: Theme.fixed(size, weight), color: color, lines: lines)
+        if tracking != 0 { label.attributedText = NSAttributedString(string: text, attributes: [.kern: tracking]) }
+        return label
+    }
+
+    /// SF Rounded, which 1.5.0 used for server names and list titles.
+    static func rounded(_ size: CGFloat, _ weight: UIFont.Weight = .regular) -> UIFont {
+        let base = Theme.fixed(size, weight)
+        guard (Prefs.fontFile ?? "").isEmpty, let descriptor = base.fontDescriptor.withDesign(.rounded) else { return base }
+        return UIFont(descriptor: descriptor, size: size)
+    }
+
+    /// Text of the form pages, which follows the user's text size like 1.5.0's forms.
+    static func body(_ text: String, _ size: CGFloat = 17, _ weight: UIFont.Weight = .regular, _ color: UIColor = Theme.text, lines: Int = 1) -> UILabel {
         UILabel(text, font: Theme.font(size, weight), color: color, lines: lines)
     }
 
     /// Rectangular flag from the asset catalogue, or the dark «XX» tile.
-    static func flag(_ code: String?, width: CGFloat = 34) -> UIView {
-        let height = width * 0.66
+    static func flag(_ code: String?, width: CGFloat = 34, height: CGFloat = 24) -> UIView {
         let view: UIView
         if let code, let image = UIImage(named: "flag-\(code.lowercased())") {
             let imageView = UIImageView(image: image)
@@ -25,13 +45,15 @@ enum Classic {
             imageView.layer.borderColor = UIColor.separator.cgColor
             view = imageView
         } else {
-            let tile = UILabel("XX", font: Theme.mono(9, .semibold), color: Theme.accent)
+            let tile = UILabel("XX", font: Theme.fixedMono(9, .semibold), color: Theme.accent)
             tile.textAlignment = .center
             tile.backgroundColor = Theme.panel
             view = tile
         }
         view.translatesAutoresizingMaskIntoConstraints = false
         NSLayoutConstraint.activate([view.widthAnchor.constraint(equalToConstant: width), view.heightAnchor.constraint(equalToConstant: height)])
+        view.setContentHuggingPriority(.required, for: .horizontal)
+        view.setContentCompressionResistancePriority(.required, for: .horizontal)
         return view
     }
 
@@ -47,6 +69,11 @@ enum Classic {
         box.addSubview(view)
         view.pin(to: box, insets: insets)
         return box
+    }
+
+    /// Session traffic as the 1.5.0 card wrote it: «—» before anything moved.
+    static func traffic(_ bytes: Int64) -> String {
+        bytes > 0 ? Format.bytes(bytes) : "—"
     }
 
     static func ping(_ entry: LatencyEntry?, testing: Bool, upper: Bool = true) -> String {
@@ -70,7 +97,7 @@ final class ClassicFrame: UIView {
         addSubview(stack)
         stack.pin(to: self)
         if let caption {
-            stack.addArrangedSubview(Classic.padded(Classic.mono(caption, 10, Theme.text, weight: .bold), UIEdgeInsets(top: 18, left: 18, bottom: 14, right: 18)))
+            stack.addArrangedSubview(Classic.padded(Classic.mono(caption, 10, Theme.text, weight: .bold, tracking: 0.6), UIEdgeInsets(top: 18, left: 18, bottom: 14, right: 18)))
             stack.addArrangedSubview(Classic.padded(Classic.rule(), UIEdgeInsets(top: 0, left: 18, bottom: 0, right: 18)))
         }
     }

@@ -4,16 +4,17 @@ import UIKit
 /// 02 Серверы — «Все локации».
 final class ClassicServersViewController: UIViewController, UITableViewDataSource, UITableViewDelegate, UISearchBarDelegate {
     private let table = UITableView(frame: .zero, style: .plain)
-    private let heading = Classic.mono("ЛОКАЦИИ / 00", 10)
+    private let heading = Classic.micro("ЛОКАЦИИ / 00")
     private let pingButton = TapControl()
-    private let pingLabel = Classic.text("ПИНГ", 13, .bold, .white)
+    private let pingIcon = UIImageView()
+    private let pingLabel = Classic.mono("ПИНГ", 12, .white, weight: .bold)
     private let pingSpinner = UIActivityIndicatorView(style: .medium)
     private let search = UITextField()
     private let filters = UIStackView(.horizontal, spacing: 22, alignment: .center, [])
-    private let groupTitle = Classic.text("Доступные серверы", 17, .semibold)
-    private let groupKicker = Classic.mono("", 10, .secondaryLabel)
-    private let groupCount = Classic.text("00", 22, .bold)
-    private let groupProgress = Classic.mono("", 9)
+    private let groupTitle = UILabel("Доступные серверы", font: Classic.rounded(14, .semibold))
+    private let groupKicker = Classic.micro("")
+    private let groupCount = Classic.mono("00", 18, Theme.text, weight: .semibold)
+    private let groupProgress = Classic.micro("")
     private var filter = 0
     private var rows: [ServerNode] = []
     private var subscription: Subscription?
@@ -22,21 +23,21 @@ final class ClassicServersViewController: UIViewController, UITableViewDataSourc
     override func viewDidLoad() {
         super.viewDidLoad()
         view.backgroundColor = Theme.background
-        let close = UIImageView(image: UIImage(systemName: "xmark", withConfiguration: UIImage.SymbolConfiguration(pointSize: 14, weight: .semibold)))
+        // 1.5.0 `SheetScaffold`: kicker, 24 pt title, a 36 pt dark close square.
+        let close = UIImageView(image: UIImage(systemName: "xmark", withConfiguration: UIImage.SymbolConfiguration(pointSize: 12, weight: .bold)))
         close.tintColor = Theme.accent
         close.contentMode = .center
         let closeBox = ClassicRow(close) { [weak self] in (self?.parent as? ClassicRootViewController)?.select(0) }
         closeBox.backgroundColor = Theme.panel
         closeBox.translatesAutoresizingMaskIntoConstraints = false
-        NSLayoutConstraint.activate([closeBox.widthAnchor.constraint(equalToConstant: 38), closeBox.heightAnchor.constraint(equalToConstant: 38)])
-        let title = UIStackView(.horizontal, spacing: 8, alignment: .center, [
-            UIStackView(.vertical, spacing: 6, alignment: .leading, [heading, Classic.text("Все локации", 24, .bold)]), UIView(), closeBox,
+        NSLayoutConstraint.activate([closeBox.widthAnchor.constraint(equalToConstant: 36), closeBox.heightAnchor.constraint(equalToConstant: 36)])
+        let title = UIStackView(.horizontal, spacing: 12, alignment: .top, [
+            UIStackView(.vertical, spacing: 6, alignment: .leading, [heading, Classic.text("Все локации", 24, .semibold)]), UIView(), closeBox,
         ])
-        let icon = UIImageView(image: UIImage(systemName: "antenna.radiowaves.left.and.right", withConfiguration: UIImage.SymbolConfiguration(pointSize: 14, weight: .semibold)))
-        icon.tintColor = .white
+        pingIcon.tintColor = .white
         pingSpinner.color = .white
         pingSpinner.hidesWhenStopped = true
-        let pingRow = UIStackView(.horizontal, spacing: 10, alignment: .center, [icon, pingLabel])
+        let pingRow = UIStackView(.horizontal, spacing: 10, alignment: .center, [pingIcon, pingLabel])
         pingRow.isUserInteractionEnabled = false
         pingButton.pressScale = 1
         pingButton.backgroundColor = Theme.panel
@@ -53,13 +54,15 @@ final class ClassicServersViewController: UIViewController, UITableViewDataSourc
             Haptics.tap()
             if App.shared.latency.progress.value.running { App.shared.latency.cancel() } else if let subscription = self?.subscription { App.shared.ping([subscription]) }
         }
-        search.placeholder = "Страна или город"
-        search.font = Theme.font(15)
+        search.attributedPlaceholder = NSAttributedString(string: "Страна или город", attributes: [.foregroundColor: Theme.text.withAlphaComponent(0.7)])
+        search.font = Theme.fixed(13, .medium)
+        search.autocapitalizationType = .none
+        search.autocorrectionType = .no
         search.leftView = { () -> UIView in
-            let glass = UIImageView(image: UIImage(systemName: "magnifyingglass", withConfiguration: UIImage.SymbolConfiguration(pointSize: 14, weight: .semibold)))
+            let glass = UIImageView(image: UIImage(systemName: "magnifyingglass", withConfiguration: UIImage.SymbolConfiguration(pointSize: 12, weight: .semibold)))
             glass.tintColor = Theme.accent
             glass.contentMode = .center
-            glass.frame = CGRect(x: 0, y: 0, width: 46, height: 44)
+            glass.frame = CGRect(x: 0, y: 0, width: 34, height: 44)
             return glass
         }()
         search.leftViewMode = .always
@@ -73,23 +76,27 @@ final class ClassicServersViewController: UIViewController, UITableViewDataSourc
         let filterScroll = UIScrollView()
         filterScroll.showsHorizontalScrollIndicator = false
         filterScroll.addSubview(filters)
-        filters.pin(to: filterScroll)
+        filters.pin(to: filterScroll, insets: UIEdgeInsets(top: 0, left: 20, bottom: 0, right: 20))
         filters.heightAnchor.constraint(equalTo: filterScroll.heightAnchor).isActive = true
         filterScroll.heightAnchor.constraint(equalToConstant: 40).isActive = true
         let groupHeader = UIStackView(.horizontal, spacing: 8, alignment: .center, [
-            UIStackView(.vertical, spacing: 4, alignment: .leading, [groupKicker, groupTitle, groupProgress]), UIView(),
-            UIStackView(.vertical, spacing: 2, alignment: .trailing, [groupCount, Classic.mono("ЛОКАЦИЙ", 9)]),
+            UIStackView(.vertical, spacing: 2, alignment: .leading, [groupKicker, groupTitle, groupProgress]), UIView(),
+            UIStackView(.vertical, spacing: 2, alignment: .trailing, [groupCount, Classic.micro("ЛОКАЦИЙ")]),
         ])
-        let groupBox = Classic.padded(groupHeader, UIEdgeInsets(top: 10, left: 20, bottom: 10, right: 20))
-        groupBox.backgroundColor = UIColor.label.withAlphaComponent(0.05)
-        let top = UIStackView(.vertical, spacing: 12, alignment: .fill, [title, pingButton, search, filterScroll])
-        top.isLayoutMarginsRelativeArrangement = true
-        top.layoutMargins = UIEdgeInsets(top: 18, left: 20, bottom: 0, right: 20)
+        let groupBox = UIStackView(.vertical, spacing: 0, alignment: .fill, [Classic.padded(groupHeader, UIEdgeInsets(top: 11, left: 20, bottom: 11, right: 20)), Classic.rule()])
+        groupBox.backgroundColor = Theme.text.withAlphaComponent(0.045)
+        let header = UIStackView(.vertical, spacing: 0, alignment: .fill, [Classic.padded(title, UIEdgeInsets(top: 28, left: 20, bottom: 14, right: 20)), Classic.rule()])
+        let controls = UIStackView(.vertical, spacing: 10, alignment: .fill, [pingButton, search])
+        controls.isLayoutMarginsRelativeArrangement = true
+        controls.layoutMargins = UIEdgeInsets(top: 14, left: 20, bottom: 0, right: 20)
+        filters.spacing = 0
+        let filterBox = Classic.padded(filterScroll, UIEdgeInsets(top: 5, left: 0, bottom: 0, right: 0))
+        let top = UIStackView(.vertical, spacing: 0, alignment: .fill, [header, controls, filterBox])
         table.dataSource = self
         table.delegate = self
         table.backgroundColor = .clear
         table.rowHeight = UITableView.automaticDimension
-        table.estimatedRowHeight = 62
+        table.estimatedRowHeight = 61
         table.separatorInset = .zero
         table.keyboardDismissMode = .onDrag
         let stack = UIStackView(.vertical, spacing: 0, alignment: .fill, [top, groupBox, table])
@@ -104,7 +111,8 @@ final class ClassicServersViewController: UIViewController, UITableViewDataSourc
     }
 
     private func show(_ progress: LatencyProgress) {
-        pingLabel.text = progress.running ? "■  СТОП" : "ПИНГ"
+        pingLabel.text = progress.running ? "СТОП" : "ПИНГ"
+        pingIcon.image = UIImage(systemName: progress.running ? "stop.fill" : "antenna.radiowaves.left.and.right", withConfiguration: UIImage.SymbolConfiguration(pointSize: 15, weight: .semibold))
         if progress.running { pingSpinner.startAnimating() } else { pingSpinner.stopAnimating() }
         groupProgress.text = progress.total > 0 ? "ПРОВЕРЕНО \(progress.done) ИЗ \(progress.total)" : ""
     }
@@ -131,9 +139,23 @@ final class ClassicServersViewController: UIViewController, UITableViewDataSourc
         filters.arrangedSubviews.forEach { $0.removeFromSuperview() }
         for (offset, set) in sets.enumerated() {
             let active = offset == filter
-            var views: [UIView] = [Classic.text(set.0, 13, active ? .bold : .medium)]
-            if offset > 0 { views.append(Classic.mono(String(format: "%02d", set.1.count), 10, active ? Theme.accent : .secondaryLabel)) }
-            let item = UIStackView(.vertical, spacing: 8, alignment: .fill, [UIStackView(.horizontal, spacing: 6, alignment: .center, views), Classic.rule(active ? .label : .clear)])
+            var views: [UIView] = [Classic.text(set.0, 10, active ? .semibold : .medium)]
+            // 1.5.0 counted the unlimited, limited and favourite servers only.
+            if (1 ... 3).contains(offset) { views.append(Classic.micro(String(format: "%02d", set.1.count), active ? Theme.accent : .secondaryLabel)) }
+            let label = UIStackView(.horizontal, spacing: 5, alignment: .center, views)
+            let line = UIView()
+            line.backgroundColor = active ? Theme.text : Theme.line.withAlphaComponent(0.55)
+            let item = UIView()
+            for view in [label, line] {
+                view.translatesAutoresizingMaskIntoConstraints = false
+                item.addSubview(view)
+            }
+            NSLayoutConstraint.activate([
+                label.leadingAnchor.constraint(equalTo: item.leadingAnchor, constant: 12), label.trailingAnchor.constraint(equalTo: item.trailingAnchor, constant: -12),
+                label.centerYAnchor.constraint(equalTo: item.centerYAnchor),
+                line.bottomAnchor.constraint(equalTo: item.bottomAnchor), line.heightAnchor.constraint(equalToConstant: active ? 2 : 1),
+                line.leadingAnchor.constraint(equalTo: item.leadingAnchor, constant: active ? 8 : 0), line.trailingAnchor.constraint(equalTo: item.trailingAnchor, constant: active ? -8 : 0),
+            ])
             filters.addArrangedSubview(ClassicRow(item) { [weak self] in
                 self?.filter = offset
                 Haptics.selection()
@@ -157,17 +179,25 @@ final class ClassicServersViewController: UIViewController, UITableViewDataSourc
         guard let subscription else { return cell }
         let node = rows[indexPath.row]
         let selected = App.shared.library.selectedNodeID(in: subscription) == node.id
-        cell.backgroundColor = selected ? Theme.accent.withAlphaComponent(0.16) : .clear
         cell.selectionStyle = .none
         let entry = App.shared.latency.entry(subscription.id, node.id)
         let failed: Bool
         if case .failed? = entry?.result { failed = true } else { failed = false }
-        let ping = Classic.mono("● " + Classic.ping(entry, testing: App.shared.latency.isTesting(subscription.id, node.id)), 11, failed ? Theme.danger : (entry == nil ? Theme.accent : Theme.danger), weight: .semibold)
+        // 1.5.0 `DirectServerRow`: number, flag, name, protocols, limit, ping dot, star, mark.
+        let high = (entry?.result.milliseconds ?? 0) > 100 || failed
+        let dot = UIView()
+        dot.backgroundColor = high ? Theme.danger : Theme.accent
+        dot.layer.cornerRadius = 2.5
+        dot.translatesAutoresizingMaskIntoConstraints = false
+        NSLayoutConstraint.activate([dot.widthAnchor.constraint(equalToConstant: 5), dot.heightAnchor.constraint(equalToConstant: 5)])
+        let ping = UIStackView(.horizontal, spacing: 4, alignment: .center, [
+            dot, Classic.micro(Classic.ping(entry, testing: App.shared.latency.isTesting(subscription.id, node.id)), high ? Theme.danger : Theme.text),
+        ])
         ping.setContentHuggingPriority(.required, for: .horizontal)
         ping.setContentCompressionResistancePriority(.required, for: .horizontal)
         let favorite = Prefs.favorites.contains(node.id)
         let star = UIButton(type: .system)
-        star.setImage(UIImage(systemName: favorite ? "star.fill" : "star", withConfiguration: UIImage.SymbolConfiguration(pointSize: 15)), for: .normal)
+        star.setImage(UIImage(systemName: favorite ? "star.fill" : "star", withConfiguration: UIImage.SymbolConfiguration(pointSize: 11, weight: .semibold)), for: .normal)
         star.tintColor = favorite ? Theme.accent : .secondaryLabel
         let tag = node.id
         star.addAction(UIAction { [weak self] _ in
@@ -177,20 +207,26 @@ final class ClassicServersViewController: UIViewController, UITableViewDataSourc
             Haptics.tap()
             self?.reload()
         }, for: .touchUpInside)
-        star.widthAnchor.constraint(equalToConstant: 30).isActive = true
-        let mark = UIImageView(image: UIImage(systemName: selected ? "checkmark" : "chevron.right", withConfiguration: UIImage.SymbolConfiguration(pointSize: 12, weight: .semibold)))
+        NSLayoutConstraint.activate([star.widthAnchor.constraint(equalToConstant: 34), star.heightAnchor.constraint(equalToConstant: 34)])
+        let mark = UIImageView(image: UIImage(systemName: selected ? "checkmark" : "chevron.right", withConfiguration: UIImage.SymbolConfiguration(pointSize: 9, weight: .bold)))
         mark.tintColor = selected ? Theme.accent : .secondaryLabel
-        mark.setContentHuggingPriority(.required, for: .horizontal)
-        let summary = Classic.text(node.facts.summary, 10, .regular, .secondaryLabel, lines: 2)
-        let text = UIStackView(.vertical, spacing: 4, alignment: .leading, [
-            Classic.text(labels[node.id]?.text ?? node.name, 15, .bold), summary,
-            Classic.text(subscription.info.isLimited ? "Лимитный" : "Безлимитный", 10, .regular, selected ? Theme.accent : .secondaryLabel),
+        mark.contentMode = .center
+        mark.widthAnchor.constraint(equalToConstant: 24).isActive = true
+        let name = UILabel(labels[node.id]?.text ?? node.name, font: Classic.rounded(13, .semibold))
+        name.adjustsFontSizeToFitWidth = true
+        name.minimumScaleFactor = 0.7
+        let text = UIStackView(.vertical, spacing: 3, alignment: .leading, [
+            name, Classic.text(node.facts.summary, 10, .regular, .secondaryLabel),
+            Classic.micro((subscription.info.isLimited ? "Лимитный" : "Безлимитный").uppercased(), selected ? Theme.accent : .secondaryLabel),
         ])
-        let number = Classic.mono(String(format: "%02d", indexPath.row + 1), 10, selected ? Theme.accent : .secondaryLabel)
-        number.widthAnchor.constraint(equalToConstant: 22).isActive = true
-        let row = UIStackView(.horizontal, spacing: 12, alignment: .center, [number, Classic.flag(labels[node.id]?.countryCode), text, UIView(), ping, star, mark])
+        let number = Classic.micro(String(format: "%02d", indexPath.row + 1), selected ? Theme.accent : .secondaryLabel)
+        number.widthAnchor.constraint(equalToConstant: 21).isActive = true
+        let main = UIStackView(.horizontal, spacing: 10, alignment: .center, [number, Classic.flag(labels[node.id]?.countryCode, width: 31, height: 21), text, UIView(), ping])
+        main.heightAnchor.constraint(greaterThanOrEqualToConstant: 61).isActive = true
+        let row = UIStackView(.horizontal, spacing: 0, alignment: .center, [main, star, mark])
         cell.contentView.addSubview(row)
-        row.pin(to: cell.contentView, insets: UIEdgeInsets(top: 8, left: 20, bottom: 8, right: 20))
+        row.pin(to: cell.contentView, insets: UIEdgeInsets(top: 0, left: 20, bottom: 0, right: 20))
+        cell.backgroundColor = selected ? Theme.accent.withAlphaComponent(0.10) : .clear
         return cell
     }
 
@@ -213,7 +249,7 @@ final class ClassicManageViewController: ClassicPage {
 
     override func build() {
         content.spacing = 22
-        content.addArrangedSubview(ClassicRow(Classic.text("Добавить сервер или подписку", 17)) { [weak self] in
+        content.addArrangedSubview(ClassicRow(Classic.body("Добавить сервер или подписку", 17)) { [weak self] in
             if let self { AddServerFlow.present(from: self) }
         })
         let field = UITextField()
@@ -236,15 +272,15 @@ final class ClassicManageViewController: ClassicPage {
             Prefs.arrangement = next
             self?.rebuild()
         }, for: .valueChanged)
-        content.addArrangedSubview(UIStackView(.horizontal, spacing: 8, alignment: .center, [Classic.text("Сортировать по имени", 17), UIView(), toggle]))
+        content.addArrangedSubview(UIStackView(.horizontal, spacing: 8, alignment: .center, [Classic.body("Сортировать по имени", 17), UIView(), toggle]))
 
         let frame = ClassicFrame(caption: "ДОСТУПНЫЕ")
         let library = App.shared.library
         let needle = query.lowercased()
-        let subscriptions = Prefs.arrangement.sorted(library.subscriptions, key: { Arrangement.subscription($0.id) }, name: { $0.name })
+        let subscriptions = Prefs.arrangement.sorted(library.subscriptions.filter { !$0.nodes.isEmpty }, key: { Arrangement.subscription($0.id) }, name: { $0.name })
             .filter { needle.isEmpty || $0.name.lowercased().contains(needle) }
         if subscriptions.isEmpty {
-            frame.add(Classic.text("Подписок нет. Добавьте сервер или подписку.", 14, .regular, .secondaryLabel, lines: 0), insets: UIEdgeInsets(top: 18, left: 18, bottom: 18, right: 18))
+            frame.add(Classic.body("Подписок нет. Добавьте сервер или подписку.", 14, .regular, .secondaryLabel, lines: 0), insets: UIEdgeInsets(top: 18, left: 18, bottom: 18, right: 18))
         }
         for subscription in subscriptions {
             let id = subscription.id
@@ -252,7 +288,7 @@ final class ClassicManageViewController: ClassicPage {
             let chevron = UIImageView(image: UIImage(systemName: open ? "chevron.up" : "chevron.down", withConfiguration: UIImage.SymbolConfiguration(pointSize: 12, weight: .medium)))
             chevron.tintColor = .secondaryLabel
             chevron.setContentHuggingPriority(.required, for: .horizontal)
-            let name = Classic.text(subscription.name, 17)
+            let name = Classic.body(subscription.name, 17)
             name.lineBreakMode = .byTruncatingTail
             let head = ClassicRow(UIStackView(.horizontal, spacing: 10, alignment: .center, [name, chevron, UIView()])) { [weak self] in
                 guard let self else { return }
@@ -284,11 +320,11 @@ final class ClassicManageViewController: ClassicPage {
             frame.add(UIStackView(.horizontal, spacing: 8, alignment: .center, [head, more]), insets: UIEdgeInsets(top: 22, left: 18, bottom: 22, right: 8))
             guard open else { continue }
             let labels = App.shared.store.labels(for: subscription)
-            var lines: [UIView] = [Classic.text(Format.plural(subscription.nodes.count, "сервер", "сервера", "серверов") + " · обновлена " + Format.ago(subscription.updatedAt), 13, .regular, .secondaryLabel)]
-            if library.activeSubscription?.id == id { lines.append(Classic.text("На главном экране", 13, .regular, Theme.accent)) }
+            var lines: [UIView] = [Classic.body(Format.plural(subscription.nodes.count, "сервер", "сервера", "серверов") + " · обновлена " + Format.ago(subscription.updatedAt), 13, .regular, .secondaryLabel)]
+            if library.activeSubscription?.id == id { lines.append(Classic.body("На главном экране", 13, .regular, Theme.accent)) }
             for node in subscription.nodes {
                 lines.append(UIStackView(.vertical, spacing: 3, alignment: .leading, [
-                    Classic.text(labels[node.id]?.text ?? node.name, 13), Classic.text(node.facts.summary, 12, .regular, .secondaryLabel),
+                    Classic.body(labels[node.id]?.text ?? node.name, 13), Classic.body(node.facts.summary, 12, .regular, .secondaryLabel),
                 ]))
             }
             let list = UIStackView(.vertical, spacing: 10, alignment: .leading, lines)
@@ -306,7 +342,7 @@ final class ClassicSettingsViewController: ClassicPage {
         mark.tintColor = boxed ? Theme.accent : .label
         mark.isHidden = !selected
         mark.setContentHuggingPriority(.required, for: .horizontal)
-        let views: [UIView] = boxed ? [Classic.text(title, 16), UIView(), mark] : [Classic.text(title, 16), mark, UIView()]
+        let views: [UIView] = boxed ? [Classic.body(title, 16), UIView(), mark] : [Classic.body(title, 16), mark, UIView()]
         let row = ClassicRow(UIStackView(.horizontal, spacing: 6, alignment: .center, views), insets: boxed ? UIEdgeInsets(top: 13, left: 12, bottom: 13, right: 14) : UIEdgeInsets(top: 12, left: 0, bottom: 12, right: 0)) {
             Haptics.selection()
             action()
@@ -323,14 +359,14 @@ final class ClassicSettingsViewController: ClassicPage {
         control.isOn = get
         control.onTintColor = Theme.accent
         control.addAction(UIAction { [weak control] _ in set(control?.isOn ?? false) }, for: .valueChanged)
-        return UIStackView(.horizontal, spacing: 8, alignment: .center, [Classic.text(title, 16, .regular, Theme.text, lines: 0), UIView(), control])
+        return UIStackView(.horizontal, spacing: 8, alignment: .center, [Classic.body(title, 16, .regular, Theme.text, lines: 0), UIView(), control])
     }
 
     private func link(_ title: String, _ make: @escaping () -> UIViewController) -> UIView {
         let chevron = UIImageView(image: UIImage(systemName: "arrow.right", withConfiguration: UIImage.SymbolConfiguration(pointSize: 13, weight: .medium)))
         chevron.tintColor = .secondaryLabel
         chevron.setContentHuggingPriority(.required, for: .horizontal)
-        return ClassicRow(UIStackView(.horizontal, spacing: 8, alignment: .center, [Classic.text(title, 16), UIView(), chevron]), insets: UIEdgeInsets(top: 13, left: 0, bottom: 13, right: 0)) { [weak self] in
+        return ClassicRow(UIStackView(.horizontal, spacing: 8, alignment: .center, [Classic.body(title, 16), UIView(), chevron]), insets: UIEdgeInsets(top: 13, left: 0, bottom: 13, right: 0)) { [weak self] in
             let root = make()
             if !(root is ServerOrderViewController) {
                 root.navigationItem.rightBarButtonItem = UIBarButtonItem(systemItem: .done, primaryAction: UIAction { [weak root] _ in root?.dismiss(animated: true) })
@@ -350,10 +386,10 @@ final class ClassicSettingsViewController: ClassicPage {
     override func build() {
         let changed = { App.shared.networkSettingsChanged() }
         content.addArrangedSubview(section("ВНЕШНИЙ ВИД", [
-            Classic.text("Интерфейс", 12, .regular, .secondaryLabel),
+            Classic.body("Интерфейс", 12, .regular, .secondaryLabel),
             option("Классика", selected: true, boxed: false) {},
             option("Минималистичный", selected: false, boxed: false) { Prefs.style = .minimal },
-            Classic.text("Тема", 12, .regular, .secondaryLabel),
+            Classic.body("Тема", 12, .regular, .secondaryLabel),
             option("Системная", selected: Prefs.theme == "system") { Prefs.theme = "system" },
             option("Светлая", selected: Prefs.theme == "light") { Prefs.theme = "light" },
             option("Тёмная", selected: Prefs.theme == "dark") { Prefs.theme = "dark" },
@@ -364,7 +400,7 @@ final class ClassicSettingsViewController: ClassicPage {
             option("Основной", selected: Prefs.pingMode == "primary") { [weak self] in Prefs.pingMode = "primary"; self?.rebuild() },
             option("Классика", selected: Prefs.pingMode == "classic") { [weak self] in Prefs.pingMode = "classic"; self?.rebuild() },
             option("Альтернативный", selected: Prefs.pingMode == "alternative") { [weak self] in Prefs.pingMode = "alternative"; self?.rebuild() },
-            Classic.text("Тест только показывает задержку и не меняет выбранный сервер. Его можно остановить в любой момент.", 12, .regular, .secondaryLabel, lines: 0),
+            Classic.body("Тест только показывает задержку и не меняет выбранный сервер. Его можно остановить в любой момент.", 12, .regular, .secondaryLabel, lines: 0),
         ]))
         content.addArrangedSubview(section("ПОДКЛЮЧЕНИЕ", [
             toggle("Автоподключение", Prefs.autoConnect) { Prefs.autoConnect = $0; App.shared.tunnel.applySettings() },
@@ -376,7 +412,7 @@ final class ClassicSettingsViewController: ClassicPage {
             toggle("Обход российских сайтов", Prefs.bypassRussia) { Prefs.bypassRussia = $0; changed() },
             toggle("Защищённый DNS", Prefs.secureDNS) { Prefs.secureDNS = $0; App.shared.tunnel.applySettings() },
             toggle("Локальная сеть", Prefs.localNetwork) { Prefs.localNetwork = $0; changed() },
-            Classic.text("Серверы DNS берутся из конфигурации. После изменения системных маршрутов переподключите VPN.", 12, .regular, .secondaryLabel, lines: 0),
+            Classic.body("Серверы DNS берутся из конфигурации. После изменения системных маршрутов переподключите VPN.", 12, .regular, .secondaryLabel, lines: 0),
         ], spacing: 14))
         content.addArrangedSubview(section("БЕЗОПАСНОСТЬ", [toggle("Блокировка приложения", Prefs.appLock) { Prefs.appLock = $0 }]))
         content.addArrangedSubview(section("ДАННЫЕ", [

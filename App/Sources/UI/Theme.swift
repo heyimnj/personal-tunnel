@@ -75,18 +75,48 @@ enum Theme {
         return descriptor
     }
 
+    /// Sizes are given for the default text size. `font` and `mono` follow the
+    /// user's text size the way 1.5.0's text styles did (Minimal, shared pages);
+    /// `fixed` and `fixedMono` keep the size, as 1.5.0's Classic screens did.
     static func font(_ size: CGFloat, _ weight: UIFont.Weight = .regular) -> UIFont {
+        fixed(scaled(size), weight)
+    }
+
+    static func font(_ style: UIFont.TextStyle, _ weight: UIFont.Weight = .regular) -> UIFont {
+        fixed(UIFont.preferredFont(forTextStyle: style).pointSize, weight)
+    }
+
+    static func mono(_ size: CGFloat, _ weight: UIFont.Weight = .regular) -> UIFont {
+        .monospacedSystemFont(ofSize: scaled(size), weight: weight)
+    }
+
+    static func fixed(_ size: CGFloat, _ weight: UIFont.Weight = .regular) -> UIFont {
         if let descriptor = custom() { return UIFont(descriptor: descriptor, size: size) }
         return .systemFont(ofSize: size, weight: weight)
     }
 
-    static func font(_ style: UIFont.TextStyle, _ weight: UIFont.Weight = .regular) -> UIFont {
-        let size = UIFont.preferredFont(forTextStyle: style).pointSize
-        return font(size, weight)
+    static func fixedMono(_ size: CGFloat, _ weight: UIFont.Weight = .regular) -> UIFont {
+        .monospacedSystemFont(ofSize: size, weight: weight)
     }
 
-    static func mono(_ size: CGFloat, _ weight: UIFont.Weight = .regular) -> UIFont {
-        .monospacedSystemFont(ofSize: size, weight: weight)
+    /// A size scaled like the text style it is closest to.
+    static func scaled(_ size: CGFloat) -> CGFloat {
+        UIFontMetrics(forTextStyle: textStyle(near: size)).scaledValue(for: size)
+    }
+
+    private static func textStyle(near size: CGFloat) -> UIFont.TextStyle {
+        switch size {
+        case ..<11.5: return .caption2 // 11
+        case ..<12.5: return .caption1 // 12
+        case ..<14: return .footnote // 13
+        case ..<15.5: return .subheadline // 15
+        case ..<16.5: return .callout // 16
+        case ..<18.5: return .body // 17
+        case ..<21: return .title3 // 20
+        case ..<25: return .title2 // 22
+        case ..<31: return .title1 // 28
+        default: return .largeTitle // 34
+        }
     }
 
     static func flag(_ code: String?) -> String? { Countries.flagEmoji(code: code) }

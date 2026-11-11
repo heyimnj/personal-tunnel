@@ -439,7 +439,8 @@ final class SubscriptionsViewController: FormViewController {
             },
             .button(title: "Обновить подписки", destructive: false) { App.shared.refreshAll() },
         ])]
-        for subscription in App.shared.library.subscriptions {
+        // Subscriptions without servers are not shown (1.x left empty placeholders behind).
+        for subscription in App.shared.library.subscriptions where !subscription.nodes.isEmpty {
             var rows: [FormRow] = [
                 .value(title: Format.plural(subscription.nodes.count, "сервер", "сервера", "серверов"), detail: { "обновлена " + Format.ago(subscription.updatedAt) }),
             ]

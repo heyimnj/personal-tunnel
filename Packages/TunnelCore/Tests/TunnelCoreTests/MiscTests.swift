@@ -49,6 +49,14 @@ final class MiscTests: XCTestCase {
         XCTAssertEqual(library.nextID, 8)
     }
 
+    func testEmptySubscriptionIsNeverActive() {
+        let server = ServerNode(id: "a", name: "a", outbound: ["type": "socks", "tag": "a", "server": "h", "server_port": 1])
+        let library = Library(subscriptions: [Subscription(id: 1, name: "VPN Direct Free"), Subscription(id: 2, name: "B", nodes: [server])],
+                              activeSubscriptionID: 1)
+        XCTAssertEqual(library.activeSubscription?.id, 2)
+        XCTAssertEqual(library.activeNode?.id, "a")
+    }
+
     func testBinaryCodableBlobs() {
         XCTAssertEqual(LegacyMigration.decodeBool(Data([1])), true)
         XCTAssertEqual(LegacyMigration.decodeBool(Data([0])), false)
