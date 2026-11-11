@@ -56,6 +56,10 @@ let xray = """
     {"tag": "proxy", "protocol": "vless", "settings": {"vnext": [{"address": "x.example.net", "port": 443, "users": [{"id": "cccccccc-2222-3333-4444-555555555555", "encryption": "none"}]}]},
      "streamSettings": {"network": "xhttp", "security": "tls", "tlsSettings": {"serverName": "x.example.net", "alpn": ["h2"]},
        "xhttpSettings": {"host": "x.example.net", "path": "/xh", "mode": "auto", "extra": {"xPaddingBytes": "100-1000", "scMaxEachPostBytes": {"from": 500000, "to": 1000000}}}}}]},
+  {"remarks": "Fragment", "outbounds": [
+    {"tag": "proxy", "protocol": "vless", "settings": {"vnext": [{"address": "f.example.net", "port": 443, "users": [{"id": "dddddddd-2222-3333-4444-555555555555", "flow": "xtls-rprx-vision", "encryption": "none"}]}]},
+     "streamSettings": {"network": "raw", "security": "reality", "realitySettings": {"serverName": "www.apple.com", "publicKey": "\(key)", "shortId": "abcd", "fingerprint": "chrome"},
+       "finalmask": {"tcp": [{"type": "fragment", "settings": {"packets": "tlshello", "length": "10-20", "delay": "10-20"}}, {"type": "noise"}]}}}]},
   {"remarks": "Hy2", "outbounds": [
     {"tag": "proxy", "protocol": "hysteria", "settings": {"address": "hy.example.net", "port": 443, "version": 2},
      "streamSettings": {"network": "hysteria", "security": "tls", "tlsSettings": {"serverName": "hy.example.net", "alpn": ["h3"]}, "hysteriaSettings": {"version": 2, "auth": "secret"},

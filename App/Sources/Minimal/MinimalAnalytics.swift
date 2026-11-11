@@ -170,12 +170,29 @@ final class MinimalAnalyticsViewController: UIViewController {
     private var visible = false
 
     var isAtTop: Bool { scroll.contentOffset.y <= -scroll.adjustedContentInset.top + 1 }
+
+    /// The screen's insets (status bar, tab bar), set by Home.
+    var pageInsets: UIEdgeInsets = .zero {
+        didSet {
+            guard pageInsets != oldValue else { return }
+            loadViewIfNeeded()
+            let atTop = scroll.contentOffset.y <= -oldValue.top + 1
+            let insets = UIEdgeInsets(top: pageInsets.top, left: 0, bottom: pageInsets.bottom, right: 0)
+            scroll.contentInset = insets
+            scroll.verticalScrollIndicatorInsets = insets
+            if atTop { scroll.contentOffset = CGPoint(x: 0, y: -insets.top) }
+        }
+    }
     func scrollToTop() { scroll.setContentOffset(CGPoint(x: 0, y: -scroll.adjustedContentInset.top), animated: true) }
 
     override func viewDidLoad() {
         super.viewDidLoad()
         view.backgroundColor = Theme.background
         scroll.alwaysBounceVertical = true
+        // The page's insets come from Home (see pageInsets), never from UIKit: inside
+        // the pager UIKit hands this page its status-bar inset late, which first
+        // left the title under the status bar and then pushed it too low.
+        scroll.contentInsetAdjustmentBehavior = .never
         scroll.showsVerticalScrollIndicator = true
         view.addSubview(scroll)
         scroll.pin(to: view)

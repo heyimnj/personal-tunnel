@@ -213,13 +213,13 @@ final class MinimalServersViewController: UIViewController {
             self?.configure(row, node: node, subscription: subscription)
         }
         list.actionsForHeader = { [weak self] id in
-            [SwipeAction(symbol: "pencil", color: .systemOrange, title: L("Редактировать")) { self?.rename(subscription: id) },
-             SwipeAction(symbol: "arrow.clockwise", color: Theme.accent, title: L("Обновить")) { App.shared.refresh(id) },
+            [SwipeAction(symbol: "pencil", color: .systemOrange, title: L("Изменить")) { self?.rename(subscription: id) },
+             SwipeAction(symbol: "arrow.clockwise", color: .systemBlue, title: L("Обновить")) { App.shared.refresh(id) },
              SwipeAction(symbol: "trash", color: .systemRed, title: L("Удалить")) { self?.confirmDelete(subscription: id) }]
         }
         list.actionsForRow = { [weak self] id, tag in
-            [SwipeAction(symbol: "pencil", color: .systemOrange, title: L("Редактировать")) { self?.rename(node: tag, in: id) },
-             SwipeAction(symbol: "waveform.path.ecg", color: Theme.accent, title: L("Проверить пинг")) {
+            [SwipeAction(symbol: "pencil", color: .systemOrange, title: L("Изменить")) { self?.rename(node: tag, in: id) },
+             SwipeAction(symbol: "waveform.path.ecg", color: .systemBlue, title: L("Пинг")) {
                  if let subscription = App.shared.library.subscription(id), let node = subscription.node(tag) { App.shared.ping(node: node, in: subscription) }
              },
              SwipeAction(symbol: "trash", color: .systemRed, title: L("Удалить")) { self?.confirmDelete(node: tag, in: id) }]

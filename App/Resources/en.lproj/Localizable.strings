@@ -369,3 +369,6 @@
 "только с VPN" = "VPN only";
 "требует подключения" = "needs a connection";
 "через туннель" = "through the tunnel";
+"Изменить" = "Edit";
+"Пинг" = "Ping";
+"Маскировка finalmask «%@» не поддерживается ядром sing-box." = "finalmask obfuscation “%@” is not supported by the sing-box core.";

@@ -245,9 +245,35 @@ public enum XrayImport {
             break
         }
         if let mask = stream["finalmask"]?.objectValue, !mask.isEmpty {
-            throw ImportError(CoreText.t("Маскировка finalmask не поддерживается ядром sing-box."))
+            try applyFinalmask(mask, to: &spec)
         }
         return spec
+    }
+
+    /// Xray's `finalmask` outside Hysteria. Masks that only the client applies are
+    /// kept where the core has them and dropped otherwise, since the server never
+    /// sees them: `fragment` (split ClientHello) becomes `tls.fragment`, `noise`
+    /// is left out, and UDP masks and QUIC parameters do not touch a TCP transport.
+    /// A mask the server must undo cannot be served by sing-box: such a server is
+    /// skipped, with the mask named.
+    static let clientMasks: Set<String> = ["fragment", "noise"]
+
+    static func applyFinalmask(_ mask: [String: JSONValue], to spec: inout StreamSpec) throws {
+        func types(_ key: String) -> [String] {
+            (mask[key]?.arrayValue ?? (mask[key].map { [$0] } ?? [])).compactMap { $0["type"]?.stringValue?.lowercased() }
+        }
+        for type in types("tcp") {
+            guard clientMasks.contains(type) else {
+                throw ImportError(CoreText.f("Маскировка finalmask «%@» не поддерживается ядром sing-box.", type))
+            }
+            if type == "fragment" { spec.tlsFragment = true }
+        }
+        let udpTransport = ["quic", "kcp", "mkcp"].contains(spec.network.lowercased())
+        if udpTransport {
+            for type in types("udp") where !clientMasks.contains(type) {
+                throw ImportError(CoreText.f("Маскировка finalmask «%@» не поддерживается ядром sing-box.", type))
+            }
+        }
     }
 
     // MARK: Hysteria (Xray 26 layout)

@@ -9,11 +9,22 @@ final class HandoffScrollView: UIScrollView {
             // Still settling at the top edge (the bounce after a flick, while the
             // scroll indicator shows): a touch here would only catch that bounce,
             // so the page takes the drag at once.
-            if isDecelerating, contentOffset.y <= top + 0.5 { return false }
+            if isDecelerating, contentOffset.y <= top + 1 { return false }
             let velocity = panGestureRecognizer.velocity(in: self)
-            if contentOffset.y <= top + 0.5, velocity.y > 0, abs(velocity.y) > abs(velocity.x) { return false }
+            if contentOffset.y <= top + 1, velocity.y > 0, abs(velocity.y) > abs(velocity.x) { return false }
         }
         return super.gestureRecognizerShouldBegin(gestureRecognizer)
+    }
+}
+
+/// Reports every change of its safe area, so Home can keep the pages pushed on
+/// analytics (diagnostics, the log) clear of the status bar.
+final class AnalyticsNavigationController: UINavigationController {
+    var onSafeAreaChange: (() -> Void)?
+
+    override func viewSafeAreaInsetsDidChange() {
+        super.viewSafeAreaInsetsDidChange()
+        onSafeAreaChange?()
     }
 }
 
@@ -22,7 +33,12 @@ final class MinimalHomeViewController: UIViewController, UIScrollViewDelegate, U
     private let pager = UIScrollView()
     private let connection = MinimalConnectionView()
     private let analytics = MinimalAnalyticsViewController()
-    private lazy var analyticsNavigation = UINavigationController(rootViewController: analytics)
+    private lazy var analyticsNavigation: AnalyticsNavigationController = {
+        let navigation = AnalyticsNavigationController(rootViewController: analytics)
+        // UIKit may change its part of the insets at any time; follow it at once.
+        navigation.onSafeAreaChange = { [weak self] in self?.applyAnalyticsInsets() }
+        return navigation
+    }()
     private let dots = [UIView(), UIView()]
     private var dotControls: [TapControl] = []
     private var page = 0
@@ -77,6 +93,7 @@ final class MinimalHomeViewController: UIViewController, UIScrollViewDelegate, U
     override func viewDidLayoutSubviews() {
         super.viewDidLayoutSubviews()
         connection.safeInsets = view.safeAreaInsets
+        analytics.pageInsets = view.safeAreaInsets
         let size = view.bounds.size
         if pager.frame.size != size {
             pager.frame = view.bounds
@@ -91,6 +108,7 @@ final class MinimalHomeViewController: UIViewController, UIScrollViewDelegate, U
 
     override func viewSafeAreaInsetsDidChange() {
         super.viewSafeAreaInsetsDidChange()
+        analytics.pageInsets = view.safeAreaInsets
         applyAnalyticsInsets()
     }
 

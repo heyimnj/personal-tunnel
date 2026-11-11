@@ -48,7 +48,7 @@ struct DisclosureSpring {
 
 // MARK: - Swipe
 
-/// A round action behind a row.
+/// An action behind a row: a capsule with its title and symbol.
 struct SwipeAction {
     var symbol: String
     var color: UIColor
@@ -56,25 +56,100 @@ struct SwipeAction {
     var handler: () -> Void
 }
 
-/// A view whose `front` slides left to show round actions behind it. A full swipe
-/// only opens the actions: nothing is ever deleted by a swipe alone.
+/// One capsule of the actions. It is clipped to its current width and its content
+/// sits at its right end, so as it widens the symbol shows first and the title
+/// flows out after it (as in the Music app's queue).
+private final class SwipePill: UIControl {
+    let action: SwipeAction
+    private let clip = UIView()
+    private let content = UIStackView()
+    private let icon = UIImageView()
+    private let label = UILabel()
+    private(set) var tinted = false
+    let naturalWidth: CGFloat
+
+    /// `titled`: the capsule at the edge carries its title; the others only a symbol
+    /// (three titles do not fit beside a row).
+    init(_ action: SwipeAction, titled: Bool) {
+        self.action = action
+        label.text = action.title
+        label.font = Theme.font(15, .semibold)
+        label.isHidden = !titled
+        icon.image = UIImage(systemName: action.symbol, withConfiguration: UIImage.SymbolConfiguration(pointSize: 15, weight: .semibold))
+        icon.contentMode = .center
+        naturalWidth = titled ? 16 + ceil(label.intrinsicContentSize.width) + 7 + 20 + 14 : 46
+        super.init(frame: .zero)
+        clip.isUserInteractionEnabled = false
+        clip.clipsToBounds = true
+        clip.layer.cornerCurve = .continuous
+        addSubview(clip)
+        content.axis = .horizontal
+        content.spacing = 7
+        content.alignment = .center
+        content.addArrangedSubview(label)
+        content.addArrangedSubview(icon)
+        content.isUserInteractionEnabled = false
+        clip.addSubview(content)
+        accessibilityLabel = action.title
+        isAccessibilityElement = true
+        accessibilityTraits = .button
+        paint()
+    }
+
+    @available(*, unavailable)
+    required init?(coder _: NSCoder) { fatalError() }
+
+    /// Grey while the row is still being pulled, the action's colour once fully out.
+    func setTinted(_ value: Bool, animated: Bool) {
+        guard value != tinted else { return }
+        tinted = value
+        if animated { UIView.animate(withDuration: 0.22, delay: 0, options: [.beginFromCurrentState, .allowUserInteraction]) { self.paint() } } else { paint() }
+    }
+
+    private func paint() {
+        clip.backgroundColor = tinted ? action.color : UIColor.tertiarySystemFill
+        let ink: UIColor = tinted ? .white : .label
+        label.textColor = ink
+        icon.tintColor = ink
+    }
+
+    override func layoutSubviews() {
+        super.layoutSubviews()
+        clip.frame = bounds
+        clip.layer.cornerRadius = min(bounds.width, bounds.height) / 2
+        // Content keeps its size at the right end; a narrow capsule shows its symbol first.
+        let inset: CGFloat = label.isHidden ? 13 : 14
+        let width = label.isHidden ? 20 : naturalWidth - 30
+        content.frame = CGRect(x: bounds.width - inset - width, y: 0, width: width, height: bounds.height)
+    }
+
+    override var isHighlighted: Bool {
+        didSet { UIView.animate(withDuration: 0.12) { self.clip.alpha = self.isHighlighted ? 0.75 : 1 } }
+    }
+}
+
+/// A view whose `front` slides left to uncover its actions. A full swipe only
+/// opens them: nothing is ever deleted by a swipe alone.
 class SwipeRow: UIView, UIGestureRecognizerDelegate {
     let front = UIView()
     /// Height of the content; the view itself may be shorter while it is uncovered.
     var contentHeight: CGFloat = 63
     var onOpen: ((SwipeRow) -> Void)?
     private let rail = UIView()
-    private var buttons: [UIButton] = []
+    private var pills: [SwipePill] = []
     private(set) var offset: CGFloat = 0
     private var panStart: CGFloat = 0
     private var animator: UIViewPropertyAnimator?
+    private static let gap: CGFloat = 6
+    private static let margin: CGFloat = 8
 
     var actions: [SwipeAction] = [] {
         didSet { rebuildRail() }
     }
 
+    /// How far the row moves to show every action at full width.
     private var railWidth: CGFloat {
-        actions.isEmpty ? 0 : CGFloat(actions.count) * 44 + CGFloat(actions.count - 1) * 10 + 16
+        pills.isEmpty ? 0 : pills.reduce(0) { $0 + $1.naturalWidth } + CGFloat(pills.count - 1) * Self.gap + 2 * Self.margin
     }
 
     override init(frame: CGRect) {
@@ -90,21 +165,16 @@ class SwipeRow: UIView, UIGestureRecognizerDelegate {
     required init?(coder _: NSCoder) { fatalError() }
 
     private func rebuildRail() {
-        buttons.forEach { $0.removeFromSuperview() }
-        buttons = actions.map { action in
-            let button = UIButton(type: .system)
-            button.setImage(UIImage(systemName: action.symbol, withConfiguration: UIImage.SymbolConfiguration(pointSize: 17, weight: .semibold)), for: .normal)
-            button.tintColor = .white
-            button.backgroundColor = action.color
-            button.layer.cornerRadius = 22
-            button.accessibilityLabel = action.title
-            button.addAction(UIAction { [weak self] _ in
+        pills.forEach { $0.removeFromSuperview() }
+        pills = actions.enumerated().map { index, action in
+            let pill = SwipePill(action, titled: index == actions.count - 1)
+            pill.addAction(UIAction { [weak self] _ in
                 Haptics.tap()
                 self?.close(animated: true)
                 action.handler()
             }, for: .touchUpInside)
-            rail.addSubview(button)
-            return button
+            rail.addSubview(pill)
+            return pill
         }
         setNeedsLayout()
     }
@@ -112,22 +182,35 @@ class SwipeRow: UIView, UIGestureRecognizerDelegate {
     override func layoutSubviews() {
         super.layoutSubviews()
         front.frame = CGRect(x: offset, y: 0, width: bounds.width, height: contentHeight)
-        let width = railWidth
-        rail.frame = CGRect(x: bounds.width - width, y: 0, width: width, height: contentHeight)
-        let shown = width > 0 ? min(1, -offset / width) : 0
-        for (index, button) in buttons.enumerated() {
-            button.bounds = CGRect(x: 0, y: 0, width: 44, height: 44)
-            button.center = CGPoint(x: 8 + 22 + CGFloat(index) * 54, y: contentHeight / 2)
-            // Each button grows in as the row uncovers it.
-            let scale = 0.5 + 0.5 * min(1, max(0, shown * 1.4 - CGFloat(buttons.count - 1 - index) * 0.15))
-            button.transform = CGAffineTransform(scaleX: scale, y: scale)
-            button.alpha = min(1, shown * 1.6)
+        rail.frame = CGRect(x: 0, y: 0, width: bounds.width, height: contentHeight)
+        guard !pills.isEmpty else { return }
+        let full = railWidth
+        let pulled = max(0, -offset)
+        let progress = full > 0 ? min(1, pulled / full) : 0
+        // Past full width the last capsule (the one at the edge) stretches with the finger.
+        let extra = max(0, pulled - full)
+        let height = min(46, contentHeight - 16)
+        var right = bounds.width - Self.margin * progress
+        for (index, pill) in pills.enumerated().reversed() {
+            var width = pill.naturalWidth * progress
+            if index == pills.count - 1 { width += extra }
+            let frame = CGRect(x: right - width, y: (contentHeight - height) / 2, width: width, height: height)
+            if pill.frame != frame { pill.frame = frame }
+            pill.isHidden = width < 1
+            right -= width + Self.gap * progress
+        }
+        let tinted = progress > 0.97
+        if tinted != pills[0].tinted {
+            for pill in pills { pill.setTinted(tinted, animated: true) }
+            if tinted, panning { Haptics.soft(0.45) }
         }
     }
 
     var isOpen: Bool { offset < -1 }
 
     func close(animated: Bool) { set(offset: 0, animated: animated, velocity: 0) }
+
+    private var panning = false
 
     private func set(offset target: CGFloat, animated: Bool, velocity: CGFloat) {
         animator?.stopAnimation(true)
@@ -138,9 +221,9 @@ class SwipeRow: UIView, UIGestureRecognizerDelegate {
             return
         }
         let distance = target - offset
-        let relative = abs(distance) > 1 ? velocity / distance : 0
-        let timing = UISpringTimingParameters(dampingRatio: 0.86, initialVelocity: CGVector(dx: relative, dy: 0))
-        let animator = UIViewPropertyAnimator(duration: 0.42, timingParameters: timing)
+        let relative = abs(distance) > 1 ? max(-30, min(30, velocity / distance)) : 0
+        let timing = UISpringTimingParameters(dampingRatio: 0.88, initialVelocity: CGVector(dx: relative, dy: 0))
+        let animator = UIViewPropertyAnimator(duration: 0.44, timingParameters: timing)
         offset = target
         animator.addAnimations { self.setNeedsLayout(); self.layoutIfNeeded() }
         animator.startAnimation()
@@ -159,18 +242,19 @@ class SwipeRow: UIView, UIGestureRecognizerDelegate {
         case .began:
             animator?.stopAnimation(true)
             panStart = offset
+            panning = true
             onOpen?(self)
         case .changed:
             var next = panStart + pan.translation(in: self).x
             // Past the actions and past the resting place the row resists.
-            if next < -width { next = -width - pow(-width - next, 0.7) }
+            if next < -width { next = -width - pow(-width - next, 0.8) }
             if next > 0 { next = pow(next, 0.7) }
             offset = next
             setNeedsLayout()
         case .ended, .cancelled:
+            panning = false
             let velocity = pan.velocity(in: self).x
             let open = velocity < -350 || (velocity < 350 && offset < -width / 2)
-            if open, offset > -width - 1 || velocity < 0 { Haptics.soft(0.4) }
             set(offset: open ? -width : 0, animated: true, velocity: velocity)
         default: break
         }

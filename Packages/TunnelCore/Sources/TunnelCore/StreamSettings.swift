@@ -30,6 +30,8 @@ public struct StreamSpec: Equatable {
     public var xhttpExtra: JSONValue?
     public var earlyData: Int?
     public var earlyDataHeader: String?
+    /// Split the TLS ClientHello (Xray finalmask `fragment`); client side only.
+    public var tlsFragment = false
 
     public init() {}
 
@@ -52,6 +54,7 @@ public struct StreamSpec: Equatable {
         let name = (sni?.isEmpty == false ? sni : nil) ?? hosts.first(where: { !$0.isEmpty && !TextCoding.isIPAddress($0) })
             ?? (TextCoding.isIPAddress(server) ? nil : server)
         if let name, !name.isEmpty { tls["server_name"] = .string(name) }
+        if tlsFragment { tls["fragment"] = true }
         if allowInsecure, !isReality { tls["insecure"] = true }
         let protocols = alpn.filter { !$0.isEmpty }
         if !protocols.isEmpty, !isReality { tls["alpn"] = JSONValue(protocols) }

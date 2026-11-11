@@ -156,6 +156,21 @@ final class ImportTests: XCTestCase {
         XCTAssertTrue(nodes[2].isEndpoint)
     }
 
+    func testXrayFinalmaskOnTCPTransports() throws {
+        func server(_ mask: String) -> String {
+            #"[{"remarks": "M", "outbounds": [{"tag": "proxy", "protocol": "vless", "settings": {"vnext": [{"address": "m.example.net", "port": 443, "users": [{"id": "11111111-2222-3333-4444-555555555555", "encryption": "none", "flow": "xtls-rprx-vision"}]}]}, "streamSettings": {"network": "raw", "security": "reality", "realitySettings": {"serverName": "www.apple.com", "publicKey": "SbVKOEMjK0sIlbwg4akyBg5mL5KZwwB-ed4eEE7YnRc", "shortId": "ab", "fingerprint": "chrome"}, "finalmask": "# + mask + #"}}]}]"#
+        }
+        // Client-side masks: the server is kept, fragment becomes tls.fragment.
+        let kept = try ContentImporter.parse(server(#"{"tcp": [{"type": "fragment", "settings": {"packets": "tlshello", "length": "10-20"}}, {"type": "noise"}], "udp": [{"type": "salamander"}], "quicParams": {"congestion": "bbr"}}"#)).nodes
+        XCTAssertEqual(kept.count, 1)
+        XCTAssertEqual(kept[0].outbound.at("tls", "fragment"), true)
+        XCTAssertEqual(kept[0].outbound.at("tls", "reality", "enabled"), true)
+        // A mask the server must undo: skipped, named.
+        XCTAssertThrowsError(try ContentImporter.parse(server(#"{"tcp": [{"type": "header-custom"}]}"#))) { error in
+            XCTAssertTrue((error as? ImportError)?.message.contains("header-custom") ?? false)
+        }
+    }
+
     func testPlainSingBoxFileListsEveryLeaf() throws {
         let document = """
         {"outbounds": [
