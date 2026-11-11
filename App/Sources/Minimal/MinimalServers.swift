@@ -88,7 +88,8 @@ final class MinimalServersViewController: UIViewController {
 
     private func buildHeader() {
         let bar = UIView()
-        bar.backgroundColor = UIColor.systemBackground
+        // The page's own tone, so the first card does not run into the bar.
+        bar.backgroundColor = .systemGroupedBackground
         view.addSubview(bar)
         bar.translatesAutoresizingMaskIntoConstraints = false
         let close = circle("xmark", #selector(closeTapped))
@@ -123,8 +124,8 @@ final class MinimalServersViewController: UIViewController {
             glass.trailingAnchor.constraint(equalTo: bar.trailingAnchor, constant: -16), glass.centerYAnchor.constraint(equalTo: close.centerYAnchor),
             glass.heightAnchor.constraint(equalToConstant: 44), glass.widthAnchor.constraint(equalToConstant: 116),
         ])
-        list.contentInset.top = 70
-        list.verticalScrollIndicatorInsets.top = 70
+        list.contentInset.top = 76
+        list.verticalScrollIndicatorInsets.top = 76
     }
 
     private func show(_ progress: LatencyProgress) {

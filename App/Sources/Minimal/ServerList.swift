@@ -23,13 +23,15 @@ struct DisclosureSpring {
 
     var isSettled: Bool { abs(value - target) < 0.0005 && abs(velocity) < 0.002 }
 
-    /// Opening is a touch quicker than closing; neither overshoots, so the container
-    /// never shows an empty band below its last server.
+    /// The system's own feel: opening is the "snappy" spring (a hint of bounce as the
+    /// container lands), closing the "smooth" one (no bounce) and a little quicker.
     mutating func step(_ dt: CGFloat) {
-        let opening = target > value
-        let response: CGFloat = opening ? 0.46 : 0.56
-        let stiffness = pow(2 * .pi / response, 2)
-        let damping = 4 * .pi / response
+        let opening = target > 0.5
+        let response: CGFloat = opening ? 0.42 : 0.36
+        let ratio: CGFloat = opening ? 0.86 : 1
+        let omega = 2 * .pi / response
+        let stiffness = omega * omega
+        let damping = 2 * ratio * omega
         var left = min(dt, 1.0 / 30)
         while left > 0 {
             let h = min(left, 1.0 / 240)
@@ -366,6 +368,12 @@ final class ServerListView: UIScrollView {
 
     private(set) var sections: [Section] = []
     private var springs: [Int64: DisclosureSpring] = [:]
+    /// While a subscription moves, the distance its spring covers. Only what can be
+    /// seen is animated: a list of 160 servers opens over the part of it that fits
+    /// the screen, at the same pace as a list of five, and the rest is simply there.
+    private var travel: [Int64: CGFloat] = [:]
+    /// A closing subscription whose head was scrolled away brings the list back to it.
+    private var anchors: [Int64: (offset: CGFloat, from: CGFloat)] = [:]
     private var surfaces: [Int64: SurfaceView] = [:]
     private var rows: [String: ServerRowView] = [:]
     private var pool: [ServerRowView] = []
@@ -411,6 +419,8 @@ final class ServerListView: UIScrollView {
             surfaces[id]?.removeFromSuperview()
             surfaces[id] = nil
             springs[id] = nil
+            travel[id] = nil
+            anchors[id] = nil
         }
         for section in next {
             let wanted: CGFloat = !section.standalone && open.contains(section.id) ? 1 : 0
@@ -425,21 +435,44 @@ final class ServerListView: UIScrollView {
             }
         }
         for (key, row) in rows { recycle(row); rows[key] = nil }
+        // Rows are built ahead, so the first frames of a disclosure only place them.
+        while pool.count < 16 { pool.append(makeRow()) }
         reconfigureHeaders()
         layoutList()
     }
 
     /// Opens or closes a subscription with the spring.
     func setOpen(_ id: Int64, _ open: Bool) {
-        guard var spring = springs[id] else { return }
+        guard var spring = springs[id], let section = sections.first(where: { $0.id == id }), let surface = surfaces[id] else { return }
         closeSwipe()
-        spring.target = open ? 1 : 0
-        springs[id] = spring
         if UIAccessibility.isReduceMotionEnabled {
-            springs[id] = DisclosureSpring(spring.target)
+            springs[id] = DisclosureSpring(open ? 1 : 0)
+            travel[id] = nil
             layoutList()
             return
         }
+        let body = bodyHeight(section)
+        let shown = revealed(section)
+        // What fits between the head and the bottom of the screen, and a little more
+        // so that the edge is still moving when it leaves.
+        let extent = max(160, contentOffset.y + bounds.height - surface.frame.minY - Self.headerHeight + 100)
+        if open {
+            let distance = max(1, min(body, max(extent, shown)))
+            spring.value = shown / distance
+            travel[id] = distance
+            anchors[id] = nil
+        } else {
+            // Everything below the screen goes at once; the spring closes what is seen.
+            let distance = max(1, min(shown, extent))
+            if shown > distance { spring.velocity = 0 }
+            spring.value = 1
+            travel[id] = distance
+            let top = surface.frame.minY - adjustedContentInset.top
+            anchors[id] = contentOffset.y > top ? (contentOffset.y, distance) : nil
+        }
+        spring.target = open ? 1 : 0
+        springs[id] = spring
+        layoutList()
         startClock()
     }
 
@@ -485,8 +518,9 @@ final class ServerListView: UIScrollView {
         var moving = false
         for (id, var spring) in springs where !spring.isSettled || spring.value != spring.target {
             spring.step(dt)
+            if spring.target == 0, spring.value < 0 { spring = DisclosureSpring(0) }
             springs[id] = spring
-            if !spring.isSettled { moving = true }
+            if spring.isSettled { travel[id] = nil; anchors[id] = nil } else { moving = true }
         }
         layoutList()
         if !moving {
@@ -499,6 +533,14 @@ final class ServerListView: UIScrollView {
 
     private func bodyHeight(_ section: Section) -> CGFloat {
         section.standalone || section.nodes.isEmpty ? 0 : CGFloat(section.nodes.count) * Self.rowPitch + Self.tail
+    }
+
+    /// Height of the open part of a subscription right now.
+    private func revealed(_ section: Section) -> CGFloat {
+        let value = springs[section.id]?.value ?? 0
+        let body = bodyHeight(section)
+        if let distance = travel[section.id] { return max(0, min(body + 8, value * distance)) }
+        return value > 0.5 ? body : 0
     }
 
     private var laidOutWidth: CGFloat = 0
@@ -520,7 +562,7 @@ final class ServerListView: UIScrollView {
         for section in sections {
             guard let surface = surfaces[section.id] else { continue }
             let progress = max(0, springs[section.id]?.value ?? 0)
-            let height = Self.headerHeight + bodyHeight(section) * progress
+            let height = Self.headerHeight + revealed(section)
             surface.frame = CGRect(x: Self.margin, y: y, width: width, height: height)
             surface.header.frame = CGRect(x: 0, y: 0, width: width, height: Self.headerHeight)
             surface.show(progress: min(1, progress), standalone: section.standalone)
@@ -531,6 +573,13 @@ final class ServerListView: UIScrollView {
         // A closing subscription near the end pulls the list back with it.
         let maxOffset = max(-adjustedContentInset.top, contentSize.height + adjustedContentInset.bottom - bounds.height)
         if contentOffset.y > maxOffset, !isDragging { contentOffset.y = maxOffset }
+        if !isDragging, !isDecelerating {
+            for (id, anchor) in anchors {
+                guard let surface = surfaces[id], let section = sections.first(where: { $0.id == id }) else { continue }
+                let wanted = max(surface.frame.minY - adjustedContentInset.top, anchor.offset - (anchor.from - revealed(section)))
+                if wanted < contentOffset.y { contentOffset.y = wanted }
+            }
+        }
         placeRows()
     }
 
@@ -570,7 +619,7 @@ final class ServerListView: UIScrollView {
                 let shown = max(0, min(1, (frame.height - top) / (Self.rowHeight + Self.tail + 3)))
                 let eased = shown * shown * (3 - 2 * shown)
                 row.alpha = eased
-                row.front.transform = eased < 1 ? CGAffineTransform(translationX: 0, y: -10 * (1 - eased)).scaledBy(x: 0.97 + 0.03 * eased, y: 0.97 + 0.03 * eased) : .identity
+                row.front.transform = eased < 1 ? CGAffineTransform(translationX: 0, y: -8 * (1 - eased)).scaledBy(x: 0.98 + 0.02 * eased, y: 0.98 + 0.02 * eased) : .identity
             }
         }
         for (key, row) in rows where !used.contains(key) {
