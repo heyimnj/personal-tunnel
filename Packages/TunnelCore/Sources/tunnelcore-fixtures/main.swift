@@ -123,5 +123,6 @@ guard let carried = migrated.subscriptions.first, carried.nodes.count == 5 else 
     exit(1)
 }
 try write("legacy-1x-subscription", carried)
+try write("legacy-1x-auto-select", carried) { $0.autoSelect = true }
 try write("auto-select", try samples.prefix(3).flatMap { try $0.1.map(ShareLink.parse) }) { $0.autoSelect = true }
 print("written \(written) configurations to \(output.path)")

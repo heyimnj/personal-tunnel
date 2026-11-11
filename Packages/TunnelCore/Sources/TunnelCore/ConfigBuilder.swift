@@ -76,15 +76,54 @@ public enum ConfigBuilder {
             }
         }
 
+        // 1.x wrapped every server in a location group of one. Such a group is
+        // replaced by its server under the group's tag, so it counts as a server:
+        // the `auto` group and automatic selection see it.
+        var unwrapped: [String: (leaf: String, object: JSONValue)] = [:]
+        var leafOwners: [String: Int] = [:]
+        for node in nodes where node.isGroup {
+            let members = Carried.adapt(node.outbound, known: known)["outbounds"]?.stringList ?? []
+            guard members.count == 1, let leaf = node.members.first(where: { $0["tag"]?.stringValue == members[0] }),
+                  !["selector", "urltest"].contains(leaf["type"]?.stringValue?.lowercased() ?? "") else { continue }
+            unwrapped[node.id] = (members[0], leaf)
+            leafOwners[members[0], default: 0] += 1
+        }
+        // A server two groups share stays where it is.
+        unwrapped = unwrapped.filter { leafOwners[$0.value.leaf] == 1 && unwrapped[$0.value.leaf] == nil }
+        let renamed = Dictionary(uniqueKeysWithValues: unwrapped.map { ($0.value.leaf, $0.key) })
+        func relink(_ object: JSONValue) -> JSONValue {
+            guard !renamed.isEmpty else { return object }
+            var object = object
+            if let members = object["outbounds"]?.stringList, !members.isEmpty {
+                var seen = Set<String>()
+                object["outbounds"] = JSONValue(members.map { renamed[$0] ?? $0 }.filter { seen.insert($0).inserted })
+            }
+            for key in ["detour", "default"] {
+                if let target = object[key]?.stringValue, let next = renamed[target] { object[key] = .string(next) }
+            }
+            return object
+        }
+
         for node in nodes {
-            let main = Carried.adapt(node.outbound, known: known)
+            var main = Carried.adapt(node.outbound, known: known)
+            var members = node.members
+            if let unwrap = unwrapped[node.id] {
+                main = Carried.adapt(unwrap.object, known: known)
+                main["tag"] = .string(node.id)
+                members.removeAll { $0["tag"]?.stringValue == unwrap.leaf }
+            }
             // A provider group none of whose members survived cannot carry traffic.
-            if node.isGroup, (main["outbounds"]?.stringList ?? []).isEmpty { continue }
-            try add(main)
-            for member in node.members { try add(Carried.adapt(member, known: known)) }
+            let group = ["selector", "urltest"].contains(main["type"]?.stringValue?.lowercased() ?? "")
+            if group, (main["outbounds"]?.stringList ?? []).isEmpty { continue }
+            try add(relink(main))
+            for member in members {
+                // Unwrapped groups and their servers are written once, by their own node.
+                guard let tag = member["tag"]?.stringValue, unwrapped[tag] == nil, renamed[tag] == nil else { continue }
+                try add(relink(Carried.adapt(member, known: known)))
+            }
             guard !selectable.contains(node.id) else { continue }
             selectable.append(node.id)
-            if !node.isGroup { leaves.append(node.id) }
+            if !group { leaves.append(node.id) }
         }
         guard !selectable.isEmpty else { throw ImportError("В подписке «\(subscription.name)» нет рабочих серверов.") }
 

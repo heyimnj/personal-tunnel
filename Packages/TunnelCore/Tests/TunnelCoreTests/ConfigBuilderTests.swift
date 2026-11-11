@@ -110,7 +110,9 @@ final class ConfigBuilderTests: XCTestCase {
         // A group of groups is probed at its first server.
         XCTAssertEqual(subscription.nodes[2].address?.host, "us.example.net")
         XCTAssertEqual(subscription.nodes[1].address?.host, "ee.example.net")
-        let config = try ConfigBuilder.build(subscription: subscription, selected: "Эстония", options: TunnelOptions())
+        var options = TunnelOptions()
+        options.autoSelect = false
+        let config = try ConfigBuilder.build(subscription: subscription, selected: "Эстония", options: options)
         let text = config.serialized(pretty: false)
         XCTAssertFalse(text.contains("dns-local"))
         XCTAssertFalse(text.contains("domain_strategy"))
@@ -121,15 +123,19 @@ final class ConfigBuilderTests: XCTestCase {
         // Shared leaves are written once.
         let tags = objects.compactMap { $0["tag"]?.stringValue }
         XCTAssertEqual(tags.count, Set(tags).count)
-        XCTAssertEqual(object("proxy")?["outbounds"], ["США", "Эстония", "Лучший"])
+        XCTAssertEqual(object("proxy")?["outbounds"], ["auto", "США", "Эстония", "Лучший"])
         XCTAssertEqual(object("proxy")?["default"], "Эстония")
-        XCTAssertEqual(object("leaf-1")?["domain_resolver"], ["server": "dns-direct", "strategy": "prefer_ipv4"])
-        XCTAssertNil(object("leaf-1")?["detour"])
-        XCTAssertEqual(object("leaf-2")?["domain_resolver"], ["server": "dns-direct", "strategy": "ipv4_only"])
+        // Location groups of one server become that server, so «auto» has them.
+        XCTAssertEqual(object("auto")?["outbounds"], ["США", "Эстония"])
+        XCTAssertEqual(object("США")?["type"], "vless")
+        XCTAssertNil(object("leaf-1"))
+        XCTAssertNil(object("leaf-2"))
+        XCTAssertEqual(object("США")?["domain_resolver"], ["server": "dns-direct", "strategy": "prefer_ipv4"])
+        XCTAssertNil(object("США")?["detour"])
+        XCTAssertEqual(object("Эстония")?["type"], "trojan")
+        XCTAssertEqual(object("Эстония")?["domain_resolver"], ["server": "dns-direct", "strategy": "ipv4_only"])
         XCTAssertEqual(object("leaf-3")?["domain_resolver"], "dns-direct")
         XCTAssertNil(object("leaf-3")?["detour"])
-        XCTAssertEqual(object("Эстония")?["outbounds"], ["leaf-2"])
-        XCTAssertNil(object("Эстония")?["default"])
         XCTAssertEqual(object("Лучший")?["outbounds"], ["США", "Эстония", "leaf-3"])
         // Every reference left in the document leads somewhere.
         let dnsTags = Set(config.at("dns", "servers")?.arrayValue?.compactMap { $0["tag"]?.stringValue } ?? [])
