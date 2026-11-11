@@ -28,156 +28,56 @@ enum MinimalIcons {
     }()
 
     static let settings = UIImage(systemName: "rectangle.3.group.fill",
-                                  withConfiguration: UIImage.SymbolConfiguration(pointSize: 24, weight: .regular))!
+                                  withConfiguration: UIImage.SymbolConfiguration(pointSize: 26, weight: .regular))!
 }
 
-/// The floating glass capsule with the two tabs.
-final class MinimalTabBar: UIView {
-    var onSelect: ((Int) -> Void)?
-    private(set) var selected = 0
-    private let glass = GlassView()
-    private let pill = UIView()
-    private var items: [TapControl] = []
-    private var icons: [UIImageView] = []
-    private var labels: [UILabel] = []
-    private var heightConstraint: NSLayoutConstraint!
-
-    override init(frame: CGRect) {
-        super.init(frame: frame)
-        addSubview(glass)
-        glass.pin(to: self)
-        layer.shadowColor = UIColor.black.cgColor
-        layer.shadowOpacity = 0.08
-        layer.shadowRadius = 12
-        layer.shadowOffset = CGSize(width: 0, height: 4)
-        pill.backgroundColor = UIColor.label.withAlphaComponent(0.07)
-        pill.isUserInteractionEnabled = false
-        glass.contentView.addSubview(pill)
-        for (index, entry) in [("Главная", MinimalIcons.home), ("Настройки", MinimalIcons.settings)].enumerated() {
-            let control = TapControl()
-            let icon = UIImageView(image: entry.1)
-            icon.contentMode = .scaleAspectFit
-            let label = UILabel(entry.0, font: Theme.font(10, .medium))
-            let stack = UIStackView(.vertical, spacing: 3, alignment: .center, [icon, label])
-            stack.isUserInteractionEnabled = false
-            control.addSubview(stack)
-            stack.translatesAutoresizingMaskIntoConstraints = false
-            NSLayoutConstraint.activate([
-                stack.centerXAnchor.constraint(equalTo: control.centerXAnchor), stack.centerYAnchor.constraint(equalTo: control.centerYAnchor),
-                icon.widthAnchor.constraint(equalToConstant: 26), icon.heightAnchor.constraint(equalToConstant: 26),
-            ])
-            control.accessibilityLabel = entry.0
-            control.onTap = { [weak self] in self?.tap(index) }
-            glass.contentView.addSubview(control)
-            items.append(control)
-            icons.append(icon)
-            labels.append(label)
-        }
-        translatesAutoresizingMaskIntoConstraints = false
-        heightConstraint = heightAnchor.constraint(equalToConstant: 66)
-        NSLayoutConstraint.activate([heightConstraint, widthAnchor.constraint(equalToConstant: 188)])
-        restyle()
-        Prefs.appearanceChanged.observe(self) { [weak self] in self?.restyle() }
-    }
-
-    @available(*, unavailable)
-    required init?(coder _: NSCoder) { fatalError() }
-
-    private func tap(_ index: Int) {
-        Haptics.selection()
-        onSelect?(index)
-    }
-
-    func select(_ index: Int, animated: Bool) {
-        selected = index
-        let update = { self.layoutPill(); self.tint() }
-        if animated {
-            UIView.animate(withDuration: 0.42, delay: 0, usingSpringWithDamping: 0.86, initialSpringVelocity: 0, options: [.beginFromCurrentState, .allowUserInteraction], animations: update)
-        } else {
-            update()
-        }
-    }
-
-    private func tint() {
-        for index in items.indices {
-            let color = index == selected ? Theme.accent : UIColor.label.withAlphaComponent(0.9)
-            icons[index].tintColor = color
-            labels[index].textColor = color
-        }
-    }
-
-    private func restyle() {
-        let hidden = Prefs.hideTabLabels
-        for label in labels {
-            label.isHidden = hidden
-            label.font = Theme.font(10, .medium)
-        }
-        heightConstraint.constant = hidden ? 58 : 66
-        tint()
-        setNeedsLayout()
-    }
-
-    private func layoutPill() {
-        let width = (bounds.width - 14) / 2
-        pill.frame = CGRect(x: selected == 0 ? 5 : bounds.width - width - 5, y: 5, width: width, height: bounds.height - 10)
-        pill.layer.cornerRadius = pill.bounds.height / 2
-        pill.layer.cornerCurve = .continuous
-    }
-
-    override func layoutSubviews() {
-        super.layoutSubviews()
-        let half = bounds.width / 2
-        for (index, item) in items.enumerated() {
-            item.frame = CGRect(x: CGFloat(index) * half, y: 0, width: half, height: bounds.height)
-        }
-        layoutPill()
-        layer.shadowPath = UIBezierPath(roundedRect: bounds, cornerRadius: bounds.height / 2).cgPath
-    }
-}
-
-/// «Минималистичный»: Home (connection + analytics pager) and Settings behind a floating tab bar.
-final class MinimalRootViewController: UIViewController, UINavigationControllerDelegate {
+/// «Минималистичный»: Home (connection + analytics pager) and Settings in the
+/// system tab bar, as 1.5.0 had it (`ModernTabContainer`): on iOS 26 and later it
+/// is the system's Liquid Glass bar, before that the standard translucent one.
+final class MinimalRootViewController: UITabBarController, UITabBarControllerDelegate {
     private let home = MinimalHomeViewController()
-    private lazy var settings: UINavigationController = {
+    private let settings: UINavigationController = {
         let controller = UINavigationController(rootViewController: MinimalSettingsViewController())
         controller.navigationBar.prefersLargeTitles = true
         return controller
     }()
-    private let tabBar = MinimalTabBar()
-    private var index = 0
+    private var previous = 0
 
     override func viewDidLoad() {
         super.viewDidLoad()
         view.backgroundColor = Theme.background
-        for controller in [home, settings] as [UIViewController] {
-            addChild(controller)
-            controller.view.frame = view.bounds
-            controller.view.autoresizingMask = [.flexibleWidth, .flexibleHeight]
-            view.addSubview(controller.view)
-            controller.didMove(toParent: self)
-            // Content scrolls under the floating bar.
-            controller.additionalSafeAreaInsets.bottom = 64
+        setViewControllers([home, settings], animated: false)
+        delegate = self
+        updateItems()
+        Prefs.appearanceChanged.observe(self) { [weak self] in
+            self?.view.backgroundColor = Theme.background
+            self?.updateItems()
         }
-        settings.view.isHidden = true
-        view.addSubview(tabBar)
-        NSLayoutConstraint.activate([
-            tabBar.centerXAnchor.constraint(equalTo: view.centerXAnchor),
-            tabBar.bottomAnchor.constraint(equalTo: view.safeAreaLayoutGuide.bottomAnchor, constant: 14),
-        ])
-        tabBar.onSelect = { [weak self] in self?.select($0) }
-        tabBar.select(0, animated: false)
-        Prefs.appearanceChanged.observe(self) { [weak self] in self?.view.backgroundColor = Theme.background }
     }
 
-    private func select(_ next: Int) {
-        if next == index {
-            if next == 0 { home.reselect() } else { settings.popToRootViewController(animated: true) }
-            return
+    /// Icons, captions («Только иконки вкладок» removes them), accent tint and the imported font.
+    private func updateItems() {
+        let labels = !Prefs.hideTabLabels
+        home.tabBarItem.image = MinimalIcons.home
+        home.tabBarItem.title = labels ? "Главная" : nil
+        home.tabBarItem.accessibilityLabel = "Главная"
+        settings.tabBarItem.image = MinimalIcons.settings.withRenderingMode(.alwaysTemplate)
+        settings.tabBarItem.title = labels ? "Настройки" : nil
+        settings.tabBarItem.accessibilityLabel = "Настройки"
+        tabBar.tintColor = Theme.accent
+        let custom = !(Prefs.fontFile ?? "").isEmpty
+        let attributes: [NSAttributedString.Key: Any]? = custom ? [.font: Theme.fixed(10, .medium)] : nil
+        for item in [home.tabBarItem, settings.tabBarItem].compactMap({ $0 }) {
+            item.setTitleTextAttributes(attributes, for: .normal)
+            item.setTitleTextAttributes(attributes, for: .selected)
         }
-        index = next
-        tabBar.select(next, animated: true)
-        home.view.isHidden = next != 0
-        settings.view.isHidden = next != 1
+    }
+
+    func tabBarController(_: UITabBarController, didSelect _: UIViewController) {
+        let next = selectedIndex
+        // Tapping Home again steps back through analytics (Settings pops to its root by itself).
+        if next == previous, next == 0 { home.reselect() }
+        previous = next
         setNeedsStatusBarAppearanceUpdate()
     }
 
