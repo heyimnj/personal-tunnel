@@ -527,16 +527,20 @@ final class NetworkActivityViewController: FormViewController {
         [FormSection(footer: L("У приложения нет своего сервера. Само оно выходит в сеть только чтобы обновить подписки, проверить соединение по кнопке и измерить задержку серверов."), [
             .value(title: L("Обновление подписок"), detail: { L("по запросу") }),
             .value(title: L("Проверка соединения"), detail: { "www.gstatic.com" }),
-            .value(title: L("Пинг серверов"), detail: { L("TCP к серверу / через VPN") }),
+            .value(title: L("Пинг серверов"), detail: { L("URL-тест через сервер") }),
             .value(title: "HWID", detail: { String(DeviceIdentity.hwid.prefix(4)) + "…" + String(DeviceIdentity.hwid.suffix(4)) }),
         ])]
     }
 }
 
 final class AboutViewController: FormViewController {
+    /// «3.0, beta 1 (212)»; a release build has no beta number: «3.0 (212)».
     static var version: String {
         let info = Bundle.main.infoDictionary
-        return "\(info?["CFBundleShortVersionString"] as? String ?? "2.0") (\(info?["CFBundleVersion"] as? String ?? ""))"
+        let marketing = info?["CFBundleShortVersionString"] as? String ?? "3.0"
+        let build = info?["CFBundleVersion"] as? String ?? ""
+        let beta = (info?["PersonalBetaNumber"] as? String)?.trimmingCharacters(in: .whitespaces) ?? ""
+        return beta.isEmpty ? "\(marketing) (\(build))" : "\(marketing), beta \(beta) (\(build))"
     }
 
     init() { super.init(title: L("О приложении")) }
@@ -545,6 +549,7 @@ final class AboutViewController: FormViewController {
         [FormSection(footer: L("Personal Tunnel — личный VPN-клиент на ядре sing-box (форк sing-box-lx). Лицензия GPL-3.0-or-later."), [
             .value(title: L("Версия"), detail: { AboutViewController.version }),
             .value(title: L("Ядро"), detail: { CoreInfo.version }),
+            .value(title: "Xray-core", detail: { CoreInfo.xrayVersion }),
             .value(title: L("Коммит"), detail: { (Bundle.main.object(forInfoDictionaryKey: "PersonalSourceCommit") as? String).flatMap { $0.isEmpty ? nil : $0 } ?? "—" }),
             .value(title: L("Группа"), detail: { AppGroup.identifier }),
         ])]

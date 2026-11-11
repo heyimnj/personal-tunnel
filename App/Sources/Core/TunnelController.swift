@@ -9,6 +9,11 @@ enum TunnelState: Equatable {
     var isBusy: Bool { self == .connecting || self == .disconnecting || self == .reasserting }
 }
 
+struct TunnelCrash: Equatable {
+    var cause: String
+    var details: String
+}
+
 /// Owns the system VPN configuration and starts and stops the tunnel.
 final class TunnelController {
     let state = Observable<TunnelState>(.disconnected)
@@ -16,6 +21,11 @@ final class TunnelController {
     let connectedSince = Observable<Date?>(nil)
     /// Last start error, shown once.
     let lastError = Observable<String?>(nil)
+    /// The tunnel ended without being stopped (the system ended the extension or
+    /// the core fell): why, and the extension's last lines. Shown once.
+    let crash = Observable<TunnelCrash?>(nil)
+    /// The system's VPN configuration has been read: `state` is the real one.
+    let loaded = Observable(false)
 
     private var manager: NETunnelProviderManager?
     private var observer: NSObjectProtocol?
@@ -52,6 +62,7 @@ final class TunnelController {
                 guard let self else { return }
                 self.manager = managers?.first
                 self.sync()
+                self.loaded.set(true)
                 completion(self.manager)
             }
         }
@@ -79,6 +90,38 @@ final class TunnelController {
             }
         }
         state.set(next)
+        if next == .disconnected { checkAbnormalEnd() }
+    }
+
+    /// The extension clears its start time when it is stopped. Still there with the
+    /// tunnel down means the system ended it without a stop.
+    private func checkAbnormalEnd() {
+        let defaults = AppGroup.defaults
+        let started = defaults.double(forKey: SharedKey.tunnelStartedAt)
+        guard started > 0 else { return }
+        defaults.removeObject(forKey: SharedKey.tunnelStartedAt)
+        let startDate = Date(timeIntervalSince1970: started)
+        let memory = MemorySample.decode(defaults.data(forKey: SharedKey.tunnelMemory))
+        let paths = AppGroup.containerURL.map(SharedPaths.init)
+        let events = paths.map { TunnelEvents.read(TunnelEvents.file($0)) } ?? []
+        // The core writes a Go panic to this file; it is archived at the next start.
+        var coreCrash: String?
+        if let paths {
+            let url = paths.working.appendingPathComponent("CrashReport-packet-tunnel.log")
+            let modified = (try? url.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate
+            if let modified, modified >= startDate.addingTimeInterval(-60),
+               let text = try? String(contentsOf: url, encoding: .utf8), !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                coreCrash = text
+            }
+        }
+        let report = { [weak self] (reason: String?) in
+            let text = CrashReport.text(startedAt: startDate, systemReason: reason, memory: memory, events: events, coreCrash: coreCrash)
+            self?.crash.value = TunnelCrash(cause: text.cause, details: text.details)
+        }
+        guard let connection = manager?.connection else { report(nil); return }
+        connection.fetchLastDisconnectError { error in
+            DispatchQueue.main.async { report(error.map { Redactor.redact($0.localizedDescription) }) }
+        }
     }
 
     /// Writes the app's routing choices into the system configuration.

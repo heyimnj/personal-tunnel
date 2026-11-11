@@ -1,3 +1,5 @@
+import Darwin
+import os
 import Foundation
 import Libbox
 import NetworkExtension
@@ -14,6 +16,10 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
     private lazy var platform = TunnelPlatform(provider: self)
     private var paths: SharedPaths?
     private static var coreIsSetUp = false
+    /// Memory written to the service log once a minute (3.0 beta: measuring the
+    /// extension with both cores linked in).
+    private var memoryTimer: DispatchSourceTimer?
+    private var memoryPeak: Double = 0
 
     // MARK: Lifecycle
 
@@ -24,10 +30,13 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
                 try self.start(options: options)
                 defaults.removeObject(forKey: SharedKey.lastTunnelError)
                 defaults.set(Date().timeIntervalSince1970, forKey: SharedKey.tunnelStartedAt)
+                self.event("запуск")
+                self.startMemoryLog()
                 completionHandler(nil)
             } catch {
                 let message = Redactor.redact(error.localizedDescription)
                 defaults.set(message, forKey: SharedKey.lastTunnelError)
+                self.event("запуск не удался: \(message)")
                 self.shutDown()
                 completionHandler(TunnelError(message))
             }
@@ -37,6 +46,7 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
     override func stopTunnel(with reason: NEProviderStopReason, completionHandler: @escaping () -> Void) {
         queue.async {
             self.log("остановка, причина \(reason.rawValue)")
+            self.event("остановка, причина \(reason.rawValue)")
             self.shutDown()
             AppGroup.defaults.removeObject(forKey: SharedKey.tunnelStartedAt)
             completionHandler()
@@ -51,10 +61,13 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
             }
             do {
                 try self.reload()
+                self.event("перезагрузка конфигурации")
+                self.sampleMemory()
                 completionHandler?(nil)
             } catch {
                 let message = Redactor.redact(error.localizedDescription)
                 AppGroup.defaults.set(message, forKey: SharedKey.lastTunnelError)
+                self.event("перезагрузка не удалась: \(message)")
                 completionHandler?(Data(message.utf8))
             }
         }
@@ -137,9 +150,48 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
     }
 
     private func shutDown() {
+        memoryTimer?.cancel()
+        memoryTimer = nil
         closeService()
         commandServer?.close()
         commandServer = nil
+    }
+
+    /// A line in the extension's own log, which outlives it (see `TunnelEvents`).
+    private func event(_ message: String) {
+        guard let paths = paths ?? AppGroup.containerURL.map(SharedPaths.init) else { return }
+        TunnelEvents.append(Redactor.redact(message), to: TunnelEvents.file(paths))
+    }
+
+    // MARK: Memory
+
+    private func startMemoryLog() {
+        memoryTimer?.cancel()
+        memoryPeak = 0
+        sampleMemory()
+        let timer = DispatchSource.makeTimerSource(queue: queue)
+        timer.schedule(deadline: .now() + 60, repeating: 60, leeway: .seconds(5))
+        timer.setEventHandler { [weak self] in self?.sampleMemory() }
+        timer.resume()
+        memoryTimer = timer
+    }
+
+    /// `phys_footprint` is what the system holds against the extension's limit.
+    private func sampleMemory() {
+        var info = task_vm_info_data_t()
+        var count = mach_msg_type_number_t(MemoryLayout<task_vm_info_data_t>.size / MemoryLayout<natural_t>.size)
+        let status = withUnsafeMutablePointer(to: &info) {
+            $0.withMemoryRebound(to: integer_t.self, capacity: Int(count)) { task_info(mach_task_self_, task_flavor_t(TASK_VM_INFO), $0, &count) }
+        }
+        guard status == KERN_SUCCESS else { return }
+        let mib = 1024.0 * 1024.0
+        let used = Double(info.phys_footprint) / mib
+        memoryPeak = max(memoryPeak, used, Double(info.ledger_phys_footprint_peak) / mib)
+        let available = Double(os_proc_available_memory()) / mib
+        let sample = MemorySample(used: used, peak: memoryPeak, available: available)
+        AppGroup.defaults.set(sample.encoded(), forKey: SharedKey.tunnelMemory)
+        commandServer?.writeMessage(2, message: sample.line)
+        event(sample.line)
     }
 
     func log(_ message: String) {

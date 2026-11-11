@@ -15,6 +15,13 @@ final class RootViewController: UIViewController {
             App.shared.notice.value = nil
             self.show(message)
         }
+        App.shared.tunnel.crash.observe(self) { [weak self] crash in
+            guard let self, let crash else { return }
+            App.shared.tunnel.crash.value = nil
+            var top: UIViewController = self
+            while let presented = top.presentedViewController { top = presented }
+            top.present(CrashReportViewController.wrapped(crash), animated: true)
+        }
     }
 
     private func apply() {

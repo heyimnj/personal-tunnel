@@ -9,4 +9,6 @@ fetch_core
 fetch_xray
 cd "$BRIDGE_DIR"
 go vet -tags "$CHECK_TAGS" ./...
+# Конфигурации проверки серверов из tunnelcore-fixtures, если они уже записаны.
+if [ -d "$ROOT/build/fixtures" ]; then export PT_PROBE_FIXTURES="$ROOT/build/fixtures"; fi
 go test -trimpath -tags "$CHECK_TAGS" -ldflags "-checklinkname=0" ./...

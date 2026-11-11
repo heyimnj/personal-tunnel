@@ -32,7 +32,7 @@ final class MinimalSettingsViewController: FormViewController {
                 .link(symbol: "stethoscope", title: L("Проверка соединения")) { [weak self] in self?.push(DiagnosticsViewController()) },
                 .link(symbol: "doc.text.magnifyingglass", title: L("Журнал службы")) { [weak self] in self?.push(ServiceLogViewController()) },
             ]),
-            FormSection([
+            FormSection(footer: AboutViewController.version, [
                 .link(symbol: "externaldrive.badge.icloud", title: L("Резервные копии")) { [weak self] in self?.push(BackupViewController()) },
                 .link(symbol: "eye", title: L("Сетевая активность приложения")) { [weak self] in self?.push(NetworkActivityViewController()) },
                 .link(symbol: "info.circle", title: L("О приложении")) { [weak self] in self?.push(AboutViewController()) },
@@ -93,11 +93,11 @@ final class NetworkSettingsViewController: FormViewController {
     private var modeNote: String {
         switch Prefs.pingMode {
         case "classic":
-            return L("Классика: активный узел проверяется по HTTPS раз в минуту. Список: generate_204 по HTTPS через каждый узел, до 8 одновременно, ожидание до 5 с; без VPN — TCP-соединение с сервером.")
+            return L("Классика: активный узел проверяется по HTTPS раз в минуту. Список: generate_204 по HTTPS через каждый узел, до 8 одновременно, ожидание до 5 с; без VPN — то же ядром приложения, 3 с, до 10 одновременно.")
         case "alternative":
-            return L("Альтернативный: короткая HTTP-проверка через узел, до 12 одновременно, ожидание до 2,5 с; без VPN — TCP. HTTP-проверка не подтверждает доступность HTTPS-сайтов.")
+            return L("Альтернативный: короткая HTTP-проверка через узел, до 12 одновременно, ожидание до 2,5 с; без VPN — ядром приложения. HTTP-проверка не подтверждает доступность HTTPS-сайтов.")
         default:
-            return L("Основной: сначала TCP-проверка доступности сервера (1,5 с), затем generate_204 через каждый ответивший узел (3 с), до 20 одновременно; UDP-протоколы сразу проходят URL-тест. Без VPN доступна только TCP-проверка. Результаты хранятся 2,5 минуты, при открытии списка проверяются только устаревшие.")
+            return L("Основной: сначала TCP-проверка доступности сервера (1,5 с), затем generate_204 через каждый ответивший узел (3 с), до 20 одновременно; UDP-протоколы сразу проходят URL-тест. Без VPN серверы проверяет ядро приложения: generate_204 через каждый сервер (3 с), до 10 одновременно. Результаты хранятся 2,5 минуты, при открытии списка проверяются только устаревшие.")
         }
     }
 
@@ -107,6 +107,8 @@ final class NetworkSettingsViewController: FormViewController {
             FormSection(L("Измерение задержки"), [
                 .picker(title: L("Режим пинга"), options: [("primary", L("Основной")), ("classic", L("Классика")), ("alternative", L("Альтернативный"))], get: { Prefs.pingMode }, set: { Prefs.pingMode = $0 }),
                 .note(modeNote),
+                .toggle(title: L("Автопинг"), get: { Prefs.autoPing }, set: { Prefs.autoPing = $0 }),
+                .note(L("Задержка серверов проверяется сама при открытии приложения и после обновления подписки.")),
                 .note(L("Тест только показывает задержку и не меняет выбранный сервер. Его можно остановить в любой момент.")),
             ]),
             FormSection(L("Подключение"), [

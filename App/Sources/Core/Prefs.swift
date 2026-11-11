@@ -125,6 +125,12 @@ enum Prefs {
         set { defaults.set(newValue, forKey: "personal.pingMode") }
     }
 
+    /// Servers are measured on their own when the app opens and after a subscription update.
+    static var autoPing: Bool {
+        get { bool("pt.autoPing", true) }
+        set { defaults.set(newValue, forKey: "pt.autoPing") }
+    }
+
     static var sortByLatency: Bool {
         get { bool("personal.modernSortByLatency", false) }
         set { defaults.set(newValue, forKey: "personal.modernSortByLatency") }

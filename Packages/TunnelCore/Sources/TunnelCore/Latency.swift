@@ -47,6 +47,12 @@ public struct LatencyMode: Equatable, Sendable {
     public var urlConcurrency: Int
     public var link: String
 
+    /// The app's own core without the VPN (3.0): a URL test of every server,
+    /// 3 s each, 10 at a time, at the address the chosen mode uses.
+    public static func localCore(link: String) -> LatencyMode {
+        LatencyMode(tcpFilter: false, directTimeout: 3, directConcurrency: 10, urlTimeoutMs: 3000, urlConcurrency: 10, link: link)
+    }
+
     /// «Основной», «Классика», «Альтернативный» — параметры 1.5.0.
     public static func named(_ name: String?) -> LatencyMode {
         switch name {

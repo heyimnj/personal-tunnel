@@ -56,6 +56,8 @@ public enum SharedKey {
     public static let lastTunnelError = "pt.tunnel.lastError"
     /// Time the tunnel last started, seconds since 1970.
     public static let tunnelStartedAt = "pt.tunnel.startedAt"
+    /// The extension's last memory sample (`MemorySample`, JSON).
+    public static let tunnelMemory = "pt.tunnel.memory"
 }
 
 /// Start options and messages the app sends to the packet tunnel.

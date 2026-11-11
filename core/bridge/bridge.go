@@ -56,9 +56,26 @@ func NewProber(configJSON string) (*Prober, error) {
 	return &Prober{instance: instance, ctx: ctx, cancel: cancel}, nil
 }
 
-// Test fetches link through the outbound or endpoint tagged tag and returns
-// the delay in milliseconds. It blocks; callers run several at once.
-func (p *Prober) Test(tag string, link string, timeoutMs int32) (int32, error) {
+// ProbeResult is one measurement: Delay in milliseconds, or Error.
+type ProbeResult struct {
+	Delay int32
+	Error string
+}
+
+// Test fetches link through the outbound or endpoint tagged tag. It blocks;
+// callers run several at once.
+func (p *Prober) Test(tag string, link string, timeoutMs int32) *ProbeResult {
+	delay, err := p.test(tag, link, timeoutMs)
+	if err != nil {
+		return &ProbeResult{Error: err.Error()}
+	}
+	if delay < 1 {
+		delay = 1
+	}
+	return &ProbeResult{Delay: delay}
+}
+
+func (p *Prober) test(tag string, link string, timeoutMs int32) (int32, error) {
 	if p == nil || p.instance == nil || p.ctx.Err() != nil {
 		return 0, errors.New("prober closed")
 	}

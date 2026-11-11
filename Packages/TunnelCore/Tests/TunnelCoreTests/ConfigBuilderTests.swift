@@ -29,6 +29,28 @@ final class ConfigBuilderTests: XCTestCase {
         XCTAssertEqual(try JSONValue.parse(config.serialized(pretty: true)), config)
     }
 
+    func testProbeConfigurationHasServersButNoTunnel() throws {
+        let subscription = try subscription()
+        let config = try ConfigBuilder.probe(subscription: subscription, options: TunnelOptions())
+        XCTAssertNil(config["inbounds"])
+        let outbounds = config["outbounds"]?.arrayValue ?? []
+        let tags = outbounds.compactMap { $0["tag"]?.stringValue }
+        XCTAssertFalse(tags.contains("proxy"))
+        XCTAssertFalse(tags.contains("auto"))
+        // Every server the selector offered can be measured by its tag.
+        for tag in ConfigBuilder.selectableTags(of: subscription) {
+            XCTAssertTrue(tags.contains(tag) || config["endpoints"]?.arrayValue?.contains { $0["tag"]?.stringValue == tag } == true, tag)
+        }
+        XCTAssertEqual(config.at("route", "final"), "direct")
+        XCTAssertNil(config.at("route", "rule_set"))
+        XCTAssertNil(config.at("route", "rules"))
+        XCTAssertEqual(config.at("dns", "servers")?.arrayValue?.map { $0["tag"] }, ["dns-direct"])
+        // Nothing points at what was removed.
+        let text = config.serialized(pretty: false)
+        XCTAssertFalse(text.contains("dns-remote"))
+        XCTAssertFalse(text.contains("\"detour\":\"proxy\""))
+    }
+
     func testUnknownSelectionFallsBackAndAutoModeUsesTheGroup() throws {
         let subscription = try subscription()
         var options = TunnelOptions()

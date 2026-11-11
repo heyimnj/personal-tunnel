@@ -21,6 +21,7 @@ final class SceneDelegate: UIResponder, UIWindowSceneDelegate {
 
     func sceneWillEnterForeground(_: UIScene) {
         lockIfNeeded()
+        App.shared.autoPing()
     }
 
     private func showCover() {

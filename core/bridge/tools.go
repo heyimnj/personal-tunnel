@@ -2,5 +2,9 @@
 
 package ptbridge
 
-// gomobile bind needs its own packages among the module's dependencies.
-import _ "github.com/sagernet/gomobile"
+// gomobile bind builds libbox from this module as well: its packages and
+// gomobile's own must be among the module's dependencies (go.sum).
+import (
+	_ "github.com/sagernet/gomobile"
+	_ "github.com/sagernet/sing-box/experimental/libbox"
+)

@@ -10,6 +10,10 @@ enum SubscriptionService {
         var title: String?
         var info: SubscriptionInfo
         var summary: String?
+        /// For the service log: what the subscription served and to which client name.
+        var format: String
+        var agent: String
+        var issues: [ImportIssue]
     }
 
     private static let userAgents = ["Happ/3.13.0", "PersonalTunnel/2.0"]
@@ -41,7 +45,8 @@ enum SubscriptionService {
                 var info = SubscriptionInfo()
                 let title = SubscriptionHeaders.parse(headers, into: &info)
                 let result = try ContentImporter.parse(String(decoding: data, as: UTF8.self))
-                return Fetched(nodes: NodeAssembler.assemble(result.nodes), title: title, info: info, summary: result.summary)
+                return Fetched(nodes: NodeAssembler.assemble(result.nodes), title: title, info: info, summary: result.summary,
+                               format: result.format.rawValue, agent: agent, issues: result.issues)
             } catch let error as URLError {
                 // The network did not get through: another client name will not help,
                 // and would only add another wait.

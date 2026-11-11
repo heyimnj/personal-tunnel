@@ -40,6 +40,8 @@
 	</array>
 	<key>AppGroupIdentifier</key>
 	<string>$(APP_GROUP_IDENTIFIER)</string>
+	<key>PersonalBetaNumber</key>
+	<string>$(BETA_NUMBER)</string>
 	<key>PersonalSourceCommit</key>
 	<string>$(PERSONAL_SOURCE_COMMIT)</string>
 	<key>ITSAppUsesNonExemptEncryption</key>

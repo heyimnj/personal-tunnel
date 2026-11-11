@@ -35,6 +35,11 @@ final class App {
                 self.latency.cancel()
             }
         }
+        tunnel.loaded.observe(self, fireNow: false) { [weak self] loaded in
+            // The first automatic ping waits for the real tunnel state: with the VPN
+            // up, the app's own core would measure through the tunnel.
+            if loaded { self?.autoPing() }
+        }
         tunnel.lastError.observe(self, fireNow: false) { [weak self] message in
             if let message { self?.notice.value = message }
         }
@@ -119,6 +124,7 @@ final class App {
             Task { @MainActor in
                 do {
                     let fetched = try await SubscriptionService.fetch(url: trimmed, sendIdentity: true)
+                    self.logImport(fetched, name: fetched.title ?? SubscriptionHeaders.fallbackName(url: trimmed))
                     self.store.update { library in
                         let id = library.allocateID()
                         library.subscriptions.append(Subscription(id: id, name: fetched.title ?? SubscriptionHeaders.fallbackName(url: trimmed), url: trimmed,
@@ -154,6 +160,7 @@ final class App {
             defer { self.refreshing.value.remove(id) }
             do {
                 let fetched = try await SubscriptionService.fetch(url: url, sendIdentity: subscription.sendsDeviceIdentity)
+                self.logImport(fetched, name: subscription.name)
                 self.store.update { library in
                     guard var current = library.subscription(id) else { return }
                     current.nodes = fetched.nodes
@@ -164,6 +171,7 @@ final class App {
                 }
                 if self.library.activeSubscription?.id == id { self.reloadTunnel() }
                 if let summary = fetched.summary { self.notice.value = summary }
+                if let updated = self.library.subscription(id) { self.autoPing(updated) }
             } catch let error as URLError where !self.tunnel.state.value.isOn {
                 // Without the VPN the subscription server may be out of reach (blocked
                 // networks): try again through the tunnel once it is up.
@@ -172,6 +180,15 @@ final class App {
             } catch {
                 self.notice.value = "«\(subscription.name)»: \(error.localizedDescription)"
             }
+        }
+    }
+
+    /// What the subscription served, and every server that was skipped with why
+    /// (names only: never addresses or keys).
+    private func logImport(_ fetched: SubscriptionService.Fetched, name: String) {
+        core.note(Redactor.redact(Lf("Подписка «%@»: %@ (User-Agent %@), серверов %@, пропущено %@.", name, fetched.format, fetched.agent, "\(fetched.nodes.count)", "\(fetched.issues.count)")), level: 4)
+        for issue in fetched.issues {
+            core.note(Redactor.redact(Lf("Пропущен «%@»: %@", issue.name, issue.reason)), level: 3)
         }
     }
 
@@ -222,6 +239,23 @@ final class App {
     func ping(_ subscriptions: [Subscription]) {
         let items = subscriptions.flatMap { subscription in subscription.nodes.map { (subscription: subscription, node: $0) } }
         latency.test(items, tunnelSubscription: tunnelSubscription, tunnelUp: tunnel.state.value != .disconnected)
+    }
+
+    private var lastAutoPing: Date?
+
+    /// «Автопинг»: every subscription when the app opens (at most every 3 minutes),
+    /// one subscription after its update. A test already running is left alone.
+    func autoPing(_ only: Subscription? = nil) {
+        guard Prefs.autoPing, tunnel.loaded.value, !tunnel.state.value.isBusy, tunnel.state.value != .connecting,
+              !latency.progress.value.running else { return }
+        if only == nil {
+            if let last = lastAutoPing, Date().timeIntervalSince(last) < 180 { return }
+            lastAutoPing = Date()
+        }
+        let subscriptions = only.map { [$0] } ?? library.subscriptions
+        let withServers = subscriptions.filter { !$0.nodes.isEmpty }
+        guard !withServers.isEmpty else { return }
+        ping(withServers)
     }
 
     func ping(node: ServerNode, in subscription: Subscription) {

@@ -213,6 +213,28 @@ public enum ConfigBuilder {
         return .object(config)
     }
 
+    /// The configuration the app's own core measures servers with, without the VPN:
+    /// the same servers as the tunnel's, built the same way, but no tunnel, no rules
+    /// and no groups of the app's own (the `auto` group would test on its own timer).
+    /// Server addresses resolve through `dns-direct`, as in the tunnel.
+    public static func probe(subscription: Subscription, options: TunnelOptions) throws -> JSONValue {
+        var config = try build(subscription: subscription, selected: nil, options: options)
+        let own: Set<String> = [selectorTag, autoTag]
+        config["outbounds"] = .array((config["outbounds"]?.arrayValue ?? []).filter { !own.contains($0["tag"]?.stringValue ?? "") })
+        config["inbounds"] = nil
+        config["log"] = ["level": "error"]
+        config["dns"] = [
+            "servers": [["type": "udp", "tag": "dns-direct", "server": .string(options.dnsServer)]],
+            "final": "dns-direct",
+            "strategy": .string(options.dnsStrategy),
+        ]
+        config["route"] = [
+            "default_domain_resolver": ["server": "dns-direct", "strategy": .string(options.dnsStrategy)],
+            "final": "direct",
+        ]
+        return config
+    }
+
     /// Servers keep fields that point into the configuration they came from:
     /// 1.x wrote `domain_resolver: dns-local` into every server, provider files
     /// name their own DNS servers and detour outbounds. sing-box refuses to start

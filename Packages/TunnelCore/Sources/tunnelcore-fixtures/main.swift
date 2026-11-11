@@ -129,4 +129,11 @@ guard let carried = migrated.subscriptions.first, carried.nodes.count == 5 else 
 try write("legacy-1x-subscription", carried)
 try write("legacy-1x-auto-select", carried) { $0.autoSelect = true }
 try write("auto-select", try samples.prefix(3).flatMap { try $0.1.map(ShareLink.parse) }) { $0.autoSelect = true }
+// What the app's own core measures servers with, without the VPN.
+for (name, subscription) in [("probe-all-together", Subscription(id: 1, name: "all", nodes: NodeAssembler.assemble(try samples.flatMap { try $0.1.map(ShareLink.parse) } + ContentImporter.parse(xray).nodes))),
+                             ("probe-legacy-1x", carried)] {
+    let text = try ConfigBuilder.probe(subscription: subscription, options: TunnelOptions()).serialized(pretty: true)
+    try text.write(to: output.appendingPathComponent(name + ".json"), atomically: true, encoding: .utf8)
+    written += 1
+}
 print("written \(written) configurations to \(output.path)")

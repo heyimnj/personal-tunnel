@@ -7,7 +7,7 @@
 "%@ мин назад" = "%@ min ago";
 "%@ с назад" = "%@ s ago";
 "%@ ч назад" = "%@ h ago";
-"%@ через туннель, %@ напрямую" = "%@ through the tunnel, %@ direct";
+"%@ через туннель, %@ %@" = "%@ through the tunnel, %@ %@";
 "/с" = "/s";
 "AMOLED — чёрный фон в тёмной теме" = "AMOLED — black background in dark mode";
 "AnyTLS: в ссылке нет пароля." = "AnyTLS: the link has no password.";
@@ -32,7 +32,7 @@
 "Shadowsocks: пустой метод или пароль." = "Shadowsocks: empty method or password.";
 "Shadowsocks: ссылка повреждена." = "Shadowsocks: the link is damaged.";
 "ShadowsocksR не входит в сборку ядра." = "ShadowsocksR is not part of this core build.";
-"TCP к серверу / через VPN" = "TCP to the server / through the VPN";
+"URL-тест через сервер" = "URL test through the server";
 "TLS: сертификат, SNI и доступность маскировочного сайта. DNS: резолвер и маршрут к нему. Транспорт: соответствие TCP/WS/gRPC и пути серверу." = "TLS: certificate, SNI and whether the cover site is reachable. DNS: the resolver and the route to it. Transport: TCP/WS/gRPC and the path must match the server.";
 "TUIC: в ссылке нет идентификатора пользователя." = "TUIC: the link has no user ID.";
 "Tailscale не входит в сборку ядра." = "Tailscale is not part of this core build.";
@@ -61,7 +61,7 @@
 "Акцентная активная точка" = "Accent active dot";
 "Акцентный цвет" = "Accent colour";
 "Альтернативный" = "Alternative";
-"Альтернативный: короткая HTTP-проверка через узел, до 12 одновременно, ожидание до 2,5 с; без VPN — TCP. HTTP-проверка не подтверждает доступность HTTPS-сайтов." = "Alternative: a short HTTP check through each server, up to 12 at once, waiting up to 2.5 s; without VPN a TCP connect. An HTTP check does not prove that HTTPS sites are reachable.";
+"Альтернативный: короткая HTTP-проверка через узел, до 12 одновременно, ожидание до 2,5 с; без VPN — ядром приложения. HTTP-проверка не подтверждает доступность HTTPS-сайтов." = "Alternative: a short HTTP check through each server, up to 12 at once, waiting up to 2.5 s; without VPN by the app's core. An HTTP check does not prove that HTTPS sites are reachable.";
 "Аналитика" = "Analytics";
 "БЕЗОПАСНОСТЬ" = "SECURITY";
 "Без транспортного TLS" = "No transport TLS";
@@ -135,7 +135,7 @@
 "Интерфейс" = "Interface";
 "Карточки и панели" = "Cards and panels";
 "Классика" = "Classic";
-"Классика: активный узел проверяется по HTTPS раз в минуту. Список: generate_204 по HTTPS через каждый узел, до 8 одновременно, ожидание до 5 с; без VPN — TCP-соединение с сервером." = "Classic: the active server is checked over HTTPS once a minute. The list: generate_204 over HTTPS through each server, up to 8 at once, waiting up to 5 s; without VPN a TCP connection to the server.";
+"Классика: активный узел проверяется по HTTPS раз в минуту. Список: generate_204 по HTTPS через каждый узел, до 8 одновременно, ожидание до 5 с; без VPN — то же ядром приложения, 3 с, до 10 одновременно." = "Classic: the active server is checked over HTTPS once a minute. The list: generate_204 over HTTPS through each server, up to 8 at once, waiting up to 5 s; without VPN the same by the app's core, 3 s, up to 10 at once.";
 "Кнопка подключения" = "Connect button";
 "Коммит" = "Commit";
 "Конфигурация 1.x не прочитана. Обновите подписку." = "The 1.x configuration could not be read. Update the subscription.";
@@ -180,7 +180,7 @@
 "Обход российских сайтов" = "Bypass Russian sites";
 "Определяем…" = "Detecting…";
 "Основной" = "Primary";
-"Основной: сначала TCP-проверка доступности сервера (1,5 с), затем generate_204 через каждый ответивший узел (3 с), до 20 одновременно; UDP-протоколы сразу проходят URL-тест. Без VPN доступна только TCP-проверка. Результаты хранятся 2,5 минуты, при открытии списка проверяются только устаревшие." = "Primary: first a TCP check that the server is reachable (1.5 s), then generate_204 through every server that answered (3 s), up to 20 at once; UDP protocols go straight to the URL test. Without VPN only the TCP check is possible. Results are kept for 2.5 minutes; opening the list checks only the outdated ones.";
+"Основной: сначала TCP-проверка доступности сервера (1,5 с), затем generate_204 через каждый ответивший узел (3 с), до 20 одновременно; UDP-протоколы сразу проходят URL-тест. Без VPN серверы проверяет ядро приложения: generate_204 через каждый сервер (3 с), до 10 одновременно. Результаты хранятся 2,5 минуты, при открытии списка проверяются только устаревшие." = "Primary: first a TCP check that the server is reachable (1.5 s), then generate_204 through every server that answered (3 s), up to 20 at once; UDP protocols go straight to the URL test. Without VPN the app's core checks the servers: generate_204 through each server (3 s), up to 10 at once. Results are kept for 2.5 minutes; opening the list checks only the outdated ones.";
 "Остановить проверку" = "Stop the test";
 "Ответ за %@ мс через «%@»" = "Response in %@ ms through “%@”";
 "Отдача" = "Upload";
@@ -373,3 +373,20 @@
 "Пинг" = "Ping";
 "Маскировка finalmask «%@» не поддерживается ядром sing-box." = "finalmask obfuscation “%@” is not supported by the sing-box core.";
 "«%@»: сервер подписки не ответил (%@). Без VPN он может быть недоступен: подписка обновится сама после подключения." = "“%@”: the subscription server did not answer (%@). Without the VPN it may be out of reach: the subscription will update by itself once you connect.";
+"ядром приложения" = "by the app's core";
+"Ядро приложения не запустилось для «%@»: %@. Пинг этой подписки — по TCP." = "The app's core did not start for “%@”: %@. This subscription is pinged over TCP.";
+"ядро не запустилось" = "the core did not start";
+"Автопинг" = "Auto ping";
+"Задержка серверов проверяется сама при открытии приложения и после обновления подписки." = "Server delay is checked on its own when the app opens and after a subscription update.";
+"Подписка «%@»: %@ (User-Agent %@), серверов %@, пропущено %@." = "Subscription “%@”: %@ (User-Agent %@), %@ servers, %@ skipped.";
+"Пропущен «%@»: %@" = "Skipped “%@”: %@";
+"Туннель завершился аварийно" = "The tunnel ended unexpectedly";
+"Поделиться журналом" = "Share log";
+"Ядро завершилось с ошибкой." = "The core failed.";
+"Системе не хватило памяти для туннеля: расширение было у предела (около 50 МиБ)." = "The system ran out of memory for the tunnel: the extension was at its limit (about 50 MiB).";
+"Система завершила туннель без остановки. Точная причина неизвестна." = "The system ended the tunnel without stopping it. The exact reason is unknown.";
+"Запущен: %@" = "Started: %@";
+"Система: %@" = "System: %@";
+"Память (%@): %@" = "Memory (%@): %@";
+"Ядро:" = "Core:";
+"Последние события расширения:" = "The extension's last events:";

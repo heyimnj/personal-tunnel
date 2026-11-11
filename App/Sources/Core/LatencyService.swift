@@ -163,6 +163,75 @@ struct NetworkProbes: LatencyProbes {
     }
 }
 
+/// Without the VPN the app's own core measures servers (3.0): each subscription's
+/// servers run in a core without a tunnel, and a URL is fetched through every
+/// server the way a connection would use it, UDP protocols included. Tags are
+/// `subscriptionID:tag`, as for direct targets.
+final class LocalCoreProbes: LatencyProbes, @unchecked Sendable {
+    private static let blocking = DispatchQueue(label: "personaltunnel.local-core", qos: .utility, attributes: .concurrent)
+    private let lock = NSLock()
+    private var probers: [Int64: PtbridgeProber]
+
+    private init(probers: [Int64: PtbridgeProber]) { self.probers = probers }
+
+    /// Starts a core for every subscription; those that do not start are
+    /// returned with the reason, and their servers fall back to TCP.
+    static func start(_ subscriptions: [Subscription], options: TunnelOptions) -> (probes: LocalCoreProbes, failed: [Int64: String]) {
+        var probers: [Int64: PtbridgeProber] = [:]
+        var failed: [Int64: String] = [:]
+        for subscription in subscriptions {
+            do {
+                let config = try ConfigBuilder.probe(subscription: subscription, options: options).serialized(pretty: false)
+                var error: NSError?
+                if let prober = PtbridgeNewProber(config, &error), error == nil {
+                    probers[subscription.id] = prober
+                } else {
+                    failed[subscription.id] = error?.localizedDescription ?? L("ядро не запустилось")
+                }
+            } catch {
+                failed[subscription.id] = (error as? ImportError)?.message ?? error.localizedDescription
+            }
+        }
+        return (LocalCoreProbes(probers: probers), failed)
+    }
+
+    func close() {
+        lock.lock()
+        let all = probers.values
+        probers = [:]
+        lock.unlock()
+        for prober in all { prober.close() }
+    }
+
+    private func prober(_ subscription: Int64) -> PtbridgeProber? {
+        lock.lock()
+        defer { lock.unlock() }
+        return probers[subscription]
+    }
+
+    func tcp(host _: String, port _: Int, timeout _: TimeInterval) async -> ProbeResult { .failed(.unsupported) }
+
+    func url(tag: String, link: String, timeoutMs: Int) async -> ProbeResult {
+        guard let colon = tag.firstIndex(of: ":"), let subscription = Int64(tag[..<colon]), let prober = prober(subscription) else {
+            return .failed(.other)
+        }
+        let inner = String(tag[tag.index(after: colon)...])
+        return await withCheckedContinuation { continuation in
+            LocalCoreProbes.blocking.async {
+                guard let result = prober.test(inner, link: link, timeoutMs: Int32(timeoutMs)) else {
+                    continuation.resume(returning: .failed(.other))
+                    return
+                }
+                if result.error.isEmpty {
+                    continuation.resume(returning: .delay(max(1, Int(result.delay))))
+                } else {
+                    continuation.resume(returning: .failed(ProbeFailure.classify(result.error)))
+                }
+            }
+        }
+    }
+}
+
 private final class ResultBox: @unchecked Sendable {
     private let lock = NSLock()
     private var done = false
@@ -210,6 +279,8 @@ final class LatencyService {
     let progress = Observable(LatencyProgress())
     private(set) var testing: Set<String> = []
     private var task: Task<Void, Never>?
+    /// The app's own core for the running test without the VPN.
+    private var local: LocalCoreProbes?
     /// Outcome of the running test, summed up in the log when it ends.
     private var tally: [ProbeFailure: Int] = [:]
     private var answered = 0
@@ -246,16 +317,29 @@ final class LatencyService {
         var live: [LatencyRunner.Target] = []
         var direct: [LatencyRunner.Target] = []
         var owner: [String: Int64] = [:]
+        var directSubscriptions: [Int64: Subscription] = [:]
         for item in items {
             let address = item.node.address
             let target = LatencyRunner.Target(tag: item.node.id, host: address?.host, port: address?.port, udp: item.node.isUDPBased,
                                               label: item.node.name, tlsName: item.node.tlsServerName)
             owner[LatencyService.key(item.subscription.id, item.node.id)] = item.subscription.id
-            if item.subscription.id == tunnelSubscription { live.append(target) } else { direct.append(TargetKeyed.wrap(target, item.subscription.id)) }
+            if item.subscription.id == tunnelSubscription {
+                live.append(target)
+            } else {
+                direct.append(TargetKeyed.wrap(target, item.subscription.id))
+                directSubscriptions[item.subscription.id] = item.subscription
+            }
         }
+        // Without the VPN the app's own core URL-tests the servers; with it, the
+        // servers outside the tunnel keep the TCP connect around it.
+        let useLocalCore = !tunnelUp && !direct.isEmpty
+        let options = Prefs.tunnelOptions
+        let toStart = Array(directSubscriptions.values)
+        let names = directSubscriptions.mapValues(\.name)
         let liveID = tunnelSubscription
         let total = items.count
-        let how = live.isEmpty ? L("напрямую") : (direct.isEmpty ? L("через туннель") : Lf("%@ через туннель, %@ напрямую", "\(live.count)", "\(direct.count)"))
+        let directHow = useLocalCore ? L("ядром приложения") : L("напрямую")
+        let how = live.isEmpty ? directHow : (direct.isEmpty ? L("через туннель") : Lf("%@ через туннель, %@ %@", "\(live.count)", "\(direct.count)", directHow))
         log(4, Lf("Проверка задержки: %@ %@; режим «%@», VPN %@", "\(Format.plural(items.count, L("сервер"), L("сервера"), L("серверов")))", "\(how)", "\(LatencyService.modeTitle(Prefs.pingMode))", "\(tunnelUp ? L("включён") : L("выключен"))"))
         task = Task { [weak self] in
             let deliver: @Sendable ([String: ProbeResult], Int64?) async -> Void = { batch, subscription in
@@ -279,7 +363,24 @@ final class LatencyService {
                 }
             }
             if !live.isEmpty { await runner.run(live, mode: mode, tunnel: true) { await deliver($0, liveID) } }
-            if !direct.isEmpty, !Task.isCancelled { await runner.run(direct, mode: mode, tunnel: false) { await deliver($0, nil) } }
+            if useLocalCore, !Task.isCancelled {
+                let started = await Task.detached(priority: .utility) { LocalCoreProbes.start(toStart, options: options) }.value
+                await MainActor.run { self?.local = started.probes }
+                for (id, reason) in started.failed {
+                    log(3, Lf("Ядро приложения не запустилось для «%@»: %@. Пинг этой подписки — по TCP.", "\(names[id] ?? "—")", "\(reason)"))
+                }
+                let fallback = direct.filter { target in started.failed.keys.contains { target.tag.hasPrefix("\($0):") } }
+                let measured = direct.filter { target in !started.failed.keys.contains { target.tag.hasPrefix("\($0):") } }
+                if !measured.isEmpty, !Task.isCancelled {
+                    let core = LatencyRunner(probes: started.probes)
+                    await core.run(measured, mode: LatencyMode.localCore(link: mode.link), tunnel: true) { await deliver($0, nil) }
+                }
+                if !fallback.isEmpty, !Task.isCancelled { await runner.run(fallback, mode: mode, tunnel: false) { await deliver($0, nil) } }
+                started.probes.close()
+                await MainActor.run { if self?.local === started.probes { self?.local = nil } }
+            } else if !direct.isEmpty, !Task.isCancelled {
+                await runner.run(direct, mode: mode, tunnel: false) { await deliver($0, nil) }
+            }
             await MainActor.run {
                 guard let self, !Task.isCancelled else { return }
                 let reasons = self.tally.sorted { $0.value > $1.value }.map { "\($0.key.title) ×\($0.value)" }
@@ -292,6 +393,8 @@ final class LatencyService {
     func cancel() {
         task?.cancel()
         task = nil
+        local?.close()
+        local = nil
         if progress.value.running { finish() }
     }
 
