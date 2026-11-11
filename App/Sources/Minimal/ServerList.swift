@@ -567,7 +567,7 @@ final class ServerListView: UIScrollView {
                 row.frame = CGRect(x: Self.rowInset, y: top, width: width - 2 * Self.rowInset, height: Self.rowHeight)
                 // A card being uncovered settles into place: it fades in and comes
                 // down the last few points as the edge passes it.
-                let shown = max(0, min(1, (frame.height - top) / (Self.rowHeight + 10)))
+                let shown = max(0, min(1, (frame.height - top) / (Self.rowHeight + Self.tail + 3)))
                 let eased = shown * shown * (3 - 2 * shown)
                 row.alpha = eased
                 row.front.transform = eased < 1 ? CGAffineTransform(translationX: 0, y: -10 * (1 - eased)).scaledBy(x: 0.97 + 0.03 * eased, y: 0.97 + 0.03 * eased) : .identity
