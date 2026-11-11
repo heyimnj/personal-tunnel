@@ -139,6 +139,7 @@ final class MinimalHomeViewController: UIViewController, UIScrollViewDelegate, U
 
     private func settled() {
         applyAnalyticsInsets()
+        applyVisibility()
         scheduleHideDots()
     }
 
@@ -165,11 +166,23 @@ final class MinimalHomeViewController: UIViewController, UIScrollViewDelegate, U
         setPage(next)
     }
 
+    /// During a page change only the dots follow; the analytics streams and timer
+    /// switch when the page has settled, so the core's reconnect and the first
+    /// redraws never land in the middle of the motion.
     private func setPage(_ next: Int) {
         guard next != page else { return }
         page = next
         updateDots()
-        analytics.setVisible(next == 1)
+        if !pageMoving { applyVisibility() }
+    }
+
+    private var analyticsShown = false
+
+    private func applyVisibility() {
+        let visible = page == 1
+        guard visible != analyticsShown else { return }
+        analyticsShown = visible
+        analytics.setVisible(visible)
     }
 
     func scrollViewWillBeginDragging(_ scrollView: UIScrollView) {

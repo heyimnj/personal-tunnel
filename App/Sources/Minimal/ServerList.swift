@@ -206,6 +206,10 @@ final class ServerRowView: SwipeRow {
 
     override init(frame: CGRect) {
         super.init(frame: frame)
+        // Clipped at the container's edge while uncovered; faded without an
+        // offscreen group pass (each layer fades on its own).
+        clipsToBounds = true
+        layer.allowsGroupOpacity = false
         card.ripple = true
         card.rippleCornerRadius = 14
         card.backgroundColor = .secondarySystemGroupedBackground
@@ -265,6 +269,8 @@ final class SubscriptionHeaderView: SwipeRow {
     let count = UILabel(font: Theme.font(13, .medium), color: .secondaryLabel)
     let chevron = UIImageView(image: UIImage(systemName: "chevron.down", withConfiguration: UIImage.SymbolConfiguration(pointSize: 13, weight: .semibold)))
     let spinner = UIActivityIndicatorView(style: .medium)
+    /// The count's pill, a plain layer behind it (no masking).
+    private let countPill = UIView()
 
     override init(frame: CGRect) {
         super.init(frame: frame)
@@ -278,8 +284,8 @@ final class SubscriptionHeaderView: SwipeRow {
         chevron.tintColor = .secondaryLabel
         chevron.setContentHuggingPriority(.required, for: .horizontal)
         count.textAlignment = .center
-        count.layer.cornerRadius = 12
-        count.layer.masksToBounds = true
+        countPill.layer.cornerRadius = 12
+        countPill.isUserInteractionEnabled = false
         title.lineBreakMode = .byTruncatingTail
         title.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
         spinner.hidesWhenStopped = true
@@ -289,6 +295,12 @@ final class SubscriptionHeaderView: SwipeRow {
         tap.addSubview(row)
         row.pin(to: tap, insets: UIEdgeInsets(top: 0, left: 20, bottom: 0, right: 20))
         NSLayoutConstraint.activate([count.heightAnchor.constraint(equalToConstant: 24), count.widthAnchor.constraint(greaterThanOrEqualToConstant: 34)])
+        tap.insertSubview(countPill, at: 0)
+        countPill.translatesAutoresizingMaskIntoConstraints = false
+        NSLayoutConstraint.activate([
+            countPill.leadingAnchor.constraint(equalTo: count.leadingAnchor), countPill.trailingAnchor.constraint(equalTo: count.trailingAnchor),
+            countPill.topAnchor.constraint(equalTo: count.topAnchor), countPill.bottomAnchor.constraint(equalTo: count.bottomAnchor),
+        ])
     }
 
     override func layoutSubviews() {
@@ -299,7 +311,7 @@ final class SubscriptionHeaderView: SwipeRow {
     /// `progress`: how open the subscription is, 0…1, straight from the spring.
     func show(progress: CGFloat) {
         chevron.transform = CGAffineTransform(rotationAngle: .pi * progress)
-        count.backgroundColor = SurfaceView.blend(UIColor.label.withAlphaComponent(0.06), Theme.accent.withAlphaComponent(0.14), progress, traits: traitCollection)
+        countPill.backgroundColor = SurfaceView.blend(UIColor.label.withAlphaComponent(0.06), Theme.accent.withAlphaComponent(0.14), progress, traits: traitCollection)
         count.textColor = SurfaceView.blend(.secondaryLabel, Theme.accent, progress, traits: traitCollection)
     }
 }
@@ -313,20 +325,35 @@ final class SurfaceView: UIView {
         traits.userInterfaceStyle == .dark ? UIColor(red: 0.067, green: 0.067, blue: 0.075, alpha: 1) : UIColor(red: 0.914, green: 0.914, blue: 0.933, alpha: 1)
     }
 
+    private var shownProgress: CGFloat = -1
+    private var shownStandalone: Bool?
+
     override init(frame: CGRect) {
         super.init(frame: frame)
-        clipsToBounds = true
+        // No clipping: a rounded mask over moving content renders offscreen every
+        // frame. The server rows clip themselves at the container's edge instead.
         layer.cornerCurve = .continuous
         addSubview(header)
+    }
+
+    override func traitCollectionDidChange(_ previous: UITraitCollection?) {
+        super.traitCollectionDidChange(previous)
+        shownProgress = -1
     }
 
     @available(*, unavailable)
     required init?(coder _: NSCoder) { fatalError() }
 
+    /// Restyles only when something changed: still subscriptions cost nothing per frame.
     func show(progress: CGFloat, standalone: Bool) {
+        guard abs(progress - shownProgress) > 0.001 || standalone != shownStandalone else { return }
+        shownProgress = progress
+        shownStandalone = standalone
         header.isHidden = standalone
         backgroundColor = standalone ? Self.card : Self.blend(Self.card, Self.container, progress, traits: traitCollection)
-        layer.cornerRadius = 24 - 2 * progress
+        // The radius changes once, not every frame (a moving radius redraws the shape).
+        let radius: CGFloat = progress > 0.001 ? 22 : 24
+        if layer.cornerRadius != radius { layer.cornerRadius = radius }
         if !standalone { header.show(progress: progress) }
     }
 
@@ -563,8 +590,10 @@ final class ServerListView: UIScrollView {
             guard let surface = surfaces[section.id] else { continue }
             let progress = max(0, springs[section.id]?.value ?? 0)
             let height = Self.headerHeight + revealed(section)
-            surface.frame = CGRect(x: Self.margin, y: y, width: width, height: height)
-            surface.header.frame = CGRect(x: 0, y: 0, width: width, height: Self.headerHeight)
+            let frame = CGRect(x: Self.margin, y: y, width: width, height: height)
+            if surface.frame != frame { surface.frame = frame }
+            let headerFrame = CGRect(x: 0, y: 0, width: width, height: Self.headerHeight)
+            if surface.header.frame != headerFrame { surface.header.frame = headerFrame }
             surface.show(progress: min(1, progress), standalone: section.standalone)
             y += height + Self.gap
         }
@@ -613,13 +642,17 @@ final class ServerListView: UIScrollView {
                 guard top < frame.height else { break }
                 let row = rowView(section.id, section.nodes[index], in: surface, used: &used, plain: false)
                 row.contentHeight = Self.rowHeight
-                row.frame = CGRect(x: Self.rowInset, y: top, width: width - 2 * Self.rowInset, height: Self.rowHeight)
+                // The row clips itself at the container's moving edge (a plain
+                // rectangle clip, cheap), so the surface needs no mask.
+                let rowFrame = CGRect(x: Self.rowInset, y: top, width: width - 2 * Self.rowInset, height: max(0, min(Self.rowHeight, frame.height - top)))
+                if row.frame != rowFrame { row.frame = rowFrame }
                 // A card being uncovered settles into place: it fades in and comes
                 // down the last few points as the edge passes it.
                 let shown = max(0, min(1, (frame.height - top) / (Self.rowHeight + Self.tail + 3)))
                 let eased = shown * shown * (3 - 2 * shown)
-                row.alpha = eased
-                row.front.transform = eased < 1 ? CGAffineTransform(translationX: 0, y: -8 * (1 - eased)).scaledBy(x: 0.98 + 0.02 * eased, y: 0.98 + 0.02 * eased) : .identity
+                if row.alpha != eased { row.alpha = eased }
+                let transform = eased < 1 ? CGAffineTransform(translationX: 0, y: -8 * (1 - eased)).scaledBy(x: 0.98 + 0.02 * eased, y: 0.98 + 0.02 * eased) : .identity
+                if row.front.transform != transform { row.front.transform = transform }
             }
         }
         for (key, row) in rows where !used.contains(key) {

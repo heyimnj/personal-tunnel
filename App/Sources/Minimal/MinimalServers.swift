@@ -1,23 +1,30 @@
 import TunnelCore
 import UIKit
 
-/// Coloured protocol tags under a server name.
+/// Coloured protocol tags under a server name. Each pill is a plain rounded layer
+/// behind its text: no masking, so moving rows cost no offscreen passes.
 final class BadgeRow: UIView {
     private static let colors: [UIColor] = [.systemBlue, .systemOrange, .systemGreen, .systemPurple, .systemTeal]
     private var labels: [UILabel] = []
+    private var pills: [UIView] = []
     private var shown: [String] = []
 
     func set(_ badges: [String]) {
         guard badges != shown else { return }
         shown = badges
         labels.forEach { $0.removeFromSuperview() }
+        pills.forEach { $0.removeFromSuperview() }
+        pills = []
         labels = badges.enumerated().map { index, text in
             let color = BadgeRow.colors[index % BadgeRow.colors.count]
+            let pill = UIView()
+            pill.backgroundColor = color.withAlphaComponent(0.13)
+            pill.layer.cornerRadius = 8.5
+            pill.isUserInteractionEnabled = false
+            addSubview(pill)
+            pills.append(pill)
             let label = UILabel(text, font: Theme.font(11, .semibold), color: color)
             label.textAlignment = .center
-            label.backgroundColor = color.withAlphaComponent(0.13)
-            label.layer.cornerRadius = 8.5
-            label.layer.masksToBounds = true
             addSubview(label)
             return label
         }
@@ -27,10 +34,14 @@ final class BadgeRow: UIView {
     override func layoutSubviews() {
         super.layoutSubviews()
         var x: CGFloat = 0
-        for label in labels {
+        for (label, pill) in zip(labels, pills) {
             let width = ceil(label.intrinsicContentSize.width) + 12
-            label.frame = CGRect(x: x, y: 0, width: width, height: 17)
-            label.isHidden = x + width > bounds.width
+            let frame = CGRect(x: x, y: 0, width: width, height: 17)
+            label.frame = frame
+            pill.frame = frame
+            let hidden = x + width > bounds.width
+            label.isHidden = hidden
+            pill.isHidden = hidden
             x += width + 4
         }
     }

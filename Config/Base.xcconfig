@@ -1,6 +1,6 @@
 // Версия Personal Tunnel. Номер сборки должен только расти: 1.5.0 была сборкой 179.
 MARKETING_VERSION = 2.0
-CURRENT_PROJECT_VERSION = 204
+CURRENT_PROJECT_VERSION = 205
 
 // App Group, общая для приложения и туннеля. Подписанной сборке нужна группа из её
 // профиля: CI передаёт APP_GROUP_IDENTIFIER=... в xcodebuild.
