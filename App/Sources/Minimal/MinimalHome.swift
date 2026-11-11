@@ -57,6 +57,7 @@ final class MinimalHomeViewController: UIViewController, UIScrollViewDelegate, U
 
     override func viewDidLayoutSubviews() {
         super.viewDidLayoutSubviews()
+        connection.safeInsets = view.safeAreaInsets
         let size = view.bounds.size
         guard pager.frame.size != size else { layoutDots(); return }
         pager.frame = view.bounds
@@ -125,97 +126,128 @@ final class MinimalHomeViewController: UIViewController, UIScrollViewDelegate, U
     }
 }
 
-/// Big round power button, state line and the server capsule.
+/// Big round power button, state line and the server capsule, as 1.5.0's
+/// `AnywhereConnectionView`: glass controls, centred on the screen.
 final class MinimalConnectionView: UIView {
     var onChooseServer: (() -> Void)?
+    /// Safe area of the page (status bar, tab bar).
+    var safeInsets: UIEdgeInsets = .zero {
+        didSet { if safeInsets != oldValue { setNeedsLayout() } }
+    }
+
     private let button = TapControl()
-    private let buttonGlass = GlassView(opacityKey: Prefs.buttonOpacityKey)
+    private let buttonGlass = ControlGlassView(circle: true, opacityKey: Prefs.buttonOpacityKey)
     private let power = UIImageView(image: UIImage(systemName: "power", withConfiguration: UIImage.SymbolConfiguration(pointSize: 44, weight: .regular)))
     private let dot = UIView()
-    private let status = UILabel(font: Theme.font(20, .semibold), color: .secondaryLabel)
+    private let spinner = UIActivityIndicatorView(style: .medium)
+    private let status = UILabel(font: Theme.font(.headline), color: .secondaryLabel)
+    private lazy var statusRow = UIStackView(.horizontal, spacing: 8, alignment: .center, [spinner, status])
     private let capsule = TapControl()
-    private let capsuleGlass = GlassView(opacityKey: Prefs.serverOpacityKey)
-    private let flag = UILabel(font: .systemFont(ofSize: 24))
-    private let globe = UIImageView(image: UIImage(systemName: "globe"))
-    private let name = UILabel(font: Theme.font(20))
-    private let chevron = UIImageView(image: UIImage(systemName: "chevron.up.chevron.down", withConfiguration: UIImage.SymbolConfiguration(pointSize: 13, weight: .semibold)))
+    private let capsuleGlass = ControlGlassView(circle: false, opacityKey: Prefs.serverOpacityKey)
+    private let flag = UILabel(font: .systemFont(ofSize: 21))
+    private let mark = UIImageView(image: MinimalIcons.home)
+    private let name = UILabel(font: Theme.font(17, .medium))
+    private let chevron = UIImageView()
+    private lazy var capsuleRow = UIStackView(.horizontal, spacing: 8, alignment: .center, [flag, mark, name, UIView(), chevron])
 
     override init(frame: CGRect) {
         super.init(frame: frame)
         button.pressScale = 0.96
         button.addSubview(buttonGlass)
-        buttonGlass.isUserInteractionEnabled = false
-        buttonGlass.pin(to: button)
-        button.layer.shadowColor = UIColor.black.cgColor
-        button.layer.shadowOpacity = 0.06
-        button.layer.shadowRadius = 14
-        button.layer.shadowOffset = CGSize(width: 0, height: 6)
         power.tintColor = .label
+        power.contentMode = .scaleAspectFit
         dot.layer.cornerRadius = 2.5
         for view in [power, dot] as [UIView] {
             view.isUserInteractionEnabled = false
-            view.translatesAutoresizingMaskIntoConstraints = false
             button.addSubview(view)
         }
         button.accessibilityLabel = "Подключение"
-        button.onTap = { App.shared.toggleConnection() }
+        button.onTap = { [weak self] in
+            // Without a subscription the button leads to the server panel, as in 1.5.0.
+            if App.shared.library.activeSubscription == nil { self?.onChooseServer?() } else { App.shared.toggleConnection() }
+        }
+        spinner.transform = CGAffineTransform(scaleX: 0.7, y: 0.7)
+        spinner.hidesWhenStopped = true
         status.textAlignment = .center
 
         capsule.pressScale = 0.985
         capsule.addSubview(capsuleGlass)
-        capsuleGlass.isUserInteractionEnabled = false
-        capsuleGlass.pin(to: capsule)
-        globe.tintColor = .label
-        chevron.tintColor = .secondaryLabel
+        mark.tintColor = .label
+        mark.contentMode = .scaleAspectFit
+        flag.textAlignment = .center
+        for view in [flag, mark] as [UIView] {
+            view.translatesAutoresizingMaskIntoConstraints = false
+            NSLayoutConstraint.activate([view.widthAnchor.constraint(equalToConstant: 26), view.heightAnchor.constraint(equalToConstant: 26)])
+        }
+        name.lineBreakMode = .byTruncatingTail
+        chevron.tintColor = UIColor.label.withAlphaComponent(0.7)
         chevron.setContentHuggingPriority(.required, for: .horizontal)
-        let row = UIStackView(.horizontal, spacing: 12, alignment: .center, [flag, globe, name, UIView(), chevron])
-        row.isUserInteractionEnabled = false
-        capsule.addSubview(row)
-        row.pin(to: capsule, insets: UIEdgeInsets(top: 0, left: 20, bottom: 0, right: 20))
+        capsuleRow.isUserInteractionEnabled = false
+        capsule.addSubview(capsuleRow)
         capsule.onTap = { [weak self] in Haptics.tap(); self?.onChooseServer?() }
 
-        for view in [button, status, capsule] as [UIView] {
-            view.translatesAutoresizingMaskIntoConstraints = false
-            addSubview(view)
-        }
-        NSLayoutConstraint.activate([
-            button.centerXAnchor.constraint(equalTo: centerXAnchor),
-            NSLayoutConstraint(item: button, attribute: .centerY, relatedBy: .equal, toItem: self, attribute: .centerY, multiplier: 0.786, constant: 0),
-            button.widthAnchor.constraint(equalToConstant: 142), button.heightAnchor.constraint(equalToConstant: 142),
-            power.centerXAnchor.constraint(equalTo: button.centerXAnchor), power.centerYAnchor.constraint(equalTo: button.centerYAnchor),
-            dot.centerXAnchor.constraint(equalTo: button.centerXAnchor), dot.centerYAnchor.constraint(equalTo: button.centerYAnchor, constant: 45),
-            dot.widthAnchor.constraint(equalToConstant: 5), dot.heightAnchor.constraint(equalToConstant: 5),
-            status.centerXAnchor.constraint(equalTo: centerXAnchor), status.topAnchor.constraint(equalTo: button.bottomAnchor, constant: 18),
-            capsule.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 16), capsule.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -16),
-            capsule.heightAnchor.constraint(equalToConstant: 56),
-            NSLayoutConstraint(item: capsule, attribute: .centerY, relatedBy: .equal, toItem: self, attribute: .centerY, multiplier: 1.312, constant: 0),
-        ])
+        for view in [button, statusRow, capsule] as [UIView] { addSubview(view) }
+        restyle()
         App.shared.tunnel.state.observe(self) { [weak self] in self?.show($0) }
         App.shared.store.library.observe(self) { [weak self] _ in self?.showServer() }
         Prefs.appearanceChanged.observe(self) { [weak self] in
-            self?.status.font = Theme.font(20, .semibold)
-            self?.name.font = Theme.font(20)
-            self?.name.textColor = Theme.text
+            self?.restyle()
+            self?.showServer()
         }
     }
 
     @available(*, unavailable)
     required init?(coder _: NSCoder) { fatalError() }
 
+    private func restyle() {
+        status.font = Theme.font(.headline)
+        name.font = Theme.font(17, .medium)
+        name.textColor = Theme.text
+        chevron.image = UIImage(systemName: "chevron.up.chevron.down", withConfiguration: UIImage.SymbolConfiguration(font: Theme.font(12, .semibold)))
+        setNeedsLayout()
+    }
+
+    /// 1.5.0 `AnywhereControlLayout`: the group and the capsule, `12 %` of the height
+    /// apart (20…100 pt), centred on the screen and kept inside the safe area.
     override func layoutSubviews() {
         super.layoutSubviews()
-        button.layer.shadowPath = UIBezierPath(ovalIn: button.bounds).cgPath
+        let side: CGFloat = 140
+        let statusSize = statusRow.systemLayoutSizeFitting(UIView.layoutFittingCompressedSize)
+        let groupHeight = side + 20 + statusSize.height
+        let capsuleWidth = min(bounds.width - 32, 500)
+        let capsuleHeight = 16 + max(26, ceil(name.font.lineHeight)) + 16
+        let area = bounds.inset(by: safeInsets)
+        let room = area.height - groupHeight - capsuleHeight
+        let ideal = min(max(area.height * 0.12, 20), 100)
+        let spacing = max(min(ideal, room), 20)
+        let contentHeight = groupHeight + spacing + capsuleHeight
+        let top = max(area.minY, min(bounds.midY - contentHeight / 2, area.maxY - contentHeight))
+
+        button.bounds = CGRect(x: 0, y: 0, width: side, height: side)
+        button.center = CGPoint(x: bounds.midX, y: top + side / 2)
+        buttonGlass.frame = button.bounds
+        let glyph = power.image?.size ?? CGSize(width: 1, height: 1)
+        let glyphWidth = 40 * glyph.width / max(glyph.height, 1)
+        power.frame = CGRect(x: (side - glyphWidth) / 2, y: (side - 40) / 2, width: glyphWidth, height: 40)
+        dot.frame = CGRect(x: side / 2 - 2.5, y: side / 2 + 45 - 2.5, width: 5, height: 5)
+        statusRow.frame = CGRect(x: bounds.midX - statusSize.width / 2, y: top + side + 20, width: statusSize.width, height: statusSize.height)
+        capsule.frame = CGRect(x: bounds.midX - capsuleWidth / 2, y: top + groupHeight + spacing, width: capsuleWidth, height: capsuleHeight)
+        capsuleGlass.frame = capsule.bounds
+        capsuleRow.frame = capsule.bounds.insetBy(dx: 16, dy: 16)
     }
 
     private func show(_ state: TunnelState) {
         switch state {
         case .connected: status.text = "Подключено"; dot.backgroundColor = Theme.connected
-        case .connecting: status.text = "Подключение…"; dot.backgroundColor = .systemYellow
-        case .disconnecting: status.text = "Отключение…"; dot.backgroundColor = .systemYellow
-        case .reasserting: status.text = "Смена сервера…"; dot.backgroundColor = .systemYellow
-        case .disconnected: status.text = "Не подключено"; dot.backgroundColor = UIColor.secondaryLabel.withAlphaComponent(0.6)
+        case .connecting: status.text = "Подключение…"; dot.backgroundColor = .systemOrange
+        case .disconnecting: status.text = "Отключение…"; dot.backgroundColor = .systemOrange
+        case .reasserting: status.text = "Смена сервера…"; dot.backgroundColor = .systemOrange
+        case .disconnected: status.text = "Не подключено"; dot.backgroundColor = UIColor.systemGray.withAlphaComponent(0.8)
         }
+        if state.isBusy { spinner.startAnimating() } else { spinner.stopAnimating() }
+        button.accessibilityLabel = state.isOn ? "Отключить" : "Подключить"
         button.accessibilityValue = status.text
+        setNeedsLayout()
     }
 
     private func showServer() {
@@ -223,7 +255,9 @@ final class MinimalConnectionView: UIView {
         guard let subscription = library.activeSubscription, let node = library.activeNode else {
             name.text = "Выбрать сервер"
             flag.isHidden = true
-            globe.isHidden = false
+            mark.isHidden = false
+            mark.image = UIImage(systemName: "plus.circle.fill")
+            mark.tintColor = Theme.accent
             return
         }
         let label = App.shared.store.label(of: node, in: subscription)
@@ -231,6 +265,9 @@ final class MinimalConnectionView: UIView {
         let emoji = Theme.flag(label.countryCode)
         flag.text = emoji
         flag.isHidden = emoji == nil
-        globe.isHidden = emoji != nil
+        // No flag: the app's mark, as 1.5.0's home capsule showed it.
+        mark.isHidden = emoji != nil
+        mark.image = MinimalIcons.home
+        mark.tintColor = .label
     }
 }

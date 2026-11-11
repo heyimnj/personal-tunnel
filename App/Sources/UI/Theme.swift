@@ -48,12 +48,10 @@ enum Theme {
     static let danger = UIColor(red: 0.82, green: 0.24, blue: 0.20, alpha: 1)
     static let connected = UIColor.systemGreen
 
-    /// Cards of the Minimal interface: grouped surface at the chosen opacity.
+    /// Analytics cards of the Minimal interface, as 1.5.0 drew them (`ModernGlass`
+    /// "analytics"): a faint grouped surface, solid when transparency is reduced.
     static var card: UIColor {
-        let alpha = CGFloat(Prefs.opacity(Prefs.cardOpacityKey) * Prefs.opacity(Prefs.glassOpacityKey))
-        return UIColor { traits in
-            (traits.userInterfaceStyle == .dark ? UIColor(white: 0.11, alpha: 1) : UIColor(white: 0.965, alpha: 1)).withAlphaComponent(0.25 + 0.75 * alpha)
-        }
+        UIAccessibility.isReduceTransparencyEnabled ? .secondarySystemBackground : UIColor.secondarySystemBackground.withAlphaComponent(0.23)
     }
 
     // MARK: Fonts
@@ -122,8 +120,13 @@ enum Theme {
     static func flag(_ code: String?) -> String? { Countries.flagEmoji(code: code) }
 }
 
-/// A translucent surface: Liquid Glass on iOS 26 and later, system blur before.
-final class GlassView: UIVisualEffectView {
+/// A translucent surface, as 1.5.0's `ModernGlass`: Liquid Glass on iOS 26 and
+/// later, the ultra-thin system material before; no backing colour and no border.
+/// The opacity sliders fade the glass only, never what lies on it.
+final class GlassView: UIView {
+    /// Put content here: it stays opaque whatever the glass opacity.
+    let contentView = UIView()
+    private let effectView = UIVisualEffectView(effect: nil)
     private let radius: CGFloat?
     private let opacityKey: String?
 
@@ -131,35 +134,139 @@ final class GlassView: UIVisualEffectView {
     init(radius: CGFloat? = nil, opacityKey: String? = nil) {
         self.radius = radius
         self.opacityKey = opacityKey
-        super.init(effect: nil)
-        clipsToBounds = true
-        layer.cornerCurve = .continuous
+        super.init(frame: .zero)
+        effectView.clipsToBounds = true
+        effectView.layer.cornerCurve = .continuous
+        effectView.isUserInteractionEnabled = false
+        contentView.layer.cornerCurve = .continuous
+        contentView.clipsToBounds = true
+        for view in [effectView, contentView] {
+            addSubview(view)
+            view.pin(to: self)
+        }
         restyle()
         Prefs.appearanceChanged.observe(self) { [weak self] in self?.restyle() }
+        NotificationCenter.default.addObserver(self, selector: #selector(restyle), name: UIAccessibility.reduceTransparencyStatusDidChangeNotification, object: nil)
     }
 
     @available(*, unavailable)
     required init?(coder _: NSCoder) { fatalError() }
 
-    func restyle() {
-        let strength = CGFloat(Prefs.opacity(Prefs.glassOpacityKey) * (opacityKey.map(Prefs.opacity) ?? 1))
-        if #available(iOS 26.0, *) {
-            let glass = UIGlassEffect()
-            glass.isInteractive = false
-            if Prefs.glassStyle == "tinted" { glass.tintColor = Theme.accent.withAlphaComponent(0.18) }
-            effect = glass
-            contentView.backgroundColor = Prefs.glassStyle == "clear" ? .clear : UIColor.systemBackground.withAlphaComponent(0.35 * strength)
-        } else {
-            effect = UIBlurEffect(style: Prefs.glassStyle == "clear" ? .systemUltraThinMaterial : .systemThinMaterial)
-            contentView.backgroundColor = UIColor.systemBackground.withAlphaComponent(0.25 * strength)
-            layer.borderWidth = 1 / UIScreen.main.scale
-            layer.borderColor = UIColor.separator.withAlphaComponent(0.5).cgColor
+    @objc func restyle() {
+        if UIAccessibility.isReduceTransparencyEnabled {
+            effectView.effect = nil
+            effectView.alpha = 1
+            effectView.backgroundColor = .secondarySystemBackground
+            return
         }
+        effectView.backgroundColor = .clear
+        if #available(iOS 26.0, *) {
+            let glass = UIGlassEffect(style: Prefs.glassStyle == "clear" ? .clear : .regular)
+            glass.isInteractive = false
+            if Prefs.glassStyle == "tinted" { glass.tintColor = UIColor.label.withAlphaComponent(0.06) }
+            effectView.effect = glass
+        } else {
+            effectView.effect = UIBlurEffect(style: .systemUltraThinMaterial)
+        }
+        effectView.alpha = CGFloat(Prefs.opacity(Prefs.glassOpacityKey) * (opacityKey.map(Prefs.opacity) ?? 1))
     }
 
     override func layoutSubviews() {
         super.layoutSubviews()
-        layer.cornerRadius = radius ?? bounds.height / 2
+        let corner = radius ?? bounds.height / 2
+        effectView.layer.cornerRadius = corner
+        contentView.layer.cornerRadius = corner
+    }
+}
+
+/// The surface of the power button and the server capsule, as 1.5.0's
+/// `AnywhereControlGlass`: native glass (iOS 27: regular, iOS 26: clear) with a
+/// thin, broken specular rim; the ultra-thin material before iOS 26.
+final class ControlGlassView: UIView {
+    private let effectView = UIVisualEffectView(effect: nil)
+    private let rim = CAGradientLayer()
+    private let rimShape = CAShapeLayer()
+    private let circle: Bool
+    private let opacityKey: String
+
+    init(circle: Bool, opacityKey: String) {
+        self.circle = circle
+        self.opacityKey = opacityKey
+        super.init(frame: .zero)
+        isUserInteractionEnabled = false
+        effectView.clipsToBounds = true
+        effectView.layer.cornerCurve = .continuous
+        addSubview(effectView)
+        effectView.pin(to: self)
+        rim.startPoint = CGPoint(x: 0, y: 0)
+        rim.endPoint = CGPoint(x: 1, y: 1)
+        rim.locations = [0, 0.22, 0.48, 0.72, 1]
+        rimShape.fillColor = UIColor.clear.cgColor
+        rimShape.strokeColor = UIColor.black.cgColor
+        rimShape.lineWidth = 0.65
+        rim.mask = rimShape
+        layer.addSublayer(rim)
+        restyle()
+        Prefs.appearanceChanged.observe(self) { [weak self] in self?.restyle() }
+        NotificationCenter.default.addObserver(self, selector: #selector(restyle), name: UIAccessibility.reduceTransparencyStatusDidChangeNotification, object: nil)
+    }
+
+    @available(*, unavailable)
+    required init?(coder _: NSCoder) { fatalError() }
+
+    @objc func restyle() {
+        let solid = UIAccessibility.isReduceTransparencyEnabled
+        rim.isHidden = solid
+        if solid {
+            effectView.effect = nil
+            effectView.alpha = 1
+            effectView.backgroundColor = .secondarySystemGroupedBackground
+            return
+        }
+        effectView.backgroundColor = .clear
+        if #available(iOS 26.0, *) {
+            let glass: UIGlassEffect
+            switch Prefs.glassStyle {
+            case "clear": glass = UIGlassEffect(style: .clear)
+            case "tinted":
+                glass = UIGlassEffect(style: .regular)
+                glass.tintColor = Theme.accent.withAlphaComponent(0.08)
+            default:
+                if #available(iOS 27.0, *) { glass = UIGlassEffect(style: .regular) } else { glass = UIGlassEffect(style: .clear) }
+            }
+            glass.isInteractive = circle
+            effectView.effect = glass
+        } else {
+            effectView.effect = UIBlurEffect(style: .systemUltraThinMaterial)
+        }
+        effectView.alpha = CGFloat(Prefs.opacity(Prefs.glassOpacityKey) * Prefs.opacity(opacityKey))
+        updateRimColors()
+    }
+
+    private func updateRimColors() {
+        let dark = traitCollection.userInterfaceStyle == .dark
+        rim.colors = [
+            UIColor.white.withAlphaComponent(dark ? 0.24 : 0.85), UIColor.white.withAlphaComponent(0.02), UIColor.clear,
+            UIColor.label.resolvedColor(with: traitCollection).withAlphaComponent(0.06), UIColor.white.withAlphaComponent(dark ? 0.16 : 0.65),
+        ].map(\.cgColor)
+    }
+
+    override func traitCollectionDidChange(_ previous: UITraitCollection?) {
+        super.traitCollectionDidChange(previous)
+        if previous?.userInterfaceStyle != traitCollection.userInterfaceStyle { updateRimColors() }
+    }
+
+    override func layoutSubviews() {
+        super.layoutSubviews()
+        let corner = bounds.height / 2
+        effectView.layer.cornerRadius = corner
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        rim.frame = bounds
+        // The stroke sits inside the edge, like SwiftUI's strokeBorder.
+        let inset = rimShape.lineWidth / 2
+        rimShape.path = UIBezierPath(roundedRect: bounds.insetBy(dx: inset, dy: inset), cornerRadius: corner - inset).cgPath
+        CATransaction.commit()
     }
 }
 
