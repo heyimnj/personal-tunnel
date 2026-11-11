@@ -82,9 +82,81 @@ final class ConfigBuilderTests: XCTestCase {
         XCTAssertEqual(moved.at("route", "rule_set")?[3]?["path"], "/bundle/Rules/ru-ip.srs")
     }
 
-    func testEmptySubscriptionAndDuplicateTagsAreRefused() {
+    /// A configuration 1.x stored: locations are selectors over leaves, every leaf
+    /// resolves through `dns-local`, some detour through outbounds that are gone.
+    static let legacyConfig = """
+    {"dns": {"servers": [{"type": "udp", "tag": "dns-remote", "server": "1.1.1.1"}, {"type": "local", "tag": "dns-local"}], "final": "dns-remote"},
+     "outbounds": [
+      {"type": "selector", "tag": "proxy", "outbounds": ["auto", "США", "Эстония", "Лучший"], "default": "auto"},
+      {"type": "urltest", "tag": "auto", "outbounds": ["США", "Эстония", "Лучший"]},
+      {"type": "vless", "tag": "leaf-1", "server": "us.example.net", "server_port": 443, "uuid": "11111111-2222-3333-4444-555555555555",
+       "domain_resolver": {"server": "dns-local", "strategy": "prefer_ipv4"}, "detour": "fragment"},
+      {"type": "trojan", "tag": "leaf-2", "server": "ee.example.net", "server_port": 443, "password": "p", "domain_strategy": "ipv4_only"},
+      {"type": "shadowsocks", "tag": "leaf-3", "server": "x.example.net", "server_port": 8388, "method": "aes-256-gcm", "password": "p",
+       "domain_resolver": "dns-local", "detour": "leaf-3"},
+      {"type": "selector", "tag": "США", "outbounds": ["leaf-1"], "default": "leaf-1"},
+      {"type": "selector", "tag": "Эстония", "outbounds": ["leaf-2", "leaf-gone"], "default": "leaf-gone"},
+      {"type": "urltest", "tag": "Лучший", "outbounds": ["США", "Эстония", "leaf-3"]},
+      {"type": "direct", "tag": "direct"}
+     ],
+     "route": {"default_domain_resolver": {"server": "dns-local"}, "final": "proxy"}}
+    """
+
+    func testServersCarriedOverFrom1xPointAtThisConfiguration() throws {
+        let library = LegacyMigration.library(from: [LegacyProfile(id: 3, name: "Старая", order: 0, remoteURL: nil, lastUpdated: nil,
+                                                                   config: Self.legacyConfig)], selectedProfileID: 3, preferredTag: "Эстония")
+        let subscription = try XCTUnwrap(library.subscriptions.first)
+        XCTAssertEqual(subscription.nodes.map(\.id), ["США", "Эстония", "Лучший"])
+        let config = try ConfigBuilder.build(subscription: subscription, selected: "Эстония", options: TunnelOptions())
+        let text = config.serialized(pretty: false)
+        XCTAssertFalse(text.contains("dns-local"))
+        XCTAssertFalse(text.contains("domain_strategy"))
+        XCTAssertFalse(text.contains("fragment"))
+
+        let objects = (config["outbounds"]?.arrayValue ?? []) + (config["endpoints"]?.arrayValue ?? [])
+        func object(_ tag: String) -> JSONValue? { objects.first { $0["tag"]?.stringValue == tag } }
+        // Shared leaves are written once.
+        let tags = objects.compactMap { $0["tag"]?.stringValue }
+        XCTAssertEqual(tags.count, Set(tags).count)
+        XCTAssertEqual(object("proxy")?["outbounds"], ["США", "Эстония", "Лучший"])
+        XCTAssertEqual(object("proxy")?["default"], "Эстония")
+        XCTAssertEqual(object("leaf-1")?["domain_resolver"], ["server": "dns-direct", "strategy": "prefer_ipv4"])
+        XCTAssertNil(object("leaf-1")?["detour"])
+        XCTAssertEqual(object("leaf-2")?["domain_resolver"], ["server": "dns-direct", "strategy": "ipv4_only"])
+        XCTAssertEqual(object("leaf-3")?["domain_resolver"], "dns-direct")
+        XCTAssertNil(object("leaf-3")?["detour"])
+        XCTAssertEqual(object("Эстония")?["outbounds"], ["leaf-2"])
+        XCTAssertNil(object("Эстония")?["default"])
+        XCTAssertEqual(object("Лучший")?["outbounds"], ["США", "Эстония", "leaf-3"])
+        // Every reference left in the document leads somewhere.
+        let dnsTags = Set(config.at("dns", "servers")?.arrayValue?.compactMap { $0["tag"]?.stringValue } ?? [])
+        for item in objects {
+            for member in item["outbounds"]?.stringList ?? [] { XCTAssertTrue(tags.contains(member), member) }
+            if let detour = item["detour"]?.stringValue { XCTAssertTrue(tags.contains(detour), detour) }
+            let resolver = item["domain_resolver"]?.stringValue ?? item.at("domain_resolver", "server")?.stringValue
+            if let resolver { XCTAssertTrue(dnsTags.contains(resolver), resolver) }
+        }
+    }
+
+    func testGroupWithoutMembersIsLeftOut() throws {
+        let empty = ServerNode(id: "Пусто", name: "Пусто", outbound: ["type": "urltest", "tag": "Пусто", "outbounds": ["нет"]])
+        let real = NodeAssembler.assemble([try ShareLink.parse("trojan://pw@b.example.com:443#B")])
+        let config = try ConfigBuilder.build(subscription: Subscription(id: 1, name: "x", nodes: [empty] + real), selected: "Пусто", options: TunnelOptions())
+        XCTAssertEqual(config["outbounds"]?.arrayValue?.first?["outbounds"], ["B"])
+        XCTAssertEqual(config["outbounds"]?.arrayValue?.first?["default"], "B")
+        XCTAssertThrowsError(try ConfigBuilder.build(subscription: Subscription(id: 1, name: "x", nodes: [empty]), selected: nil, options: TunnelOptions()))
+    }
+
+    func testEmptySubscriptionAndDuplicateTagsAreRefused() throws {
         XCTAssertThrowsError(try ConfigBuilder.build(subscription: Subscription(id: 1, name: "x"), selected: nil, options: TunnelOptions()))
         let twin = ServerNode(id: "a", name: "a", outbound: ["type": "socks", "tag": "a", "server": "h", "server_port": 1])
-        XCTAssertThrowsError(try ConfigBuilder.build(subscription: Subscription(id: 1, name: "x", nodes: [twin, twin]), selected: nil, options: TunnelOptions()))
+        let other = ServerNode(id: "a", name: "a", outbound: ["type": "socks", "tag": "a", "server": "other", "server_port": 1])
+        XCTAssertThrowsError(try ConfigBuilder.build(subscription: Subscription(id: 1, name: "x", nodes: [twin, other]), selected: nil, options: TunnelOptions()))
+        let reserved = ServerNode(id: "proxy", name: "proxy", outbound: ["type": "socks", "tag": "proxy", "server": "h", "server_port": 1])
+        XCTAssertThrowsError(try ConfigBuilder.build(subscription: Subscription(id: 1, name: "x", nodes: [reserved]), selected: nil, options: TunnelOptions()))
+        // The very same object twice is one server.
+        let once = try ConfigBuilder.build(subscription: Subscription(id: 1, name: "x", nodes: [twin, twin]), selected: nil, options: TunnelOptions())
+        XCTAssertEqual(once["outbounds"]?.arrayValue?.first?["outbounds"], ["a"])
+        XCTAssertEqual(once["outbounds"]?.arrayValue?.count, 3)
     }
 }

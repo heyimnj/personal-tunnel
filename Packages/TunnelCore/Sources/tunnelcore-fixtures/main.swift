@@ -63,11 +63,43 @@ let xray = """
 ]
 """
 
+// What 1.x stored: locations are selectors over leaves, every leaf resolves through
+// `dns-local`, some use the removed `domain_strategy` or detour through outbounds that
+// are gone. Migrated servers keep those fields; the built configuration must not.
+let legacy = """
+{"dns": {"servers": [{"type": "udp", "tag": "dns-remote", "server": "1.1.1.1"}, {"type": "local", "tag": "dns-local"}], "final": "dns-remote"},
+ "outbounds": [
+  {"type": "selector", "tag": "proxy", "outbounds": ["auto", "США", "Эстония", "Финляндия", "WG", "Лучший"], "default": "auto"},
+  {"type": "urltest", "tag": "auto", "outbounds": ["США", "Эстония", "Финляндия", "WG", "Лучший"], "interval": "3m", "tolerance": 150},
+  {"type": "vless", "tag": "США-1", "server": "us.example.net", "server_port": 443, "uuid": "11111111-2222-3333-4444-555555555555", "flow": "xtls-rprx-vision",
+   "tls": {"enabled": true, "server_name": "www.microsoft.com", "utls": {"enabled": true, "fingerprint": "chrome"},
+           "reality": {"enabled": true, "public_key": "\(key)", "short_id": "6ba85179e30d4fc2"}},
+   "domain_resolver": {"server": "dns-local", "strategy": "prefer_ipv4"}, "detour": "fragment"},
+  {"type": "trojan", "tag": "Эстония-1", "server": "ee.example.net", "server_port": 443, "password": "p", "domain_strategy": "ipv4_only",
+   "tls": {"enabled": true, "server_name": "ee.example.net"}, "transport": {"type": "grpc", "service_name": "svc"}},
+  {"type": "hysteria2", "tag": "Финляндия-1", "server": "fi.example.net", "server_port": 443, "password": "p",
+   "tls": {"enabled": true, "server_name": "fi.example.net", "alpn": ["h3"]}, "domain_resolver": "dns-local"},
+  {"type": "selector", "tag": "США", "outbounds": ["США-1"], "default": "США-1"},
+  {"type": "selector", "tag": "Эстония", "outbounds": ["Эстония-1", "Эстония-gone"], "default": "Эстония-gone"},
+  {"type": "selector", "tag": "Финляндия", "outbounds": ["Финляндия-1"], "default": "Финляндия-1"},
+  {"type": "selector", "tag": "WG", "outbounds": ["WG-1"], "default": "WG-1"},
+  {"type": "urltest", "tag": "Лучший", "outbounds": ["США", "Эстония", "Финляндия"]},
+  {"type": "direct", "tag": "direct"}
+ ],
+ "endpoints": [{"type": "wireguard", "tag": "WG-1", "address": ["10.7.0.2/32"], "private_key": "\(wgPrivate)", "mtu": 1280,
+                "peers": [{"address": "wg.example.net", "port": 51820, "public_key": "\(wgPublic)", "allowed_ips": ["0.0.0.0/0", "::/0"]}],
+                "domain_resolver": {"server": "dns-local"}}],
+ "route": {"default_domain_resolver": {"server": "dns-local", "strategy": "prefer_ipv4"}, "final": "proxy"}}
+"""
+
 var written = 0
 func write(_ name: String, _ parsed: [ParsedNode], _ configure: (inout TunnelOptions) -> Void = { _ in }) throws {
+    try write(name, Subscription(id: 1, name: name, nodes: NodeAssembler.assemble(parsed)), configure)
+}
+
+func write(_ name: String, _ subscription: Subscription, _ configure: (inout TunnelOptions) -> Void = { _ in }) throws {
     var options = TunnelOptions()
     configure(&options)
-    let subscription = Subscription(id: 1, name: name, nodes: NodeAssembler.assemble(parsed))
     let config = try ConfigBuilder.build(subscription: subscription, selected: nil, options: options)
     let text = ConfigBuilder.relocateRuleSets(in: config, directory: rules).serialized(pretty: true)
     try text.write(to: output.appendingPathComponent(name + ".json"), atomically: true, encoding: .utf8)
@@ -84,5 +116,12 @@ try write("no-routing-options", try samples[0].1.map(ShareLink.parse)) { options
     options.bypassRussia = false
     options.bypassPrivate = false
 }
+let migrated = LegacyMigration.library(from: [LegacyProfile(id: 1, name: "1.x", order: 0, remoteURL: nil, lastUpdated: nil, config: legacy)],
+                                        selectedProfileID: 1, preferredTag: "Эстония")
+guard let carried = migrated.subscriptions.first, carried.nodes.count == 5 else {
+    FileHandle.standardError.write(Data("legacy sample: migration lost servers\n".utf8))
+    exit(1)
+}
+try write("legacy-1x-subscription", carried)
 try write("auto-select", try samples.prefix(3).flatMap { try $0.1.map(ShareLink.parse) }) { $0.autoSelect = true }
 print("written \(written) configurations to \(output.path)")

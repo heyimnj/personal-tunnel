@@ -44,7 +44,7 @@ public enum ConfigBuilder {
 
         var outbounds: [JSONValue] = []
         var endpoints: [JSONValue] = []
-        var seen = Set<String>(TagAllocator.reserved)
+        var added: [String: JSONValue] = [:]
         var selectable: [String] = []
         var leaves: [String] = []
         var mtus: [Int] = []
@@ -53,7 +53,13 @@ public enum ConfigBuilder {
             guard let tag = object["tag"]?.stringValue, !tag.isEmpty, let type = object["type"]?.stringValue else {
                 throw ImportError("У сервера нет тега или типа: конфигурация повреждена.")
             }
-            guard seen.insert(tag).inserted else { throw ImportError("Два сервера с одним именем «\(tag)».") }
+            guard !TagAllocator.reserved.contains(tag) else { throw ImportError("Имя сервера «\(tag)» занято самой конфигурацией.") }
+            if let existing = added[tag] {
+                // 1.x kept every outbound once, so two servers may share a supporting one.
+                if existing == object { return }
+                throw ImportError("Два сервера с одним именем «\(tag)».")
+            }
+            added[tag] = object
             if ServerNode.endpointTypes.contains(type.lowercased()) {
                 endpoints.append(object)
                 if let mtu = object["mtu"]?.intValue, mtu > 0 { mtus.append(mtu) }
@@ -62,12 +68,25 @@ public enum ConfigBuilder {
             }
         }
 
+        // Every tag the servers bring, so references can be checked before anything is added.
+        var known: Set<String> = ["direct"]
         for node in nodes {
-            try add(node.outbound)
-            for member in node.members { try add(member) }
+            for object in [node.outbound] + node.members {
+                if let tag = object["tag"]?.stringValue, !tag.isEmpty { known.insert(tag) }
+            }
+        }
+
+        for node in nodes {
+            let main = Carried.adapt(node.outbound, known: known)
+            // A provider group none of whose members survived cannot carry traffic.
+            if node.isGroup, (main["outbounds"]?.stringList ?? []).isEmpty { continue }
+            try add(main)
+            for member in node.members { try add(Carried.adapt(member, known: known)) }
+            guard !selectable.contains(node.id) else { continue }
             selectable.append(node.id)
             if !node.isGroup { leaves.append(node.id) }
         }
+        guard !selectable.isEmpty else { throw ImportError("В подписке «\(subscription.name)» нет рабочих серверов.") }
 
         let chosen = selected.flatMap { id in selectable.contains(id) ? id : nil } ?? selectable[0]
         let hasAuto = leaves.count > 1
@@ -153,6 +172,50 @@ public enum ConfigBuilder {
         ]
         if !endpoints.isEmpty { config["endpoints"] = .array(endpoints) }
         return .object(config)
+    }
+
+    /// Servers keep fields that point into the configuration they came from:
+    /// 1.x wrote `domain_resolver: dns-local` into every server, provider files
+    /// name their own DNS servers and detour outbounds. sing-box refuses to start
+    /// on a reference it cannot find, so they are rewritten to this configuration.
+    enum Carried {
+        /// The resolver server addresses use: outside the tunnel, or it could not start.
+        static let resolver = "dns-direct"
+
+        static func adapt(_ object: JSONValue, known: Set<String>) -> JSONValue {
+            guard var fields = object.objectValue else { return object }
+            let tag = fields["tag"]?.stringValue
+
+            // `domain_strategy` in dial fields is gone from sing-box 1.14: carry its strategy over.
+            let legacyStrategy = fields.removeValue(forKey: "domain_strategy")?.stringValue
+            switch fields["domain_resolver"] {
+            case .string?:
+                fields["domain_resolver"] = .string(resolver)
+            case var .object(options)?:
+                options["server"] = .string(resolver)
+                if options["strategy"] == nil, let legacyStrategy, !legacyStrategy.isEmpty { options["strategy"] = .string(legacyStrategy) }
+                fields["domain_resolver"] = .object(options)
+            case nil:
+                if let legacyStrategy, !legacyStrategy.isEmpty {
+                    fields["domain_resolver"] = ["server": .string(resolver), "strategy": .string(legacyStrategy)]
+                }
+            default:
+                fields["domain_resolver"] = nil
+            }
+
+            if let detour = fields["detour"] {
+                let target = detour.stringValue ?? ""
+                if target.isEmpty || target == tag || !known.contains(target) { fields["detour"] = nil }
+            }
+
+            let type = fields["type"]?.stringValue?.lowercased() ?? ""
+            if type == "selector" || type == "urltest", let members = fields["outbounds"] {
+                let kept = members.stringList.filter { $0 != tag && known.contains($0) }
+                fields["outbounds"] = JSONValue(kept)
+                if let preferred = fields["default"]?.stringValue, !kept.contains(preferred) { fields["default"] = nil }
+            }
+            return .object(fields)
+        }
     }
 
     /// Points bundled rule sets at the folder that holds them on this device.
