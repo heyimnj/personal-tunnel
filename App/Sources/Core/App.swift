@@ -27,7 +27,13 @@ final class App {
         if let paths { CoreClient.setUp(paths: paths) }
         tunnel.state.observe(self) { [weak self] state in
             guard let self else { return }
-            if state == .connected { self.core.start() } else if state == .disconnected { self.core.stop(); self.latency.cancel() }
+            if state == .connected {
+                self.core.start()
+                self.retryAfterConnecting()
+            } else if state == .disconnected {
+                self.core.stop()
+                self.latency.cancel()
+            }
         }
         tunnel.lastError.observe(self, fireNow: false) { [weak self] message in
             if let message { self?.notice.value = message }
@@ -158,9 +164,27 @@ final class App {
                 }
                 if self.library.activeSubscription?.id == id { self.reloadTunnel() }
                 if let summary = fetched.summary { self.notice.value = summary }
+            } catch let error as URLError where !self.tunnel.state.value.isOn {
+                // Without the VPN the subscription server may be out of reach (blocked
+                // networks): try again through the tunnel once it is up.
+                self.retryThroughTunnel.insert(id)
+                self.notice.value = Lf("«%@»: сервер подписки не ответил (%@). Без VPN он может быть недоступен: подписка обновится сама после подключения.", subscription.name, error.localizedDescription)
             } catch {
                 self.notice.value = "«\(subscription.name)»: \(error.localizedDescription)"
             }
+        }
+    }
+
+    /// Subscriptions whose download failed without the VPN; refreshed once it connects.
+    private var retryThroughTunnel: Set<Int64> = []
+
+    private func retryAfterConnecting() {
+        let ids = retryThroughTunnel
+        retryThroughTunnel = []
+        guard !ids.isEmpty else { return }
+        // A moment for the tunnel's routes to settle.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { [weak self] in
+            for id in ids { self?.refresh(id) }
         }
     }
 

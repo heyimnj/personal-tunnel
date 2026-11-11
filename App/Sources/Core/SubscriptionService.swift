@@ -42,6 +42,10 @@ enum SubscriptionService {
                 let title = SubscriptionHeaders.parse(headers, into: &info)
                 let result = try ContentImporter.parse(String(decoding: data, as: UTF8.self))
                 return Fetched(nodes: NodeAssembler.assemble(result.nodes), title: title, info: info, summary: result.summary)
+            } catch let error as URLError {
+                // The network did not get through: another client name will not help,
+                // and would only add another wait.
+                throw error
             } catch {
                 lastError = error
             }

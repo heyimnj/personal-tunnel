@@ -372,3 +372,4 @@
 "Изменить" = "Edit";
 "Пинг" = "Ping";
 "Маскировка finalmask «%@» не поддерживается ядром sing-box." = "finalmask obfuscation “%@” is not supported by the sing-box core.";
+"«%@»: сервер подписки не ответил (%@). Без VPN он может быть недоступен: подписка обновится сама после подключения." = "“%@”: the subscription server did not answer (%@). Without the VPN it may be out of reach: the subscription will update by itself once you connect.";
