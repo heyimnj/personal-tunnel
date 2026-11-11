@@ -5,31 +5,34 @@ import UIKit
 final class AnalyticsCard: UIView {
     let stack = UIStackView(.vertical, spacing: 10, alignment: .leading, [])
 
-    init() {
+    init(insets: UIEdgeInsets = UIEdgeInsets(top: 18, left: 18, bottom: 18, right: 18)) {
         super.init(frame: .zero)
         backgroundColor = Theme.card
         layer.cornerRadius = 28
         layer.cornerCurve = .continuous
         addSubview(stack)
-        stack.pin(to: self, insets: UIEdgeInsets(top: 18, left: 18, bottom: 18, right: 18))
+        stack.pin(to: self, insets: insets)
     }
 
     @available(*, unavailable)
     required init?(coder _: NSCoder) { fatalError() }
 
-    static func title(_ symbol: String, _ text: String, tint: UIColor = .label, size: CGFloat = 15) -> UIStackView {
-        let icon = UIImageView(image: UIImage(systemName: symbol, withConfiguration: UIImage.SymbolConfiguration(pointSize: size, weight: .regular)))
+    /// 1.5.0: small cards title in caption medium (6 pt gap), big cards in subheadline medium.
+    static func title(_ symbol: String, _ text: String, tint: UIColor = .label, big: Bool = false) -> UIStackView {
+        let font = Theme.font(big ? .subheadline : .caption1, .medium)
+        let icon = UIImageView(image: UIImage(systemName: symbol, withConfiguration: UIImage.SymbolConfiguration(font: font)))
         icon.tintColor = tint
         icon.setContentHuggingPriority(.required, for: .horizontal)
-        return UIStackView(.horizontal, spacing: 8, alignment: .center, [icon, UILabel(text, font: Theme.font(size == 15 ? 13 : 17, .medium))])
+        let label = UILabel(text, font: font, lines: 0)
+        return UIStackView(.horizontal, spacing: big ? 8 : 6, alignment: .center, [icon, label])
     }
 }
 
 /// Small stat card: title, big value, grey caption.
 final class StatCard: UIView {
     private let card = AnalyticsCard()
-    let value = UILabel(font: Theme.font(24, .bold))
-    let caption = UILabel(font: Theme.font(13), color: .secondaryLabel)
+    let value = UILabel(font: UIFont.monospacedDigitSystemFont(ofSize: Theme.font(.title3).pointSize, weight: .semibold))
+    let caption = UILabel(font: Theme.font(.caption1), color: .secondaryLabel, lines: 2)
 
     init(symbol: String, title: String, tint: UIColor) {
         super.init(frame: .zero)
@@ -39,7 +42,9 @@ final class StatCard: UIView {
         card.stack.addArrangedSubview(AnalyticsCard.title(symbol, title, tint: tint))
         card.stack.addArrangedSubview(value)
         card.stack.addArrangedSubview(caption)
-        heightAnchor.constraint(equalToConstant: 134).isActive = true
+        value.adjustsFontSizeToFitWidth = true
+        value.minimumScaleFactor = 0.7
+        heightAnchor.constraint(greaterThanOrEqualToConstant: 136).isActive = true
     }
 
     @available(*, unavailable)
@@ -155,10 +160,12 @@ final class MinimalAnalyticsViewController: UIViewController {
     private let memory = StatCard(symbol: "memorychip", title: "Память ядра", tint: .systemPurple)
     private let delay = StatCard(symbol: "waveform", title: "Задержка", tint: .systemTeal)
     private let graph = SpeedGraphView()
-    private let graphHint = UILabel("Данные появятся после подключения", font: Theme.font(13), color: .secondaryLabel)
+    private let graphHint = UILabel("Данные появятся после подключения", font: Theme.font(.caption1), color: .secondaryLabel)
     private let donut = DonutView()
-    private let legend = UIStackView(.vertical, spacing: 10, alignment: .fill, [])
-    private let session = UILabel(font: Theme.font(14), color: .secondaryLabel)
+    private let legend = UIStackView(.vertical, spacing: 8, alignment: .fill, [])
+    private let routesEmpty = UILabel("Данные соединений пока недоступны", font: Theme.font(.caption1), color: .secondaryLabel, lines: 0)
+    private var routesChart: UIView?
+    private let session = UILabel(font: UIFont.monospacedDigitSystemFont(ofSize: Theme.font(.footnote).pointSize, weight: .regular), color: .secondaryLabel)
     private var timer: Timer?
     private var visible = false
 
@@ -198,7 +205,8 @@ final class MinimalAnalyticsViewController: UIViewController {
 
         let graphCard = AnalyticsCard()
         graphCard.stack.alignment = .fill
-        graphCard.stack.addArrangedSubview(AnalyticsCard.title("waveform.path.ecg", "Скорость за последние 2 минуты", size: 17))
+        graphCard.stack.spacing = 14
+        graphCard.stack.addArrangedSubview(AnalyticsCard.title("waveform.path.ecg", "Скорость за последние 2 минуты", big: true))
         graph.heightAnchor.constraint(equalToConstant: 140).isActive = true
         graphCard.stack.addArrangedSubview(graph)
         func key(_ text: String, _ color: UIColor) -> UIView {
@@ -207,25 +215,30 @@ final class MinimalAnalyticsViewController: UIViewController {
             dot.layer.cornerRadius = 6
             dot.translatesAutoresizingMaskIntoConstraints = false
             NSLayoutConstraint.activate([dot.widthAnchor.constraint(equalToConstant: 12), dot.heightAnchor.constraint(equalToConstant: 12)])
-            return UIStackView(.horizontal, spacing: 8, alignment: .center, [dot, UILabel(text, font: Theme.font(13), color: color)])
+            return UIStackView(.horizontal, spacing: 6, alignment: .center, [dot, UILabel(text, font: Theme.font(.caption1), color: color)])
         }
         graphCard.stack.addArrangedSubview(UIStackView(.horizontal, spacing: 14, alignment: .center, [key("Загрузка", SpeedGraphView.downColor), key("Отдача", SpeedGraphView.upColor), UIView()]))
         graphCard.stack.addArrangedSubview(graphHint)
 
         let routes = AnalyticsCard()
         routes.stack.alignment = .fill
-        routes.stack.addArrangedSubview(AnalyticsCard.title("chart.pie", "Маршруты наблюдаемых соединений", size: 17))
+        routes.stack.spacing = 14
+        routes.stack.addArrangedSubview(AnalyticsCard.title("chart.pie", "Маршруты наблюдаемых соединений", big: true))
+        // 1.5.0: an 88 pt ring with 8 pt around it, shown only once there is data.
         donut.translatesAutoresizingMaskIntoConstraints = false
-        NSLayoutConstraint.activate([donut.widthAnchor.constraint(equalToConstant: 104), donut.heightAnchor.constraint(equalToConstant: 104)])
-        routes.stack.addArrangedSubview(UIStackView(.horizontal, spacing: 20, alignment: .center, [donut, legend]))
-        routes.stack.addArrangedSubview(UILabel("Показаны только соединения, полученные от ядра во время наблюдения; это не весь трафик сеанса.", font: Theme.font(12), color: .secondaryLabel, lines: 0))
+        NSLayoutConstraint.activate([donut.widthAnchor.constraint(equalToConstant: 88), donut.heightAnchor.constraint(equalToConstant: 88)])
+        let chart = UIStackView(.horizontal, spacing: 18, alignment: .center, [Classic.padded(donut, UIEdgeInsets(top: 8, left: 8, bottom: 8, right: 8)), legend])
+        routesChart = chart
+        routes.stack.addArrangedSubview(routesEmpty)
+        routes.stack.addArrangedSubview(chart)
+        routes.stack.addArrangedSubview(UILabel("Показаны только соединения, полученные от ядра во время наблюдения; это не весь трафик сеанса.", font: Theme.font(.caption2), color: .secondaryLabel, lines: 0))
 
         func pair(_ left: UIView, _ right: UIView) -> UIStackView {
-            let row = UIStackView(.horizontal, spacing: 14, alignment: .fill, [left, right])
+            let row = UIStackView(.horizontal, spacing: 12, alignment: .fill, [left, right])
             row.distribution = .fillEqually
             return row
         }
-        let links = AnalyticsCard()
+        let links = AnalyticsCard(insets: UIEdgeInsets(top: 0, left: 18, bottom: 0, right: 18))
         links.stack.alignment = .fill
         links.stack.spacing = 0
         links.stack.addArrangedSubview(link("stethoscope", "Проверка соединения") { [weak self] in
@@ -234,12 +247,12 @@ final class MinimalAnalyticsViewController: UIViewController {
         let divider = UIView()
         divider.backgroundColor = .separator
         divider.heightAnchor.constraint(equalToConstant: 0.5).isActive = true
-        links.stack.addArrangedSubview(divider)
+        links.stack.addArrangedSubview(Classic.padded(divider, UIEdgeInsets(top: 0, left: 30, bottom: 0, right: 0)))
         links.stack.addArrangedSubview(link("doc.text.magnifyingglass", "Журнал службы") { [weak self] in
             self?.navigationController?.pushViewController(ServiceLogViewController(), animated: true)
         })
 
-        let content = UIStackView(.vertical, spacing: 16, alignment: .fill, [
+        let content = UIStackView(.vertical, spacing: 18, alignment: .fill, [
             header, pair(download, upload), graphCard, routes, pair(tcp, udp), pair(memory, delay), session, links,
         ])
         content.setCustomSpacing(4, after: header)
@@ -268,16 +281,18 @@ final class MinimalAnalyticsViewController: UIViewController {
 
     private func link(_ symbol: String, _ title: String, action: @escaping () -> Void) -> UIView {
         let control = TapControl()
-        let icon = UIImageView(image: UIImage(systemName: symbol, withConfiguration: UIImage.SymbolConfiguration(pointSize: 19)))
+        // 1.5.0 destination row: a body-style label with its icon, 18 pt padding.
+        let icon = UIImageView(image: UIImage(systemName: symbol, withConfiguration: UIImage.SymbolConfiguration(font: Theme.font(.body))))
         icon.tintColor = .label
-        let chevron = UIImageView(image: UIImage(systemName: "chevron.right", withConfiguration: UIImage.SymbolConfiguration(pointSize: 14, weight: .semibold)))
-        chevron.tintColor = .tertiaryLabel
+        icon.setContentHuggingPriority(.required, for: .horizontal)
+        let chevron = UIImageView(image: UIImage(systemName: "chevron.right", withConfiguration: UIImage.SymbolConfiguration(font: Theme.font(.caption1, .semibold))))
+        chevron.tintColor = .secondaryLabel
         chevron.setContentHuggingPriority(.required, for: .horizontal)
-        let row = UIStackView(.horizontal, spacing: 12, alignment: .center, [icon, UILabel(title, font: Theme.font(19)), UIView(), chevron])
+        let row = UIStackView(.horizontal, spacing: 12, alignment: .center, [icon, UILabel(title, font: Theme.font(.body)), UIView(), chevron])
         row.isUserInteractionEnabled = false
         control.addSubview(row)
-        row.pin(to: control)
-        control.heightAnchor.constraint(equalToConstant: 56).isActive = true
+        row.pin(to: control, insets: UIEdgeInsets(top: 18, left: 0, bottom: 18, right: 0))
+        control.pressScale = 1
         control.onTap = action
         return control
     }
@@ -316,19 +331,18 @@ final class MinimalAnalyticsViewController: UIViewController {
         let top = connections.routes.sorted { $0.value > $1.value }.prefix(6)
         donut.shares = top.map(\.value)
         legend.arrangedSubviews.forEach { $0.removeFromSuperview() }
-        if top.isEmpty {
-            legend.addArrangedSubview(UILabel("Данные соединений пока отсутствуют", font: Theme.font(13), color: .secondaryLabel, lines: 0))
-        }
+        routesEmpty.isHidden = !top.isEmpty
+        routesChart?.isHidden = top.isEmpty
         for (index, route) in top.enumerated() {
             let dot = UIView()
             dot.backgroundColor = DonutView.palette[index % DonutView.palette.count]
             dot.layer.cornerRadius = 3
             dot.translatesAutoresizingMaskIntoConstraints = false
             NSLayoutConstraint.activate([dot.widthAnchor.constraint(equalToConstant: 6), dot.heightAnchor.constraint(equalToConstant: 6)])
-            let name = UILabel(route.key, font: Theme.font(14))
+            let name = UILabel(route.key, font: Theme.font(.caption1))
             name.lineBreakMode = .byTruncatingTail
             name.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
-            let amount = UILabel(Format.bytes(route.value), font: Theme.font(14))
+            let amount = UILabel(Format.bytes(route.value), font: Theme.font(.caption1))
             amount.setContentHuggingPriority(.required, for: .horizontal)
             legend.addArrangedSubview(UIStackView(.horizontal, spacing: 10, alignment: .center, [dot, name, amount]))
         }

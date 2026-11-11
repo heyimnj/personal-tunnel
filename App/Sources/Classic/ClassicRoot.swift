@@ -40,7 +40,9 @@ final class ClassicRootViewController: UIViewController {
             let holder = UIView()
             holder.addSubview(stack)
             stack.translatesAutoresizingMaskIntoConstraints = false
-            NSLayoutConstraint.activate([stack.centerXAnchor.constraint(equalTo: holder.centerXAnchor), stack.centerYAnchor.constraint(equalTo: holder.centerYAnchor)])
+            // Number and title sit in the top 46 pt; the tab (and its highlight) runs on to the screen edge.
+            NSLayoutConstraint.activate([stack.centerXAnchor.constraint(equalTo: holder.centerXAnchor),
+                                         stack.centerYAnchor.constraint(equalTo: holder.topAnchor, constant: (Self.tabBarHeight - 1) / 2)])
             let tab = ClassicRow(holder) { [weak self] in self?.select(offset) }
             tabs.append((tab, number, label))
             bar.addArrangedSubview(tab)
@@ -58,9 +60,9 @@ final class ClassicRootViewController: UIViewController {
             container.bottomAnchor.constraint(equalTo: bottom.topAnchor),
             bottom.leadingAnchor.constraint(equalTo: view.leadingAnchor), bottom.trailingAnchor.constraint(equalTo: view.trailingAnchor),
             bar.topAnchor.constraint(equalTo: bottom.bottomAnchor), bar.leadingAnchor.constraint(equalTo: view.leadingAnchor), bar.trailingAnchor.constraint(equalTo: view.trailingAnchor),
-            // The bar keeps its height on every device; below it the page colour reaches the edge.
-            bar.bottomAnchor.constraint(equalTo: view.safeAreaLayoutGuide.bottomAnchor),
-            bar.heightAnchor.constraint(equalToConstant: Self.tabBarHeight - 1),
+            // As in 1.5.0: 46 pt above the home indicator, and the bar reaches the screen edge.
+            bar.bottomAnchor.constraint(equalTo: view.bottomAnchor),
+            bar.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.bottomAnchor, constant: -(Self.tabBarHeight - 1)),
         ])
         for page in pages {
             addChild(page)

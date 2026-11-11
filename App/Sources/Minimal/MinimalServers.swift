@@ -38,158 +38,9 @@ final class BadgeRow: UIView {
     override var intrinsicContentSize: CGSize { CGSize(width: UIView.noIntrinsicMetric, height: 17) }
 }
 
-private enum ServerItem: Hashable {
-    case header(Int64)
-    case node(Int64, String)
-}
-
-private final class SubscriptionCell: UICollectionViewListCell {
-    let title = UILabel(font: Theme.font(17, .semibold))
-    let pin = UIImageView(image: UIImage(systemName: "pin.fill", withConfiguration: UIImage.SymbolConfiguration(pointSize: 12, weight: .semibold)))
-    let count = UILabel(font: Theme.font(13, .medium), color: .secondaryLabel)
-    let chevron = UIImageView(image: UIImage(systemName: "chevron.down", withConfiguration: UIImage.SymbolConfiguration(pointSize: 13, weight: .semibold)))
-    let spinner = UIActivityIndicatorView(style: .medium)
-    private var isOpen = false
-
-    override init(frame: CGRect) {
-        super.init(frame: frame)
-        pin.tintColor = Theme.accent
-        pin.setContentHuggingPriority(.required, for: .horizontal)
-        chevron.tintColor = .secondaryLabel
-        chevron.setContentHuggingPriority(.required, for: .horizontal)
-        count.textAlignment = .center
-        count.layer.cornerRadius = 12
-        count.layer.masksToBounds = true
-        title.lineBreakMode = .byTruncatingTail
-        title.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
-        spinner.hidesWhenStopped = true
-        let row = UIStackView(.horizontal, spacing: 8, alignment: .center, [title, pin, UIView(), spinner, count, chevron])
-        row.setCustomSpacing(12, after: count)
-        contentView.addSubview(row)
-        row.pin(to: contentView, insets: UIEdgeInsets(top: 0, left: 20, bottom: 0, right: 20))
-        NSLayoutConstraint.activate([
-            contentView.heightAnchor.constraint(equalToConstant: 66).withPriority(999),
-            count.heightAnchor.constraint(equalToConstant: 24), count.widthAnchor.constraint(greaterThanOrEqualToConstant: 34),
-        ])
-    }
-
-    @available(*, unavailable)
-    required init?(coder _: NSCoder) { fatalError() }
-
-    /// The card itself is the section's `ContainerBackground`, so it can turn into
-    /// the container in one motion; the cell only carries the text.
-    func set(open: Bool, animated: Bool) {
-        isOpen = open
-        var background = UIBackgroundConfiguration.clear()
-        background.cornerRadius = 24
-        backgroundConfiguration = background
-        let update = {
-            self.chevron.transform = open ? CGAffineTransform(rotationAngle: .pi) : .identity
-            self.count.backgroundColor = open ? Theme.accent.withAlphaComponent(0.14) : UIColor.label.withAlphaComponent(0.06)
-            self.count.textColor = open ? Theme.accent : .secondaryLabel
-        }
-        if animated { UIView.animate(withDuration: 0.28, animations: update) } else { update() }
-    }
-}
-
-private final class NodeCell: UICollectionViewListCell {
-    let flag = UILabel(font: .systemFont(ofSize: 22))
-    let globe = UIImageView(image: UIImage(systemName: "globe", withConfiguration: UIImage.SymbolConfiguration(pointSize: 20)))
-    let name = UILabel(font: Theme.font(17, .medium))
-    let badges = BadgeRow()
-    let check = UIImageView(image: UIImage(systemName: "checkmark", withConfiguration: UIImage.SymbolConfiguration(pointSize: 12, weight: .bold)))
-    let ping = UILabel(font: Theme.font(13), color: .secondaryLabel)
-    let spinner = UIActivityIndicatorView(style: .medium)
-    let pingButton = TapControl()
-
-    override init(frame: CGRect) {
-        super.init(frame: frame)
-        globe.tintColor = .label
-        check.tintColor = Theme.accent
-        check.setContentHuggingPriority(.required, for: .horizontal)
-        spinner.color = Theme.accent
-        spinner.hidesWhenStopped = true
-        ping.textAlignment = .right
-        name.lineBreakMode = .byTruncatingTail
-        let leading = UIView()
-        for view in [flag, globe] as [UIView] {
-            view.translatesAutoresizingMaskIntoConstraints = false
-            leading.addSubview(view)
-            NSLayoutConstraint.activate([view.centerXAnchor.constraint(equalTo: leading.centerXAnchor), view.centerYAnchor.constraint(equalTo: leading.centerYAnchor)])
-        }
-        leading.widthAnchor.constraint(equalToConstant: 30).isActive = true
-        let titleRow = UIStackView(.horizontal, spacing: 6, alignment: .center, [name, check, UIView()])
-        let text = UIStackView(.vertical, spacing: 5, alignment: .fill, [titleRow, badges])
-        let trailing = UIStackView(.horizontal, spacing: 0, alignment: .center, [ping, spinner])
-        trailing.isUserInteractionEnabled = false
-        pingButton.addSubview(trailing)
-        trailing.pin(to: pingButton, insets: UIEdgeInsets(top: 0, left: 8, bottom: 0, right: 0))
-        pingButton.widthAnchor.constraint(greaterThanOrEqualToConstant: 58).isActive = true
-        pingButton.setContentHuggingPriority(.required, for: .horizontal)
-        pingButton.setContentCompressionResistancePriority(.required, for: .horizontal)
-        let row = UIStackView(.horizontal, spacing: 12, alignment: .center, [leading, text, pingButton])
-        contentView.addSubview(row)
-        row.pin(to: contentView, insets: UIEdgeInsets(top: 3, left: 22, bottom: 3, right: 24))
-        contentView.heightAnchor.constraint(equalToConstant: 69).withPriority(999).isActive = true
-        NSLayoutConstraint.activate([pingButton.heightAnchor.constraint(equalTo: row.heightAnchor)])
-        var background = UIBackgroundConfiguration.clear()
-        background.cornerRadius = 14
-        background.backgroundColor = .secondarySystemGroupedBackground
-        background.backgroundInsets = NSDirectionalEdgeInsets(top: 3, leading: 8, bottom: 3, trailing: 8)
-        backgroundConfiguration = background
-    }
-
-    @available(*, unavailable)
-    required init?(coder _: NSCoder) { fatalError() }
-
-    override func prepareForReuse() {
-        super.prepareForReuse()
-        mask = nil
-    }
-}
-
-extension NSLayoutConstraint {
-    func withPriority(_ value: Float) -> NSLayoutConstraint {
-        priority = UILayoutPriority(value)
-        return self
-    }
-}
-
-/// The surface of a subscription (1.5.0 `subscription-container-140`): collapsed it
-/// is the card on the page (secondary grouped background, radius 24); expanded the
-/// same surface becomes the container almost in the page tone (radius 22) that holds
-/// the server cards. Its frame, colour and radius change inside the disclosure's
-/// spring, so the card grows into the container and back in one motion.
-private final class ContainerBackground: UICollectionReusableView {
-    /// Answers whether a section is expanded; set by the panel.
-    static var isOpen: ((Int) -> Bool)?
-    static let card = UIColor.secondarySystemGroupedBackground
-    static let container = UIColor { traits in
-        traits.userInterfaceStyle == .dark ? UIColor(red: 0.067, green: 0.067, blue: 0.075, alpha: 1) : UIColor(red: 0.914, green: 0.914, blue: 0.933, alpha: 1)
-    }
-
-    override init(frame: CGRect) {
-        super.init(frame: frame)
-        backgroundColor = Self.card
-        layer.cornerRadius = 24
-        layer.cornerCurve = .continuous
-    }
-
-    @available(*, unavailable)
-    required init?(coder _: NSCoder) { fatalError() }
-
-    override func apply(_ attributes: UICollectionViewLayoutAttributes) {
-        super.apply(attributes)
-        let open = Self.isOpen?(attributes.indexPath.section) ?? false
-        backgroundColor = open ? Self.container : Self.card
-        layer.cornerRadius = open ? 22 : 24
-    }
-}
-
 /// The «Серверы» sheet: subscriptions as cards that open into their servers.
-final class MinimalServersViewController: UIViewController, UICollectionViewDelegate {
-    private var collection: UICollectionView!
-    private var source: UICollectionViewDiffableDataSource<Int64, ServerItem>!
+final class MinimalServersViewController: UIViewController {
+    private let list = ServerListView()
     private var expanded = Prefs.expandedSubscriptions
     private var ordered: [Subscription] = []
     private let subtitle = UILabel(font: Theme.font(12), color: .secondaryLabel)
@@ -213,11 +64,11 @@ final class MinimalServersViewController: UIViewController, UICollectionViewDele
         view.tintColor = Theme.accent
         buildList()
         buildHeader()
-        App.shared.store.library.observe(self) { [weak self] _ in self?.reload(animated: false) }
+        App.shared.store.library.observe(self) { [weak self] _ in self?.reload() }
         App.shared.latency.changed.observe(self, fireNow: false) { [weak self] keys in self?.refresh(keys) }
         App.shared.latency.progress.observe(self) { [weak self] in self?.show($0) }
-        App.shared.refreshing.observe(self, fireNow: false) { [weak self] _ in self?.reconfigureHeaders() }
-        App.shared.tunnel.state.observe(self, fireNow: false) { [weak self] _ in self?.reconfigureAll() }
+        App.shared.refreshing.observe(self, fireNow: false) { [weak self] _ in self?.list.reconfigureHeaders() }
+        App.shared.tunnel.state.observe(self, fireNow: false) { [weak self] _ in self?.list.reconfigureRows() }
     }
 
     // MARK: Header
@@ -272,8 +123,8 @@ final class MinimalServersViewController: UIViewController, UICollectionViewDele
             glass.trailingAnchor.constraint(equalTo: bar.trailingAnchor, constant: -16), glass.centerYAnchor.constraint(equalTo: close.centerYAnchor),
             glass.heightAnchor.constraint(equalToConstant: 44), glass.widthAnchor.constraint(equalToConstant: 116),
         ])
-        collection.contentInset.top = 70
-        collection.verticalScrollIndicatorInsets.top = 70
+        list.contentInset.top = 70
+        list.verticalScrollIndicatorInsets.top = 70
     }
 
     private func show(_ progress: LatencyProgress) {
@@ -291,11 +142,11 @@ final class MinimalServersViewController: UIViewController, UICollectionViewDele
                 var next = Prefs.arrangement
                 next.byName.toggle()
                 Prefs.arrangement = next
-                self?.reload(animated: true)
+                self?.reload()
             },
             UIAction(title: "Сортировать по задержке", image: UIImage(systemName: "speedometer"), state: Prefs.sortByLatency ? .on : .off) { [weak self] _ in
                 Prefs.sortByLatency.toggle()
-                self?.reload(animated: true)
+                self?.reload()
             },
             UIAction(title: "Порядок серверов") { [weak self] _ in
                 let order = UINavigationController(rootViewController: ServerOrderViewController())
@@ -308,7 +159,7 @@ final class MinimalServersViewController: UIViewController, UICollectionViewDele
                 let key = subscription.isStandalone ? Arrangement.subscription(subscription.id) : Arrangement.server(subscription.id, node.id)
                 if !next.isPinned(key) { next.togglePin(key) }
                 Prefs.arrangement = next
-                self?.reload(animated: true)
+                self?.reload()
             },
             UIAction(title: "Обновить подписки") { _ in App.shared.refreshAll() },
         ]
@@ -334,90 +185,69 @@ final class MinimalServersViewController: UIViewController, UICollectionViewDele
     // MARK: List
 
     private func buildList() {
-        let layout = UICollectionViewCompositionalLayout { [weak self] index, environment in
-            var configuration = UICollectionLayoutListConfiguration(appearance: .plain)
-            configuration.showsSeparators = false
-            configuration.backgroundColor = .clear
-            configuration.trailingSwipeActionsConfigurationProvider = { [weak self] path in self?.swipeActions(path) }
-            let section = NSCollectionLayoutSection.list(using: configuration, layoutEnvironment: environment)
-            let subscription = self.flatMap { $0.ordered.indices.contains(index) ? $0.ordered[index] : nil }
-            let open = subscription.map { self?.isOpen($0) ?? false } ?? false
-            // Open: 8 pt of container below the last server card.
-            section.contentInsets = NSDirectionalEdgeInsets(top: 5, leading: 16, bottom: open ? 13 : 5, trailing: 16)
-            if let subscription, !subscription.isStandalone {
-                let background = NSCollectionLayoutDecorationItem.background(elementKind: "container")
-                background.contentInsets = NSDirectionalEdgeInsets(top: 5, leading: 16, bottom: 5, trailing: 16)
-                section.decorationItems = [background]
-            }
-            return section
+        list.frame = view.bounds
+        list.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+        view.addSubview(list)
+        list.configureHeader = { header, id in
+            guard let subscription = App.shared.library.subscription(id) else { return }
+            header.title.text = subscription.name
+            header.title.font = Theme.font(17, .semibold)
+            header.count.text = "\(subscription.nodes.count)"
+            header.pin.isHidden = !Prefs.arrangement.isPinned(Arrangement.subscription(id))
+            if App.shared.refreshing.value.contains(id) { header.spinner.startAnimating() } else { header.spinner.stopAnimating() }
         }
-        layout.register(ContainerBackground.self, forDecorationViewOfKind: "container")
-        ContainerBackground.isOpen = { [weak self] section in
-            guard let self, self.ordered.indices.contains(section) else { return false }
-            return self.isOpen(self.ordered[section])
+        list.configureRow = { [weak self] row, id, tag in
+            guard let subscription = App.shared.library.subscription(id), let node = subscription.node(tag) else { return }
+            self?.configure(row, node: node, subscription: subscription)
         }
-        collection = UICollectionView(frame: view.bounds, collectionViewLayout: layout)
-        collection.backgroundColor = .clear
-        collection.delegate = self
-        collection.autoresizingMask = [.flexibleWidth, .flexibleHeight]
-        view.addSubview(collection)
-        collection.addGestureRecognizer(UILongPressGestureRecognizer(target: self, action: #selector(held(_:))))
-
-        let header = UICollectionView.CellRegistration<SubscriptionCell, ServerItem> { [weak self] cell, _, item in
-            guard let self, case let .header(id) = item, let subscription = App.shared.library.subscription(id) else { return }
-            cell.title.text = subscription.name
-            cell.title.font = Theme.font(17, .semibold)
-            cell.count.text = "\(subscription.nodes.count)"
-            cell.pin.isHidden = !Prefs.arrangement.isPinned(Arrangement.subscription(id))
-            cell.set(open: self.expanded.contains(id), animated: false)
-            if App.shared.refreshing.value.contains(id) { cell.spinner.startAnimating() } else { cell.spinner.stopAnimating() }
+        list.actionsForHeader = { [weak self] id in
+            [SwipeAction(symbol: "pencil", color: .systemOrange, title: "Редактировать") { self?.rename(subscription: id) },
+             SwipeAction(symbol: "arrow.clockwise", color: Theme.accent, title: "Обновить") { App.shared.refresh(id) },
+             SwipeAction(symbol: "trash", color: .systemRed, title: "Удалить") { self?.confirmDelete(subscription: id) }]
         }
-        let node = UICollectionView.CellRegistration<NodeCell, ServerItem> { [weak self] cell, _, item in
-            guard let self, case let .node(id, tag) = item, let subscription = App.shared.library.subscription(id), let node = subscription.node(tag) else { return }
-            self.configure(cell, node: node, subscription: subscription)
+        list.actionsForRow = { [weak self] id, tag in
+            [SwipeAction(symbol: "pencil", color: .systemOrange, title: "Редактировать") { self?.rename(node: tag, in: id) },
+             SwipeAction(symbol: "waveform.path.ecg", color: Theme.accent, title: "Проверить пинг") {
+                 if let subscription = App.shared.library.subscription(id), let node = subscription.node(tag) { App.shared.ping(node: node, in: subscription) }
+             },
+             SwipeAction(symbol: "trash", color: .systemRed, title: "Удалить") { self?.confirmDelete(node: tag, in: id) }]
         }
-        source = UICollectionViewDiffableDataSource(collectionView: collection) { collection, path, item in
-            switch item {
-            case .header: return collection.dequeueConfiguredReusableCell(using: header, for: path, item: item)
-            case .node: return collection.dequeueConfiguredReusableCell(using: node, for: path, item: item)
-            }
-        }
-    }
-
-    private func isOpen(_ subscription: Subscription) -> Bool { !subscription.isStandalone && expanded.contains(subscription.id) }
-
-    private func configure(_ cell: NodeCell, node: ServerNode, subscription: Subscription) {
-        let label = App.shared.store.label(of: node, in: subscription)
-        cell.name.text = label.text
-        cell.name.font = Theme.font(17, .medium)
-        let emoji = Theme.flag(label.countryCode)
-        cell.flag.text = emoji
-        cell.flag.isHidden = emoji == nil
-        cell.globe.isHidden = emoji != nil
-        cell.badges.set(node.facts.badges)
-        let library = App.shared.library
-        cell.check.isHidden = !(library.activeSubscription?.id == subscription.id && library.selectedNodeID(in: subscription) == node.id)
-        let id = subscription.id, tag = node.id
-        cell.pingButton.onTap = {
+        list.onToggle = { [weak self] id in self?.toggle(id) }
+        list.onSelect = { id, tag in App.shared.select(node: tag, in: id) }
+        list.onPing = { id, tag in
             guard let subscription = App.shared.library.subscription(id), let node = subscription.node(tag) else { return }
             Haptics.tap()
             App.shared.ping(node: node, in: subscription)
         }
-        if App.shared.latency.isTesting(id, tag) {
-            cell.ping.text = nil
-            cell.spinner.startAnimating()
+        list.onHold = { [weak self] id, tag, point, release in self?.hold(id, tag, at: point, release: release) }
+    }
+
+    private func configure(_ row: ServerRowView, node: ServerNode, subscription: Subscription) {
+        let label = App.shared.store.label(of: node, in: subscription)
+        row.name.text = label.text
+        row.name.font = Theme.font(17, .medium)
+        let emoji = Theme.flag(label.countryCode)
+        row.flag.text = emoji
+        row.flag.isHidden = emoji == nil
+        row.globe.isHidden = emoji != nil
+        row.badges.set(node.facts.badges)
+        let library = App.shared.library
+        row.check.isHidden = !(library.activeSubscription?.id == subscription.id && library.selectedNodeID(in: subscription) == node.id)
+        if App.shared.latency.isTesting(subscription.id, node.id) {
+            row.ping.text = nil
+            row.spinner.startAnimating()
         } else {
-            cell.spinner.stopAnimating()
-            switch App.shared.latency.entry(id, tag)?.result {
+            row.spinner.stopAnimating()
+            switch App.shared.latency.entry(subscription.id, node.id)?.result {
             case let .delay(value)?:
-                cell.ping.text = "\(value) ms"
-                cell.ping.textColor = .label
+                row.ping.text = "\(value) ms"
+                row.ping.textColor = .label
             case let .failed(reason)?:
-                cell.ping.text = reason.title
-                cell.ping.textColor = .secondaryLabel
+                row.ping.text = reason.title
+                row.ping.textColor = .secondaryLabel
             case nil:
-                cell.ping.text = "—"
-                cell.ping.textColor = .tertiaryLabel
+                row.ping.text = "—"
+                row.ping.textColor = .tertiaryLabel
             }
         }
     }
@@ -439,197 +269,40 @@ final class MinimalServersViewController: UIViewController, UICollectionViewDele
         return nodes
     }
 
-    private func reload(animated: Bool) {
+    private func reload() {
         let library = App.shared.library
         ordered = Prefs.arrangement.sorted(library.subscriptions.filter { !$0.nodes.isEmpty }, key: { Arrangement.subscription($0.id) }, name: { $0.name })
-        var snapshot = NSDiffableDataSourceSnapshot<Int64, ServerItem>()
-        for subscription in ordered {
-            snapshot.appendSections([subscription.id])
-            if subscription.isStandalone, let node = subscription.nodes.first {
-                snapshot.appendItems([.node(subscription.id, node.id)], toSection: subscription.id)
-            } else {
-                snapshot.appendItems([.header(subscription.id)], toSection: subscription.id)
-                if expanded.contains(subscription.id) {
-                    snapshot.appendItems(sortedNodes(subscription).map { .node(subscription.id, $0.id) }, toSection: subscription.id)
-                }
-            }
+        let sections = ordered.map { subscription in
+            ServerListView.Section(id: subscription.id, standalone: subscription.isStandalone, nodes: sortedNodes(subscription).map(\.id))
         }
-        let known = Set(source.snapshot().itemIdentifiers)
-        snapshot.reconfigureItems(snapshot.itemIdentifiers.filter(known.contains))
-        source.apply(snapshot, animatingDifferences: animated)
-    }
-
-    private func reconfigureHeaders() {
-        var snapshot = source.snapshot()
-        snapshot.reconfigureItems(snapshot.itemIdentifiers.filter { if case .header = $0 { return true }; return false })
-        source.apply(snapshot, animatingDifferences: false)
-    }
-
-    private func reconfigureAll() {
-        var snapshot = source.snapshot()
-        snapshot.reconfigureItems(snapshot.itemIdentifiers)
-        source.apply(snapshot, animatingDifferences: false)
+        list.set(sections, open: expanded)
     }
 
     /// A latency batch touches only the rows it changed.
     private func refresh(_ keys: Set<String>) {
         if Prefs.sortByLatency, !App.shared.latency.progress.value.running {
-            reload(animated: true)
+            reload()
             return
         }
-        var snapshot = source.snapshot()
-        let changed = snapshot.itemIdentifiers.filter { item in
-            if case let .node(id, tag) = item { return keys.contains(LatencyService.key(id, tag)) }
-            return false
-        }
-        guard !changed.isEmpty else { return }
-        snapshot.reconfigureItems(changed)
-        source.apply(snapshot, animatingDifferences: false)
+        list.reconfigureRows { id, tag in keys.contains(LatencyService.key(id, tag)) }
     }
 
-    func collectionView(_ collectionView: UICollectionView, didSelectItemAt indexPath: IndexPath) {
-        collectionView.deselectItem(at: indexPath, animated: false)
-        guard let item = source.itemIdentifier(for: indexPath) else { return }
-        switch item {
-        case let .header(id):
-            toggle(id, header: indexPath)
-        case let .node(id, tag):
-            App.shared.select(node: tag, in: id)
-        }
-    }
-
-    // MARK: Disclosure
-
-    /// Opens or closes a subscription in one critically damped spring, as 1.5.0 did:
-    /// the container's bottom edge moves, the subscriptions below move with it,
-    /// server cards are uncovered by that edge from the top down (and covered again
-    /// from the bottom up), the surface blends between card and container, and the
-    /// chevron turns. Closing is a little slower and softer than opening.
-    private func toggle(_ id: Int64, header headerPath: IndexPath) {
-        guard let subscription = App.shared.library.subscription(id) else { return }
-        let opening = !expanded.contains(id)
-        let headerAttributes = collection.layoutAttributesForItem(at: headerPath)
-        let headerBottom = headerAttributes?.frame.maxY ?? 0
-        var snapshot = source.snapshot()
-        let current = snapshot.itemIdentifiers(inSection: id).filter { if case .node = $0 { return true }; return false }
-
-        // Closing: the cards now on screen are covered by the edge moving up.
-        var leaving: [(cell: UICollectionViewCell, target: CGFloat)] = []
-        if !opening, let lastPath = current.last.flatMap({ source.indexPath(for: $0) }),
-           let last = collection.layoutAttributesForItem(at: lastPath)
-        {
-            let extent = last.frame.maxY + 8 - headerBottom
-            for item in current {
-                guard let path = source.indexPath(for: item), let cell = collection.cellForItem(at: path) else { continue }
-                let top = cell.frame.minY
-                cell.mask = Self.revealMask(width: cell.bounds.width, edge: headerBottom + extent - top)
-                leaving.append((cell, Self.maskOrigin(edge: headerBottom - top)))
-            }
-        }
-
-        if opening { expanded.insert(id) } else { expanded.remove(id) }
+    private func toggle(_ id: Int64) {
+        let open = !list.isOpen(id)
+        if open { expanded.insert(id) } else { expanded.remove(id) }
         Prefs.expandedSubscriptions = expanded
-        if opening {
-            snapshot.appendItems(sortedNodes(subscription).map { .node(id, $0.id) }, toSection: id)
-        } else {
-            snapshot.deleteItems(current)
-        }
-        Haptics.soft(0.5)
-        let header = collection.cellForItem(at: headerPath) as? SubscriptionCell
-        var arriving: [UICollectionViewCell] = []
-        let reduce = UIAccessibility.isReduceMotionEnabled
-        UIView.animate(withDuration: reduce ? 0.2 : (opening ? 0.5 : 0.62), delay: 0, usingSpringWithDamping: 1, initialSpringVelocity: 0,
-                       options: [.allowUserInteraction, .beginFromCurrentState]) {
-            header?.set(open: opening, animated: false)
-            for item in leaving { item.cell.mask?.frame.origin.y = item.target }
-            // The layout reads `expanded` again for this update: the container's
-            // bottom inset and frame change inside this same animation.
-            self.source.apply(snapshot, animatingDifferences: true)
-            guard opening else { return }
-            let added = snapshot.itemIdentifiers(inSection: id).filter { if case .node = $0 { return true }; return false }
-            guard let lastPath = added.last.flatMap({ self.source.indexPath(for: $0) }),
-                  let last = self.collection.layoutAttributesForItem(at: lastPath) else { return }
-            let extent = last.frame.maxY + 8 - headerBottom
-            for item in added {
-                guard let path = self.source.indexPath(for: item), let cell = self.collection.cellForItem(at: path),
-                      let attributes = self.collection.layoutAttributesForItem(at: path) else { continue }
-                let top = attributes.frame.minY
-                UIView.performWithoutAnimation {
-                    cell.mask = Self.revealMask(width: attributes.frame.width, edge: headerBottom - top)
-                }
-                cell.mask?.frame.origin.y = Self.maskOrigin(edge: headerBottom + extent - top)
-                arriving.append(cell)
-            }
-        } completion: { _ in
-            for cell in arriving + leaving.map(\.cell) { cell.mask = nil }
-        }
+        Haptics.soft(open ? 0.55 : 0.4)
+        list.setOpen(id, open)
     }
-
-    /// Height of a reveal mask: taller than any card, so only its bottom edge shows.
-    private static let maskHeight: CGFloat = 4000
-
-    /// A mask whose bottom edge is `edge` points below the top of the cell.
-    private static func revealMask(width: CGFloat, edge: CGFloat) -> UIView {
-        let mask = UIView(frame: CGRect(x: -40, y: maskOrigin(edge: edge), width: width + 80, height: maskHeight))
-        mask.backgroundColor = .black
-        return mask
-    }
-
-    private static func maskOrigin(edge: CGFloat) -> CGFloat { edge - maskHeight }
 
     // MARK: Row actions
 
-    private func swipeActions(_ path: IndexPath) -> UISwipeActionsConfiguration? {
-        guard let item = source.itemIdentifier(for: path) else { return nil }
-        func action(_ symbol: String, _ color: UIColor, _ handler: @escaping () -> Void) -> UIContextualAction {
-            let action = UIContextualAction(style: .normal, title: nil) { _, _, done in handler(); done(true) }
-            action.image = UIImage(systemName: symbol)
-            action.backgroundColor = color
-            return action
-        }
-        var actions: [UIContextualAction]
-        switch item {
-        case let .header(id):
-            actions = [action("trash", .systemRed) { [weak self] in self?.confirmDelete(subscription: id) },
-                       action("arrow.clockwise", Theme.accent) { App.shared.refresh(id) },
-                       action("pencil", .systemOrange) { [weak self] in self?.rename(subscription: id) }]
-        case let .node(id, tag):
-            actions = [action("trash", .systemRed) { [weak self] in self?.confirmDelete(node: tag, in: id) },
-                       action("waveform.path.ecg", Theme.accent) {
-                           if let subscription = App.shared.library.subscription(id), let node = subscription.node(tag) { App.shared.ping(node: node, in: subscription) }
-                       },
-                       action("pencil", .systemOrange) { [weak self] in self?.rename(node: tag, in: id) }]
-        }
-        let configuration = UISwipeActionsConfiguration(actions: actions)
-        configuration.performsFirstActionWithFullSwipe = false
-        return configuration
-    }
-
-    @objc private func held(_ gesture: UILongPressGestureRecognizer) {
-        guard gesture.state == .began else { return }
-        let point = gesture.location(in: collection)
-        guard let path = collection.indexPathForItem(at: point), let item = source.itemIdentifier(for: path) else { return }
-        let cell = collection.cellForItem(at: path)
-        cell?.contentView.backgroundColor = UIColor.label.withAlphaComponent(0.07)
-        let clear: () -> Void = { cell?.contentView.backgroundColor = .clear }
+    private func hold(_ id: Int64, _ tag: String?, at point: CGPoint, release: @escaping () -> Void) {
+        guard let subscription = App.shared.library.subscription(id) else { return }
         let pinKey: String
         var items: [HoldMenuItem]
         let title: String
-        switch item {
-        case let .header(id):
-            guard let subscription = App.shared.library.subscription(id) else { return }
-            title = subscription.name
-            pinKey = Arrangement.subscription(id)
-            items = [
-                HoldMenuItem(title: "Проверить пинг", symbol: "waveform.path.ecg") { App.shared.ping([subscription]) },
-                HoldMenuItem(title: "Редактировать", symbol: "pencil") { [weak self] in self?.rename(subscription: id) },
-                HoldMenuItem(title: "Обновить", symbol: "arrow.clockwise") { App.shared.refresh(id) },
-                HoldMenuItem(title: "Скопировать ссылку", symbol: "doc.on.doc") { [weak self] in self?.copy(subscription.url) },
-            ]
-            items.append(HoldMenuItem(title: Prefs.arrangement.isPinned(pinKey) ? "Открепить" : "Закрепить", symbol: "pin") { [weak self] in self?.togglePin(pinKey) })
-            items.append(HoldMenuItem(title: "Удалить", symbol: "trash", destructive: true) { [weak self] in self?.confirmDelete(subscription: id) })
-        case let .node(id, tag):
-            guard let subscription = App.shared.library.subscription(id), let node = subscription.node(tag) else { return }
+        if let tag, let node = subscription.node(tag) {
             title = App.shared.store.label(of: node, in: subscription).text
             pinKey = subscription.isStandalone ? Arrangement.subscription(id) : Arrangement.server(id, tag)
             items = [
@@ -640,17 +313,28 @@ final class MinimalServersViewController: UIViewController, UICollectionViewDele
             if subscription.isStandalone, subscription.isRemote {
                 items.insert(HoldMenuItem(title: "Обновить", symbol: "arrow.clockwise") { App.shared.refresh(id) }, at: 2)
             }
-            items.append(HoldMenuItem(title: Prefs.arrangement.isPinned(pinKey) ? "Открепить" : "Закрепить", symbol: "pin") { [weak self] in self?.togglePin(pinKey) })
-            items.append(HoldMenuItem(title: "Удалить", symbol: "trash", destructive: true) { [weak self] in self?.confirmDelete(node: tag, in: id) })
+        } else {
+            title = subscription.name
+            pinKey = Arrangement.subscription(id)
+            items = [
+                HoldMenuItem(title: "Проверить пинг", symbol: "waveform.path.ecg") { App.shared.ping([subscription]) },
+                HoldMenuItem(title: "Редактировать", symbol: "pencil") { [weak self] in self?.rename(subscription: id) },
+                HoldMenuItem(title: "Обновить", symbol: "arrow.clockwise") { App.shared.refresh(id) },
+                HoldMenuItem(title: "Скопировать ссылку", symbol: "doc.on.doc") { [weak self] in self?.copy(subscription.url) },
+            ]
         }
-        HoldMenuView.show(in: view, at: gesture.location(in: view), title: title, items: items, onDismiss: clear)
+        items.append(HoldMenuItem(title: Prefs.arrangement.isPinned(pinKey) ? "Открепить" : "Закрепить", symbol: "pin") { [weak self] in self?.togglePin(pinKey) })
+        items.append(HoldMenuItem(title: "Удалить", symbol: "trash", destructive: true) { [weak self] in
+            if let tag { self?.confirmDelete(node: tag, in: id) } else { self?.confirmDelete(subscription: id) }
+        })
+        HoldMenuView.show(in: view, at: list.convert(point, to: view), title: title, items: items, onDismiss: release)
     }
 
     private func togglePin(_ key: String) {
         var next = Prefs.arrangement
         next.togglePin(key)
         Prefs.arrangement = next
-        reload(animated: true)
+        reload()
     }
 
     private func copy(_ text: String?) {

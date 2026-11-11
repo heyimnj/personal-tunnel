@@ -309,10 +309,18 @@ extension UIStackView {
     }
 }
 
-/// A plain control that dims while pressed and calls a closure.
+/// A plain control that dims while pressed and calls a closure. With `ripple`
+/// it gives 1.5.0's `ModernTouchFeedback` instead: the control grows by 1.2 %
+/// and a soft shade appears under the finger and spreads to the edges, fading.
 class TapControl: UIControl {
     var onTap: (() -> Void)?
     var pressScale: CGFloat = 0.97
+    var ripple = false {
+        didSet { if ripple { pressScale = 1.012 } }
+    }
+    /// Corner radius the shade is clipped to; `nil` makes a capsule or circle.
+    var rippleCornerRadius: CGFloat?
+    private var rippleClip: UIView?
 
     override init(frame: CGRect) {
         super.init(frame: frame)
@@ -328,10 +336,73 @@ class TapControl: UIControl {
         didSet {
             guard oldValue != isHighlighted else { return }
             let pressed = isHighlighted
+            let reduce = UIAccessibility.isReduceMotionEnabled
+            if ripple {
+                UIView.animate(withDuration: reduce ? 0 : (pressed ? 0.10 : 0.18), delay: 0, options: [.curveEaseOut, .beginFromCurrentState, .allowUserInteraction]) {
+                    self.transform = pressed && !reduce ? CGAffineTransform(scaleX: self.pressScale, y: self.pressScale) : .identity
+                }
+                return
+            }
             UIView.animate(withDuration: pressed ? 0.08 : 0.25, delay: 0, options: [.beginFromCurrentState, .allowUserInteraction]) {
                 self.transform = pressed ? CGAffineTransform(scaleX: self.pressScale, y: self.pressScale) : .identity
                 self.alpha = pressed ? 0.85 : 1
             }
         }
+    }
+
+    override func beginTracking(_ touch: UITouch, with event: UIEvent?) -> Bool {
+        if ripple, !UIAccessibility.isReduceMotionEnabled { spread(from: touch.location(in: self)) }
+        return super.beginTracking(touch, with: event)
+    }
+
+    override func layoutSubviews() {
+        super.layoutSubviews()
+        guard let rippleClip else { return }
+        rippleClip.frame = bounds
+        rippleClip.layer.cornerRadius = rippleCornerRadius ?? min(bounds.width, bounds.height) / 2
+        bringSubviewToFront(rippleClip)
+    }
+
+    /// The shade: a radial gradient twice the diagonal, from 1.5 % to full size in 0.38 s.
+    private func spread(from point: CGPoint) {
+        let clip: UIView
+        if let rippleClip { clip = rippleClip } else {
+            clip = UIView(frame: bounds)
+            clip.isUserInteractionEnabled = false
+            clip.clipsToBounds = true
+            clip.layer.cornerCurve = .continuous
+            clip.layer.cornerRadius = rippleCornerRadius ?? min(bounds.width, bounds.height) / 2
+            addSubview(clip)
+            rippleClip = clip
+        }
+        bringSubviewToFront(clip)
+        let reach = hypot(bounds.width, bounds.height) * 2
+        let shade = CAGradientLayer()
+        shade.type = .radial
+        shade.colors = [UIColor.label.resolvedColor(with: traitCollection).withAlphaComponent(0.10).cgColor, UIColor.clear.cgColor]
+        shade.startPoint = CGPoint(x: 0.5, y: 0.5)
+        shade.endPoint = CGPoint(x: 1, y: 1)
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        shade.bounds = CGRect(x: 0, y: 0, width: reach, height: reach)
+        shade.position = point
+        shade.transform = CATransform3DIdentity
+        shade.opacity = 0
+        clip.layer.addSublayer(shade)
+        CATransaction.commit()
+        let grow = CABasicAnimation(keyPath: "transform.scale")
+        grow.fromValue = 0.015
+        grow.toValue = 1
+        let fade = CABasicAnimation(keyPath: "opacity")
+        fade.fromValue = 1
+        fade.toValue = 0
+        let group = CAAnimationGroup()
+        group.animations = [grow, fade]
+        group.duration = 0.38
+        group.timingFunction = CAMediaTimingFunction(name: .easeOut)
+        CATransaction.begin()
+        CATransaction.setCompletionBlock { shade.removeFromSuperlayer() }
+        shade.add(group, forKey: "spread")
+        CATransaction.commit()
     }
 }

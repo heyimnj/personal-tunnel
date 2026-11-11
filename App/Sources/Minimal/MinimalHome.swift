@@ -238,7 +238,7 @@ final class MinimalConnectionView: UIView {
 
     override init(frame: CGRect) {
         super.init(frame: frame)
-        button.pressScale = 0.96
+        button.ripple = true
         button.addSubview(buttonGlass)
         power.tintColor = .label
         power.contentMode = .scaleAspectFit
@@ -256,7 +256,7 @@ final class MinimalConnectionView: UIView {
         spinner.hidesWhenStopped = true
         status.textAlignment = .center
 
-        capsule.pressScale = 0.985
+        capsule.ripple = true
         capsule.addSubview(capsuleGlass)
         mark.tintColor = .label
         mark.contentMode = .scaleAspectFit
@@ -317,7 +317,10 @@ final class MinimalConnectionView: UIView {
         power.frame = CGRect(x: (side - glyphWidth) / 2, y: (side - 40) / 2, width: glyphWidth, height: 40)
         dot.frame = CGRect(x: side / 2 - 2.5, y: side / 2 + 45 - 2.5, width: 5, height: 5)
         statusRow.frame = CGRect(x: bounds.midX - statusSize.width / 2, y: top + side + 20, width: statusSize.width, height: statusSize.height)
-        capsule.frame = CGRect(x: bounds.midX - capsuleWidth / 2, y: top + groupHeight + spacing, width: capsuleWidth, height: capsuleHeight)
+        // bounds and center, never frame: the press scales the capsule, and a frame
+        // set under a transform moved it (the jump on tap).
+        capsule.bounds = CGRect(x: 0, y: 0, width: capsuleWidth, height: capsuleHeight)
+        capsule.center = CGPoint(x: bounds.midX, y: top + groupHeight + spacing + capsuleHeight / 2)
         capsuleGlass.frame = capsule.bounds
         capsuleRow.frame = capsule.bounds.insetBy(dx: 16, dy: 16)
     }

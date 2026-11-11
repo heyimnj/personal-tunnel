@@ -146,6 +146,9 @@ final class ClassicServersViewController: UIViewController, UITableViewDataSourc
             let line = UIView()
             line.backgroundColor = active ? Theme.text : Theme.line.withAlphaComponent(0.55)
             let item = UIView()
+            // The filter row is centre-aligned: without its own height the item
+            // collapsed to the text and the underline crossed it.
+            item.heightAnchor.constraint(equalToConstant: 40).isActive = true
             for view in [label, line] {
                 view.translatesAutoresizingMaskIntoConstraints = false
                 item.addSubview(view)
