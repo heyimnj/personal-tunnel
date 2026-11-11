@@ -76,11 +76,12 @@ private final class SubscriptionCell: UICollectionViewListCell {
     @available(*, unavailable)
     required init?(coder _: NSCoder) { fatalError() }
 
+    /// The card itself is the section's `ContainerBackground`, so it can turn into
+    /// the container in one motion; the cell only carries the text.
     func set(open: Bool, animated: Bool) {
         isOpen = open
         var background = UIBackgroundConfiguration.clear()
         background.cornerRadius = 24
-        background.backgroundColor = open ? .clear : .secondarySystemGroupedBackground
         backgroundConfiguration = background
         let update = {
             self.chevron.transform = open ? CGAffineTransform(rotationAngle: .pi) : .identity
@@ -140,6 +141,11 @@ private final class NodeCell: UICollectionViewListCell {
 
     @available(*, unavailable)
     required init?(coder _: NSCoder) { fatalError() }
+
+    override func prepareForReuse() {
+        super.prepareForReuse()
+        maskView = nil
+    }
 }
 
 extension NSLayoutConstraint {
@@ -149,19 +155,35 @@ extension NSLayoutConstraint {
     }
 }
 
-/// Rounded backdrop of an expanded subscription.
+/// The surface of a subscription (1.5.0 `subscription-container-140`): collapsed it
+/// is the card on the page (secondary grouped background, radius 24); expanded the
+/// same surface becomes the container almost in the page tone (radius 22) that holds
+/// the server cards. Its frame, colour and radius change inside the disclosure's
+/// spring, so the card grows into the container and back in one motion.
 private final class ContainerBackground: UICollectionReusableView {
+    /// Answers whether a section is expanded; set by the panel.
+    static var isOpen: ((Int) -> Bool)?
+    static let card = UIColor.secondarySystemGroupedBackground
+    static let container = UIColor { traits in
+        traits.userInterfaceStyle == .dark ? UIColor(red: 0.067, green: 0.067, blue: 0.075, alpha: 1) : UIColor(red: 0.914, green: 0.914, blue: 0.933, alpha: 1)
+    }
+
     override init(frame: CGRect) {
         super.init(frame: frame)
-        backgroundColor = UIColor { traits in
-            traits.userInterfaceStyle == .dark ? UIColor(white: 0.16, alpha: 1) : UIColor(red: 0.91, green: 0.91, blue: 0.93, alpha: 1)
-        }
+        backgroundColor = Self.card
         layer.cornerRadius = 24
         layer.cornerCurve = .continuous
     }
 
     @available(*, unavailable)
     required init?(coder _: NSCoder) { fatalError() }
+
+    override func apply(_ attributes: UICollectionViewLayoutAttributes) {
+        super.apply(attributes)
+        let open = Self.isOpen?(attributes.indexPath.section) ?? false
+        backgroundColor = open ? Self.container : Self.card
+        layer.cornerRadius = open ? 22 : 24
+    }
 }
 
 /// The «Серверы» sheet: subscriptions as cards that open into their servers.
@@ -318,9 +340,11 @@ final class MinimalServersViewController: UIViewController, UICollectionViewDele
             configuration.backgroundColor = .clear
             configuration.trailingSwipeActionsConfigurationProvider = { [weak self] path in self?.swipeActions(path) }
             let section = NSCollectionLayoutSection.list(using: configuration, layoutEnvironment: environment)
-            let open = self.map { $0.ordered.indices.contains(index) && $0.isOpen($0.ordered[index]) } ?? false
+            let subscription = self.flatMap { $0.ordered.indices.contains(index) ? $0.ordered[index] : nil }
+            let open = subscription.map { self?.isOpen($0) ?? false } ?? false
+            // Open: 8 pt of container below the last server card.
             section.contentInsets = NSDirectionalEdgeInsets(top: 5, leading: 16, bottom: open ? 13 : 5, trailing: 16)
-            if open {
+            if let subscription, !subscription.isStandalone {
                 let background = NSCollectionLayoutDecorationItem.background(elementKind: "container")
                 background.contentInsets = NSDirectionalEdgeInsets(top: 5, leading: 16, bottom: 5, trailing: 16)
                 section.decorationItems = [background]
@@ -328,6 +352,10 @@ final class MinimalServersViewController: UIViewController, UICollectionViewDele
             return section
         }
         layout.register(ContainerBackground.self, forDecorationViewOfKind: "container")
+        ContainerBackground.isOpen = { [weak self] section in
+            guard let self, self.ordered.indices.contains(section) else { return false }
+            return self.isOpen(self.ordered[section])
+        }
         collection = UICollectionView(frame: view.bounds, collectionViewLayout: layout)
         collection.backgroundColor = .clear
         collection.delegate = self
@@ -464,15 +492,90 @@ final class MinimalServersViewController: UIViewController, UICollectionViewDele
         guard let item = source.itemIdentifier(for: indexPath) else { return }
         switch item {
         case let .header(id):
-            if expanded.contains(id) { expanded.remove(id) } else { expanded.insert(id) }
-            Prefs.expandedSubscriptions = expanded
-            Haptics.soft(0.5)
-            (collectionView.cellForItem(at: indexPath) as? SubscriptionCell)?.set(open: expanded.contains(id), animated: true)
-            reload(animated: true)
+            toggle(id, header: indexPath)
         case let .node(id, tag):
             App.shared.select(node: tag, in: id)
         }
     }
+
+    // MARK: Disclosure
+
+    /// Opens or closes a subscription in one critically damped spring, as 1.5.0 did:
+    /// the container's bottom edge moves, the subscriptions below move with it,
+    /// server cards are uncovered by that edge from the top down (and covered again
+    /// from the bottom up), the surface blends between card and container, and the
+    /// chevron turns. Closing is a little slower and softer than opening.
+    private func toggle(_ id: Int64, header headerPath: IndexPath) {
+        guard let subscription = App.shared.library.subscription(id) else { return }
+        let opening = !expanded.contains(id)
+        let headerAttributes = collection.layoutAttributesForItem(at: headerPath)
+        let headerBottom = headerAttributes?.frame.maxY ?? 0
+        var snapshot = source.snapshot()
+        let current = snapshot.itemIdentifiers(inSection: id).filter { if case .node = $0 { return true }; return false }
+
+        // Closing: the cards now on screen are covered by the edge moving up.
+        var leaving: [(cell: UICollectionViewCell, target: CGFloat)] = []
+        if !opening, let lastPath = current.last.flatMap({ source.indexPath(for: $0) }),
+           let last = collection.layoutAttributesForItem(at: lastPath)
+        {
+            let extent = last.frame.maxY + 8 - headerBottom
+            for item in current {
+                guard let path = source.indexPath(for: item), let cell = collection.cellForItem(at: path) else { continue }
+                let top = cell.frame.minY
+                cell.maskView = Self.revealMask(width: cell.bounds.width, edge: headerBottom + extent - top)
+                leaving.append((cell, Self.maskOrigin(edge: headerBottom - top)))
+            }
+        }
+
+        if opening { expanded.insert(id) } else { expanded.remove(id) }
+        Prefs.expandedSubscriptions = expanded
+        if opening {
+            snapshot.appendItems(sortedNodes(subscription).map { .node(id, $0.id) }, toSection: id)
+        } else {
+            snapshot.deleteItems(current)
+        }
+        Haptics.soft(0.5)
+        let header = collection.cellForItem(at: headerPath) as? SubscriptionCell
+        var arriving: [UICollectionViewCell] = []
+        let reduce = UIAccessibility.isReduceMotionEnabled
+        UIView.animate(withDuration: reduce ? 0.2 : (opening ? 0.5 : 0.62), delay: 0, usingSpringWithDamping: 1, initialSpringVelocity: 0,
+                       options: [.allowUserInteraction, .beginFromCurrentState]) {
+            header?.set(open: opening, animated: false)
+            for item in leaving { item.cell.maskView?.frame.origin.y = item.target }
+            // The layout reads `expanded` again for this update: the container's
+            // bottom inset and frame change inside this same animation.
+            self.source.apply(snapshot, animatingDifferences: true)
+            guard opening else { return }
+            let added = snapshot.itemIdentifiers(inSection: id).filter { if case .node = $0 { return true }; return false }
+            guard let lastPath = added.last.flatMap({ self.source.indexPath(for: $0) }),
+                  let last = self.collection.layoutAttributesForItem(at: lastPath) else { return }
+            let extent = last.frame.maxY + 8 - headerBottom
+            for item in added {
+                guard let path = self.source.indexPath(for: item), let cell = self.collection.cellForItem(at: path),
+                      let attributes = self.collection.layoutAttributesForItem(at: path) else { continue }
+                let top = attributes.frame.minY
+                UIView.performWithoutAnimation {
+                    cell.maskView = Self.revealMask(width: attributes.frame.width, edge: headerBottom - top)
+                }
+                cell.maskView?.frame.origin.y = Self.maskOrigin(edge: headerBottom + extent - top)
+                arriving.append(cell)
+            }
+        } completion: { _ in
+            for cell in arriving + leaving.map(\.cell) { cell.maskView = nil }
+        }
+    }
+
+    /// Height of a reveal mask: taller than any card, so only its bottom edge shows.
+    private static let maskHeight: CGFloat = 4000
+
+    /// A mask whose bottom edge is `edge` points below the top of the cell.
+    private static func revealMask(width: CGFloat, edge: CGFloat) -> UIView {
+        let mask = UIView(frame: CGRect(x: -40, y: maskOrigin(edge: edge), width: width + 80, height: maskHeight))
+        mask.backgroundColor = .black
+        return mask
+    }
+
+    private static func maskOrigin(edge: CGFloat) -> CGFloat { edge - maskHeight }
 
     // MARK: Row actions
 
