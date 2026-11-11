@@ -508,7 +508,7 @@ final class MinimalServersViewController: UIViewController, UICollectionViewDele
         guard let path = collection.indexPathForItem(at: point), let item = source.itemIdentifier(for: path) else { return }
         let cell = collection.cellForItem(at: path)
         cell?.contentView.backgroundColor = UIColor.label.withAlphaComponent(0.07)
-        let clear = { cell?.contentView.backgroundColor = .clear }
+        let clear: () -> Void = { cell?.contentView.backgroundColor = .clear }
         let pinKey: String
         var items: [HoldMenuItem]
         let title: String

@@ -17,8 +17,14 @@ struct FormSection {
     var rows: [FormRow]
     var footer: String?
 
-    init(_ header: String? = nil, footer: String? = nil, _ rows: [FormRow]) {
+    init(_ header: String, footer: String? = nil, _ rows: [FormRow]) {
         self.header = header
+        self.rows = rows
+        self.footer = footer
+    }
+
+    init(footer: String? = nil, _ rows: [FormRow]) {
+        header = nil
         self.rows = rows
         self.footer = footer
     }

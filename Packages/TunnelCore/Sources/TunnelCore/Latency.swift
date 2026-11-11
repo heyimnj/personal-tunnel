@@ -131,7 +131,7 @@ public actor LatencyRunner {
     }
 
     /// Guarantees an answer: a probe that hangs counts as a timeout.
-    static func deadline(seconds: TimeInterval, _ work: @escaping @Sendable () async -> ProbeResult) async -> ProbeResult {
+    public static func deadline(seconds: TimeInterval, _ work: @escaping @Sendable () async -> ProbeResult) async -> ProbeResult {
         await withTaskGroup(of: ProbeResult?.self) { group in
             group.addTask { await work() }
             group.addTask {
