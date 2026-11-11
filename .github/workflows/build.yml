@@ -30,10 +30,10 @@ jobs:
       - name: Тесты TunnelCore и образцы конфигураций
         run: |
           set -euo pipefail
-          docker run --rm -v "$PWD":/work -w /work swift:6.1 bash -c '
+          docker run --rm -e ROOT="$PWD" -v "$PWD":"$PWD" -w "$PWD" swift:6.1 bash -c '
             set -euo pipefail
             swift test --package-path Packages/TunnelCore 2>&1 | tail -40
-            swift run --package-path Packages/TunnelCore tunnelcore-fixtures build/fixtures /work/PacketTunnel/Rules
+            swift run --package-path Packages/TunnelCore tunnelcore-fixtures build/fixtures "$ROOT/PacketTunnel/Rules"
           '
           sudo chown -R "$(id -u):$(id -g)" build Packages/TunnelCore/.build
 
