@@ -103,3 +103,32 @@ final class ServerInspectionTests: XCTestCase {
         XCTAssertEqual(details["uTLS"], "chrome")
     }
 }
+
+final class SubscriptionMergeTests: XCTestCase {
+    func testOnlyServersTheFirstAnswerLacksAreAdded() throws {
+        let base = [try ShareLink.parse("vless://11111111-2222-3333-4444-555555555555@a.example:443?security=tls&type=ws#A")]
+        let extra = [
+            try ShareLink.parse("vless://11111111-2222-3333-4444-555555555555@a.example:443?security=tls&type=ws#A again"),
+            try ShareLink.parse("hysteria2://pass@b.example:443#B"),
+            try ShareLink.parse("trojan://pw@a.example:8443#Other port"),
+        ]
+        let added = SubscriptionMerge.missing(from: extra, in: base)
+        XCTAssertEqual(added.map(\.name), ["B", "Other port"])
+    }
+}
+
+final class HideServersTests: XCTestCase {
+    func testServerNamesAndTheirAddressesGo() {
+        let text = """
+        DEBUG [0011] dns: cached A connect.example.online. 84 IN A 31.77.217.124
+        INFO [0011] outbound/vless[США]: outbound connection to 17.253.53.146:443
+        DEBUG [0016] outbound/urltest[auto]: dial tcp 188.225.34.92:443 via 188.225.34.92.example.online
+        """
+        let hidden = Redactor.hideServers(text, hosts: ["connect.example.online", "188.225.34.92.example.online"])
+        XCTAssertFalse(hidden.contains("example.online"))
+        XCTAssertFalse(hidden.contains("31.77.217.124"))
+        XCTAssertFalse(hidden.contains("188.225.34.92"))
+        // Other sites' addresses stay: they are not the user's servers.
+        XCTAssertTrue(hidden.contains("17.253.53.146"))
+    }
+}

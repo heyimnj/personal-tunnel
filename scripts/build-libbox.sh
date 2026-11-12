@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # Собирает библиотеки ядра для iOS. Закрепы — в core/VERSION.
 #
-#   build-libbox.sh tunnel   Libbox.xcframework для расширения: только sing-box, Go TUNNEL_GO_VERSION
-#                            (как в 2.0.4). С TUNNEL_CORE=combined — общая библиотека, как у приложения
+#   build-libbox.sh tunnel   Libbox.xcframework для расширения: по умолчанию общая библиотека (TUNNEL_CORE=combined);
+#                            с TUNNEL_CORE=singbox — только sing-box на Go TUNNEL_GO_VERSION, как в 2.0.4
 #                            (для сравнения на устройстве).
 #   build-libbox.sh app      AppCore.xcframework для приложения: libbox + core/bridge + Xray-core, Go GO_VERSION.
 #
@@ -12,7 +12,7 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 # shellcheck source=scripts/core-env.sh
 source "$ROOT/scripts/core-env.sh"
 WHAT="${1:?usage: build-libbox.sh tunnel|app}"
-TUNNEL_CORE="${TUNNEL_CORE:-singbox}"
+TUNNEL_CORE="${TUNNEL_CORE:-combined}"
 fetch_core
 
 export PATH="$PATH:$(go env GOPATH)/bin"

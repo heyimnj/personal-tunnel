@@ -239,7 +239,7 @@ final class ServiceLogViewController: UIViewController, UITableViewDataSource, U
             let events = TunnelEvents.read(TunnelEvents.file(paths))
             if !events.isEmpty { text += ["", L("Расширение:")] + events }
         }
-        UIPasteboard.general.string = Redactor.redact(text.joined(separator: "\n"))
+        UIPasteboard.general.string = Redactor.hideServers(Redactor.redact(text.joined(separator: "\n")), hosts: App.shared.library.serverHosts)
         Haptics.result(true)
         App.shared.notice.value = Lf("Скопировано строк: %@.", "\(App.shared.core.logs.count)")
     }

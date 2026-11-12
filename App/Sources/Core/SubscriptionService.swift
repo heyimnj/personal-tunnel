@@ -14,6 +14,8 @@ enum SubscriptionService {
         var format: String
         var agent: String
         var issues: [ImportIssue]
+        /// Servers only the plain list had (see `SubscriptionMerge`).
+        var added = 0
     }
 
     private static let userAgents = ["Happ/3.13.0", "PersonalTunnel/2.0"]
@@ -45,8 +47,15 @@ enum SubscriptionService {
                 var info = SubscriptionInfo()
                 let title = SubscriptionHeaders.parse(headers, into: &info)
                 let result = try ContentImporter.parse(String(decoding: data, as: UTF8.self))
-                return Fetched(nodes: NodeAssembler.assemble(result.nodes), title: title, info: info, summary: result.summary,
-                               format: result.format.rawValue, agent: agent, issues: result.issues)
+                var nodes = result.nodes
+                var added = 0
+                if result.format == .xray, agent != userAgents.last, let plain = await plainList(url) {
+                    let extra = SubscriptionMerge.missing(from: plain, in: nodes)
+                    nodes += extra
+                    added = extra.count
+                }
+                return Fetched(nodes: NodeAssembler.assemble(nodes), title: title, info: info, summary: result.summary,
+                               format: result.format.rawValue, agent: agent, issues: result.issues, added: added)
             } catch let error as URLError {
                 // The network did not get through: another client name will not help,
                 // and would only add another wait.
@@ -56,5 +65,17 @@ enum SubscriptionService {
             }
         }
         throw lastError
+    }
+
+    /// The same subscription as a plain client sees it (no Happ identity): some
+    /// panels leave servers out of the Xray JSON they give Happ.
+    private static func plainList(_ url: URL) async -> [ParsedNode]? {
+        var request = URLRequest(url: url, cachePolicy: .reloadIgnoringLocalCacheData, timeoutInterval: 20)
+        request.setValue(userAgents.last, forHTTPHeaderField: "User-Agent")
+        request.setValue("text/plain, application/json, */*", forHTTPHeaderField: "Accept")
+        guard let (data, response) = try? await URLSession.shared.data(for: request),
+              let http = response as? HTTPURLResponse, (200 ..< 300).contains(http.statusCode),
+              let result = try? ContentImporter.parse(String(decoding: data, as: UTF8.self)) else { return nil }
+        return result.nodes
     }
 }

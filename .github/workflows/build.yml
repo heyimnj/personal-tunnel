@@ -85,8 +85,9 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # singbox — расширение на ядре 2.0.4; combined — на общей библиотеке, как в бете 1 (сравнение).
-        tunnel_core: [singbox, combined]
+        # combined — расширение на общей библиотеке sing-box + Xray-core (основа с 3.0.1);
+        # singbox — только sing-box, как в 2.0.4: вернуть в список для сравнения на устройстве.
+        tunnel_core: [combined]
     env:
       TUNNEL_CORE: ${{ matrix.tunnel_core }}
     steps:

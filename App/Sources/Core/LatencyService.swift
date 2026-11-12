@@ -13,6 +13,7 @@ struct NetworkProbes: LatencyProbes {
     var avoidTunnel = false
     /// Receives why a direct connect failed, for the service log.
     var report: (@Sendable (String) -> Void)?
+    let samples = FailureSamples()
 
     func tcp(host: String, port: Int, timeout: TimeInterval) async -> ProbeResult {
         await tcp(host: host, port: port, timeout: timeout, label: nil)
@@ -142,7 +143,8 @@ struct NetworkProbes: LatencyProbes {
     }
 
     func url(tag: String, link: String, timeoutMs: Int) async -> ProbeResult {
-        await withCheckedContinuation { continuation in
+        let report = report, samples = samples
+        return await withCheckedContinuation { continuation in
             NetworkProbes.blocking.async {
                 guard let client = LibboxNewStandaloneCommandClient() else {
                     continuation.resume(returning: .failed(.other))
@@ -153,9 +155,11 @@ struct NetworkProbes: LatencyProbes {
                     if result.error.isEmpty {
                         continuation.resume(returning: .delay(max(1, Int(result.delay))))
                     } else {
+                        if samples.take() { report?(Lf("URL-тест «%@» через туннель: %@", tag, Redactor.redact(result.error))) }
                         continuation.resume(returning: .failed(ProbeFailure.classify(result.error)))
                     }
                 } catch {
+                    if samples.take() { report?(Lf("URL-тест «%@» через туннель: %@", tag, Redactor.redact(error.localizedDescription))) }
                     continuation.resume(returning: .failed(ProbeFailure.classify(error.localizedDescription)))
                 }
             }
@@ -171,6 +175,9 @@ final class LocalCoreProbes: LatencyProbes, @unchecked Sendable {
     private static let blocking = DispatchQueue(label: "personaltunnel.local-core", qos: .utility, attributes: .concurrent)
     private let lock = NSLock()
     private var probers: [Int64: PtbridgeProber]
+    /// Receives the core's own words for the first few failures of a run.
+    var report: ((String) -> Void)?
+    private let samples = FailureSamples()
 
     private init(probers: [Int64: PtbridgeProber]) { self.probers = probers }
 
@@ -225,10 +232,25 @@ final class LocalCoreProbes: LatencyProbes, @unchecked Sendable {
                 if result.error.isEmpty {
                     continuation.resume(returning: .delay(max(1, Int(result.delay))))
                 } else {
+                    if self.samples.take() { self.report?(Lf("URL-тест «%@» ядром приложения: %@", inner, Redactor.redact(result.error))) }
                     continuation.resume(returning: .failed(ProbeFailure.classify(result.error)))
                 }
             }
         }
+    }
+}
+
+/// The first three failures of a run, so the log says why without filling up.
+final class FailureSamples: @unchecked Sendable {
+    private let lock = NSLock()
+    private var left = 3
+
+    func take() -> Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        guard left > 0 else { return false }
+        left -= 1
+        return true
     }
 }
 
@@ -330,9 +352,10 @@ final class LatencyService {
                 directSubscriptions[item.subscription.id] = item.subscription
             }
         }
-        // Without the VPN the app's own core URL-tests the servers; with it, the
-        // servers outside the tunnel keep the TCP connect around it.
-        let useLocalCore = !tunnelUp && !direct.isEmpty
+        // Servers outside the tunnel: the app's own core URL-tests them. With the VPN
+        // on its connections go through the tunnel (a connect around it found no route
+        // on the device), so their delay includes the tunnel's.
+        let useLocalCore = !direct.isEmpty
         let options = Prefs.tunnelOptions
         let toStart = Array(directSubscriptions.values)
         let names = directSubscriptions.mapValues(\.name)
@@ -362,7 +385,11 @@ final class LatencyService {
                     self.changed.value = keys
                 }
             }
-            if !live.isEmpty { await runner.run(live, mode: mode, tunnel: true) { await deliver($0, liveID) } }
+            // The tunnel's own servers: the URL test through the extension, without the
+            // TCP prefilter (a connect around the tunnel finds no route on iOS 27).
+            var liveMode = mode
+            liveMode.tcpFilter = false
+            if !live.isEmpty { await runner.run(live, mode: liveMode, tunnel: true) { await deliver($0, liveID) } }
             if useLocalCore, !Task.isCancelled {
                 let started = await Task.detached(priority: .utility) { LocalCoreProbes.start(toStart, options: options) }.value
                 await MainActor.run { self?.local = started.probes }
@@ -372,6 +399,7 @@ final class LatencyService {
                 let fallback = direct.filter { target in started.failed.keys.contains { target.tag.hasPrefix("\($0):") } }
                 let measured = direct.filter { target in !started.failed.keys.contains { target.tag.hasPrefix("\($0):") } }
                 if !measured.isEmpty, !Task.isCancelled {
+                    started.probes.report = { log(3, $0) }
                     let core = LatencyRunner(probes: started.probes)
                     await core.run(measured, mode: LatencyMode.localCore(link: mode.link), tunnel: true) { await deliver($0, nil) }
                 }

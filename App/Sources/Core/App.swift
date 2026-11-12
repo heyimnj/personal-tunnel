@@ -187,6 +187,9 @@ final class App {
     /// (names only: never addresses or keys).
     private func logImport(_ fetched: SubscriptionService.Fetched, name: String) {
         core.note(Redactor.redact(Lf("Подписка «%@»: %@ (User-Agent %@), серверов %@, пропущено %@.", name, fetched.format, fetched.agent, "\(fetched.nodes.count)", "\(fetched.issues.count)")), level: 4)
+        if fetched.added > 0 {
+            core.note(Lf("Подписка «%@»: ещё %@ серверов есть только в обычном списке ссылок — добавлены.", name, "\(fetched.added)"), level: 4)
+        }
         for issue in fetched.issues {
             core.note(Redactor.redact(Lf("Пропущен «%@»: %@", issue.name, issue.reason)), level: 3)
         }

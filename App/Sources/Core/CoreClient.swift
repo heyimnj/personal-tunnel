@@ -83,6 +83,12 @@ final class CoreClient {
         logsChanged.fire()
     }
 
+    /// The core clears its log when it restarts; the app's own lines stay.
+    fileprivate func clearCoreLines() {
+        logs.removeAll { !$0.text.hasPrefix("[app]") }
+        logsChanged.fire()
+    }
+
     /// Connection list and log are streamed only while a screen needs them.
     func setDetails(_ enabled: Bool) {
         guard wantsDetails != enabled else { return }
@@ -178,7 +184,7 @@ final class CoreClient {
         func setDefaultLogLevel(_: Int32) {}
 
         func clearLogs() {
-            owner?.receive(token) { $0.clearLogs() }
+            owner?.receive(token) { $0.clearCoreLines() }
         }
 
         func writeLogs(_ messageList: (any LibboxLogIteratorProtocol)?) {

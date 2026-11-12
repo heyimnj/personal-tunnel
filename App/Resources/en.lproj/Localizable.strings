@@ -180,7 +180,6 @@
 "Обход российских сайтов" = "Bypass Russian sites";
 "Определяем…" = "Detecting…";
 "Основной" = "Primary";
-"Основной: сначала TCP-проверка доступности сервера (1,5 с), затем generate_204 через каждый ответивший узел (3 с), до 20 одновременно; UDP-протоколы сразу проходят URL-тест. Без VPN серверы проверяет ядро приложения: generate_204 через каждый сервер (3 с), до 10 одновременно. Результаты хранятся 2,5 минуты, при открытии списка проверяются только устаревшие." = "Primary: first a TCP check that the server is reachable (1.5 s), then generate_204 through every server that answered (3 s), up to 20 at once; UDP protocols go straight to the URL test. Without VPN the app's core checks the servers: generate_204 through each server (3 s), up to 10 at once. Results are kept for 2.5 minutes; opening the list checks only the outdated ones.";
 "Остановить проверку" = "Stop the test";
 "Ответ за %@ мс через «%@»" = "Response in %@ ms through “%@”";
 "Отдача" = "Upload";
@@ -429,3 +428,7 @@
 "Плюс HaGeZi Light: около 88 000 доменов рекламы, трекеров и телеметрии. Практически без ложных блокировок." = "Plus HaGeZi Light: about 88,000 ad, tracker and telemetry domains. Practically no false blocks.";
 "Плюс HaGeZi Normal: около 208 000 доменов. Блокирует больше, изредка может задеть нужный сайт; занимает больше памяти туннеля." = "Plus HaGeZi Normal: about 208,000 domains. Blocks more, may now and then catch a needed site; takes more of the tunnel's memory.";
 "Запросы к рекламным и следящим серверам отклоняются в трафике VPN раньше остальных правил: DNS отвечает 0.0.0.0, соединения по имени сервера (SNI) закрываются. Реклама, которая приходит с домена самого сервиса (YouTube, Spotify), так не убирается. Изменения применяются к работающему туннелю." = "Requests to ad and tracking servers are refused in the VPN's traffic before any other rule: DNS answers 0.0.0.0, connections are closed by server name (SNI). Ads served from the service's own domain (YouTube, Spotify) are not removed this way. Changes apply to the running tunnel.";
+"Основной: generate_204 через каждый узел подключённой подписки (3 с), до 20 одновременно. Серверы остальных подписок и все серверы без VPN проверяет ядро приложения: generate_204 через каждый сервер (3 с), до 10 одновременно; с VPN их задержка включает туннель. Результаты хранятся 2,5 минуты, при открытии списка проверяются только устаревшие." = "Primary: generate_204 through every server of the connected subscription (3 s), up to 20 at once. Servers of other subscriptions, and every server without VPN, are checked by the app's core: generate_204 through each server (3 s), up to 10 at once; with VPN their delay includes the tunnel. Results are kept for 2.5 minutes; opening the list checks only the outdated ones.";
+"URL-тест «%@» ядром приложения: %@" = "URL test “%@” by the app's core: %@";
+"URL-тест «%@» через туннель: %@" = "URL test “%@” through the tunnel: %@";
+"Подписка «%@»: ещё %@ серверов есть только в обычном списке ссылок — добавлены." = "Subscription “%@”: %@ more servers are only in the plain list of links — added.";

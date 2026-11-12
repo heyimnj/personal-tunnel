@@ -24,3 +24,27 @@ public enum Redactor {
         return result
     }
 }
+
+public extension Redactor {
+    private static let ipAddress = try! NSRegularExpression(pattern: #"\b(?:\d{1,3}\.){3}\d{1,3}\b|\b[0-9a-fA-F]{1,4}(?::[0-9a-fA-F]{0,4}){2,7}\b"#)
+
+    /// Hides the user's own servers in a text that leaves the app: their names
+    /// become `<сервер>`, and a line that named one loses its IP addresses too
+    /// (the core logs what a server's name resolved to).
+    static func hideServers(_ text: String, hosts: Set<String>) -> String {
+        let names = hosts.filter { $0.count > 3 }.sorted { $0.count > $1.count }
+        guard !names.isEmpty else { return text }
+        return text.split(separator: "\n", omittingEmptySubsequences: false).map { line -> String in
+            var line = String(line)
+            var named = false
+            for name in names where line.range(of: name, options: .caseInsensitive) != nil {
+                line = line.replacingOccurrences(of: name, with: "<сервер>", options: .caseInsensitive)
+                named = true
+            }
+            if named {
+                line = ipAddress.stringByReplacingMatches(in: line, range: NSRange(line.startIndex..., in: line), withTemplate: "<адрес>")
+            }
+            return line
+        }.joined(separator: "\n")
+    }
+}

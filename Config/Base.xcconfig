@@ -8,8 +8,8 @@ BETA_NUMBER = 1
 // профиля: CI передаёт APP_GROUP_IDENTIFIER=... в xcodebuild.
 APP_GROUP_IDENTIFIER = group.com.personaltunnelapp
 
-// Ядро расширения: singbox (как в 2.0.4) или combined (как в бете 1, для сравнения). Подставляет CI.
-TUNNEL_CORE = singbox
+// Ядро расширения: combined (sing-box + Xray-core, по умолчанию с 3.0.1) или singbox (только sing-box, как в 2.0.4).
+TUNNEL_CORE = combined
 
 // Коммит, из которого собран IPA; подставляет CI.
 PERSONAL_SOURCE_COMMIT =
