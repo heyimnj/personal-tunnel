@@ -138,7 +138,7 @@ final class CoreClient {
         guard !logsPaused else { return }
         for (level, text) in entries {
             logCounter += 1
-            logs.append(LogLine(id: logCounter, level: level, text: Redactor.redact(text)))
+            logs.append(LogLine(id: logCounter, level: level, text: Redactor.redact(LogText.clean(text))))
         }
         if logs.count > 1500 { logs.removeFirst(logs.count - 1500) }
         logsChanged.fire()

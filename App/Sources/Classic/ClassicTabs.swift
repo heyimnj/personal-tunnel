@@ -408,9 +408,10 @@ final class ClassicSettingsViewController: ClassicPage {
             option(L("Классика"), selected: Prefs.pingMode == "classic") { [weak self] in Prefs.pingMode = "classic"; self?.rebuild() },
             option(L("Альтернативный"), selected: Prefs.pingMode == "alternative") { [weak self] in Prefs.pingMode = "alternative"; self?.rebuild() },
             Classic.body(L("Тест только показывает задержку и не меняет выбранный сервер. Его можно остановить в любой момент."), 12, .regular, .secondaryLabel, lines: 0),
+        ] + (Prefs.autoPingAvailable ? [
             toggle(L("Автопинг"), Prefs.autoPing) { Prefs.autoPing = $0 },
             Classic.body(L("Задержка серверов проверяется сама при открытии приложения и после обновления подписки."), 12, .regular, .secondaryLabel, lines: 0),
-        ]))
+        ] as [UIView] : [])))
         content.addArrangedSubview(section(L("ПОДКЛЮЧЕНИЕ"), [
             toggle(L("Автоподключение"), Prefs.autoConnect) { Prefs.autoConnect = $0; App.shared.tunnel.applySettings() },
             toggle(L("Неизвестные Wi-Fi"), Prefs.unknownWiFi) { Prefs.unknownWiFi = $0; App.shared.tunnel.applySettings() },

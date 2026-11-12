@@ -125,9 +125,13 @@ enum Prefs {
         set { defaults.set(newValue, forKey: "personal.pingMode") }
     }
 
+    /// «Автопинг» is switched off for now (owner, 3.0.1): no switch in the settings and
+    /// no automatic test. Set to true to bring both back.
+    static let autoPingAvailable = false
+
     /// Servers are measured on their own when the app opens and after a subscription update.
     static var autoPing: Bool {
-        get { bool("pt.autoPing", true) }
+        get { autoPingAvailable && bool("pt.autoPing", true) }
         set { defaults.set(newValue, forKey: "pt.autoPing") }
     }
 

@@ -107,8 +107,10 @@ final class NetworkSettingsViewController: FormViewController {
             FormSection(L("Измерение задержки"), [
                 .picker(title: L("Режим пинга"), options: [("primary", L("Основной")), ("classic", L("Классика")), ("alternative", L("Альтернативный"))], get: { Prefs.pingMode }, set: { Prefs.pingMode = $0 }),
                 .note(modeNote),
+            ] + (Prefs.autoPingAvailable ? [
                 .toggle(title: L("Автопинг"), get: { Prefs.autoPing }, set: { Prefs.autoPing = $0 }),
                 .note(L("Задержка серверов проверяется сама при открытии приложения и после обновления подписки.")),
+            ] : []) + [
                 .note(L("Тест только показывает задержку и не меняет выбранный сервер. Его можно остановить в любой момент.")),
             ]),
             FormSection(L("Подключение"), [

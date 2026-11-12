@@ -74,3 +74,13 @@ final class MiscTests: XCTestCase {
         XCTAssertEqual(LegacyMigration.decodeInt(Data([1])), -1)
     }
 }
+
+final class LogTextTests: XCTestCase {
+    func testColourCodesAndLevelGo() {
+        XCTAssertEqual(LogText.clean("[31mERROR[0m[0031] [[38;5;134m2639462006[0m 15.12s] connection: open connection to 1.2.3.4:443 using outbound/vless[A]: context deadline exceeded"),
+                       "[0031] [2639462006 15.12s] connection: open connection to 1.2.3.4:443 using outbound/vless[A]: context deadline exceeded")
+        XCTAssertEqual(LogText.clean("\u{1B}[36mINFO\u{1B}[0m[0029] inbound/tun[tun-in]: inbound DNS packet"), "[0029] inbound/tun[tun-in]: inbound DNS packet")
+        XCTAssertEqual(LogText.clean("[app] Подписка «A»: Xray JSON"), "[app] Подписка «A»: Xray JSON")
+        XCTAssertEqual(LogText.clean("[mem] занято 21.4 МиБ"), "[mem] занято 21.4 МиБ")
+    }
+}

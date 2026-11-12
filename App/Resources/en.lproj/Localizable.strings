@@ -391,3 +391,8 @@
 "Ядро:" = "Core:";
 "Последние события расширения:" = "The extension's last events:";
 "Ядро туннеля" = "Tunnel core";
+"ядро туннеля" = "tunnel core";
+"Расширение:" = "Extension:";
+"Скопировано строк: %@." = "Lines copied: %@.";
+"Память расширения (%@): %@" = "Extension memory (%@): %@";
+"Память расширения: ещё не измерялась" = "Extension memory: not measured yet";

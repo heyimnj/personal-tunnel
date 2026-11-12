@@ -10,6 +10,7 @@ final class DiagnosticsViewController: UIViewController {
     private let proxyDetail = UILabel(font: Theme.font(14), color: .secondaryLabel, lines: 0)
     private let internet = UILabel(font: Theme.font(20, .semibold), lines: 0)
     private let internetDetail = UILabel(font: Theme.font(14), color: .secondaryLabel, lines: 0)
+    private let memory = UILabel(font: Theme.font(14), color: .secondaryLabel, lines: 0)
     private var proxyResult = L("Не проверено")
     private var internetResult = L("Не проверено")
     private var proxyPassed = false
@@ -37,7 +38,7 @@ final class DiagnosticsViewController: UIViewController {
             UILabel(L("СИСТЕМА"), font: Theme.font(11, .medium), color: .secondaryLabel),
             UILabel(L("Диагностика"), font: Theme.font(26, .bold)),
             note(L("Результаты измерений, а не состояние переключателя")),
-            tunnel, proxy, proxyDetail, internet, internetDetail,
+            tunnel, proxy, proxyDetail, internet, internetDetail, memory,
             note(L("При раздельной маршрутизации успешный системный запрос не доказывает работу прокси. DNS-утечки этой проверкой не измеряются.")),
             action(L("Проверить соединение"), #selector(check)),
             note(L("Проверка обращается к www.gstatic.com/generate_204: через выбранный outbound и через системный маршрут; таймаут до 8 секунд.")),
@@ -66,6 +67,13 @@ final class DiagnosticsViewController: UIViewController {
         proxyDetail.text = proxyResult
         internet.text = L("Интернет · системный маршрут: ") + (internetPassed ? L("проверено") : internetResult)
         internetDetail.text = internetResult
+        // The extension's last memory sample: kept in the group even when the log is not.
+        if let sample = MemorySample.decode(AppGroup.defaults.data(forKey: SharedKey.tunnelMemory)) {
+            let time = DateFormatter.localizedString(from: sample.date, dateStyle: .short, timeStyle: .medium)
+            memory.text = Lf("Память расширения (%@): %@", time, sample.line)
+        } else {
+            memory.text = L("Память расширения: ещё не измерялась")
+        }
     }
 
     @objc private func check() {
@@ -113,6 +121,7 @@ final class DiagnosticsViewController: UIViewController {
         let report = [
             "Personal Tunnel \(AboutViewController.version)", tunnel.text ?? "", Lf("Прокси: %@", "\(proxyResult)"), Lf("Интернет: %@", "\(internetResult)"),
             Lf("Протокол: %@", "\(library.activeNode?.facts.summary ?? "—")"), Lf("Режим пинга: %@", "\(Prefs.pingMode)"),
+            L("Ядро туннеля") + ": " + CoreInfo.tunnelCore, memory.text ?? "",
         ].joined(separator: "\n")
         UIPasteboard.general.string = Redactor.redact(report)
         Haptics.result(true)
@@ -166,7 +175,7 @@ final class ServiceLogViewController: UIViewController, UITableViewDataSource, U
                 } + [UIAction(title: L("Очистить журнал"), attributes: .destructive) { _ in App.shared.core.clearLogs() }])
             },
         ])
-        let bar = UIStackView(.horizontal, spacing: 12, alignment: .center, [dot, live, UIView(), tool("magnifyingglass", #selector(toggleSearch)), pause, filter])
+        let bar = UIStackView(.horizontal, spacing: 12, alignment: .center, [dot, live, UIView(), tool("doc.on.doc", #selector(copyAll)), tool("magnifyingglass", #selector(toggleSearch)), pause, filter])
         let panel = UIView()
         panel.backgroundColor = FormViewController.cellColor
         panel.layer.cornerRadius = 28
@@ -215,6 +224,24 @@ final class ServiceLogViewController: UIViewController, UITableViewDataSource, U
         let running = App.shared.tunnel.state.value.isOn
         state.text = !running ? "STOPPED" : (App.shared.core.logsPaused ? "PAUSED" : "STREAMING")
         live.text = running && !App.shared.core.logsPaused ? "LIVE" : "PAUSE"
+    }
+
+    /// Every line of the log, and the extension's own short log (memory, starts,
+    /// stops), which outlives the extension. Addresses and keys are removed.
+    @objc private func copyAll() {
+        let levels = ServiceLogViewController.levels
+        var text = ["Personal Tunnel \(AboutViewController.version), " + L("ядро туннеля") + ": \(CoreInfo.tunnelCore)", ""]
+        text += App.shared.core.logs.map { line in
+            let level = levels.indices.contains(Int(line.level)) ? levels[Int(line.level)] : "LOG"
+            return "\(level) \(line.text)"
+        }
+        if let paths = App.shared.paths {
+            let events = TunnelEvents.read(TunnelEvents.file(paths))
+            if !events.isEmpty { text += ["", L("Расширение:")] + events }
+        }
+        UIPasteboard.general.string = Redactor.redact(text.joined(separator: "\n"))
+        Haptics.result(true)
+        App.shared.notice.value = Lf("Скопировано строк: %@.", "\(App.shared.core.logs.count)")
     }
 
     @objc private func togglePause() {

@@ -192,7 +192,7 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
         let available = Double(os_proc_available_memory()) / mib
         let sample = MemorySample(used: used, peak: memoryPeak, available: available)
         AppGroup.defaults.set(sample.encoded(), forKey: SharedKey.tunnelMemory)
-        commandServer?.writeMessage(2, message: sample.line)
+        commandServer?.writeMessage(4, message: sample.line)
         event(sample.line)
     }
 
