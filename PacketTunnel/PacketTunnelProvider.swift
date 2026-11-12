@@ -30,7 +30,9 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
                 try self.start(options: options)
                 defaults.removeObject(forKey: SharedKey.lastTunnelError)
                 defaults.set(Date().timeIntervalSince1970, forKey: SharedKey.tunnelStartedAt)
-                self.event("запуск")
+                let core = Bundle.main.object(forInfoDictionaryKey: "PersonalTunnelCore") as? String ?? "?"
+                self.event("запуск, ядро \(core)")
+                self.log("ядро расширения: \(core)")
                 self.startMemoryLog()
                 completionHandler(nil)
             } catch {

@@ -1,5 +1,5 @@
 import Foundation
-import Libbox
+import AppCore
 import TunnelCore
 
 struct CoreStatus: Equatable {

@@ -550,6 +550,7 @@ final class AboutViewController: FormViewController {
             .value(title: L("Версия"), detail: { AboutViewController.version }),
             .value(title: L("Ядро"), detail: { CoreInfo.version }),
             .value(title: "Xray-core", detail: { CoreInfo.xrayVersion }),
+            .value(title: L("Ядро туннеля"), detail: { CoreInfo.tunnelCore }),
             .value(title: L("Коммит"), detail: { (Bundle.main.object(forInfoDictionaryKey: "PersonalSourceCommit") as? String).flatMap { $0.isEmpty ? nil : $0 } ?? "—" }),
             .value(title: L("Группа"), detail: { AppGroup.identifier }),
         ])]

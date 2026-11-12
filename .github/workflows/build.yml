@@ -79,9 +79,16 @@ jobs:
           exit $failed
 
   ios:
-    name: Неподписанный IPA
+    name: Неподписанный IPA (ядро расширения ${{ matrix.tunnel_core }})
     runs-on: macos-26
     timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        # singbox — расширение на ядре 2.0.4; combined — на общей библиотеке, как в бете 1 (сравнение).
+        tunnel_core: [singbox, combined]
+    env:
+      TUNNEL_CORE: ${{ matrix.tunnel_core }}
     steps:
       - uses: actions/checkout@v4
 
@@ -98,29 +105,48 @@ jobs:
         id: pins
         run: echo "go=$(grep '^GO_VERSION=' core/VERSION | cut -d= -f2)" >> "$GITHUB_OUTPUT"
 
+      - name: Кэш AppCore
+        id: appcore
+        uses: actions/cache/restore@v4
+        with:
+          path: AppCore.xcframework
+          key: appcore-${{ runner.arch }}-${{ steps.xcode.outputs.stamp }}-${{ hashFiles('core/VERSION', 'core/bridge/**', 'scripts/build-libbox.sh', 'scripts/core-env.sh') }}
+
       - name: Кэш Libbox
         id: libbox
         uses: actions/cache/restore@v4
         with:
           path: Libbox.xcframework
-          key: libbox-${{ runner.arch }}-${{ steps.xcode.outputs.stamp }}-${{ hashFiles('core/VERSION', 'core/bridge/**', 'scripts/build-libbox.sh', 'scripts/core-env.sh') }}
+          key: libbox-${{ matrix.tunnel_core }}-${{ runner.arch }}-${{ steps.xcode.outputs.stamp }}-${{ hashFiles('core/VERSION', 'core/bridge/**', 'scripts/build-libbox.sh', 'scripts/core-env.sh') }}
 
       - uses: actions/setup-go@v5
-        if: steps.libbox.outputs.cache-hit != 'true'
+        if: steps.libbox.outputs.cache-hit != 'true' || steps.appcore.outputs.cache-hit != 'true'
         with:
           go-version: ${{ steps.pins.outputs.go }}
           cache: false
 
-      - name: Сборка Libbox
+      - name: Сборка AppCore (приложение)
+        if: steps.appcore.outputs.cache-hit != 'true'
+        run: bash scripts/build-libbox.sh app
+
+      - name: Сохранить AppCore
+        if: steps.appcore.outputs.cache-hit != 'true'
+        continue-on-error: true
+        uses: actions/cache/save@v4
+        with:
+          path: AppCore.xcframework
+          key: appcore-${{ runner.arch }}-${{ steps.xcode.outputs.stamp }}-${{ hashFiles('core/VERSION', 'core/bridge/**', 'scripts/build-libbox.sh', 'scripts/core-env.sh') }}
+
+      - name: Сборка Libbox (расширение)
         if: steps.libbox.outputs.cache-hit != 'true'
-        run: bash scripts/build-libbox.sh
+        run: bash scripts/build-libbox.sh tunnel
 
       - name: Сохранить Libbox
         if: steps.libbox.outputs.cache-hit != 'true'
         uses: actions/cache/save@v4
         with:
           path: Libbox.xcframework
-          key: libbox-${{ runner.arch }}-${{ steps.xcode.outputs.stamp }}-${{ hashFiles('core/VERSION', 'core/bridge/**', 'scripts/build-libbox.sh', 'scripts/core-env.sh') }}
+          key: libbox-${{ matrix.tunnel_core }}-${{ runner.arch }}-${{ steps.xcode.outputs.stamp }}-${{ hashFiles('core/VERSION', 'core/bridge/**', 'scripts/build-libbox.sh', 'scripts/core-env.sh') }}
 
       - name: Проект Xcode
         run: |
@@ -139,6 +165,7 @@ jobs:
             -skipPackagePluginValidation -skipMacroValidation \
             CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY= \
             APP_GROUP_IDENTIFIER="$APP_GROUP_IDENTIFIER" \
+            TUNNEL_CORE="$TUNNEL_CORE" \
             PERSONAL_SOURCE_COMMIT="$(git rev-parse --short=12 HEAD)" \
             build > build/xcodebuild.log 2>&1
           status=$?
@@ -152,7 +179,7 @@ jobs:
           set -euo pipefail
           VERSION="$(grep '^MARKETING_VERSION' Config/Base.xcconfig | cut -d= -f2 | tr -d ' ')"
           BUILD="$(grep '^CURRENT_PROJECT_VERSION' Config/Base.xcconfig | cut -d= -f2 | tr -d ' ')"
-          NAME="PersonalTunnel-${VERSION//./_}-${BUILD}-unsigned.ipa"
+          NAME="PersonalTunnel-${VERSION//./_}-${BUILD}-tunnel-${TUNNEL_CORE}-unsigned.ipa"
           APP="build/DerivedData/Build/Products/Release-iphoneos/PersonalTunnel.app"
           test -d "$APP/PlugIns/PacketTunnel.appex"
           test -f "$APP/PlugIns/PacketTunnel.appex/Rules/ad-block.srs"
@@ -164,14 +191,14 @@ jobs:
           (cd build/ipa && /usr/bin/ditto -c -k --keepParent Payload "../$NAME")
           shasum -a 256 "build/$NAME" > build/SHA256SUMS
           git rev-parse HEAD > build/source-commit.txt
-          cp Libbox.xcframework/CORE.txt build/core.txt 2>/dev/null || cp core/VERSION build/core.txt
+          { echo "[tunnel]"; cat Libbox.xcframework/CORE.txt; echo "[app]"; cat AppCore.xcframework/CORE.txt; } > build/core.txt
           echo "name=$NAME" >> "$GITHUB_OUTPUT"
           ls -la build/*.ipa
 
       - name: Выложить IPA
         uses: actions/upload-artifact@v4
         with:
-          name: PersonalTunnel-unsigned-${{ github.run_number }}
+          name: PersonalTunnel-unsigned-${{ github.run_number }}-tunnel-${{ matrix.tunnel_core }}
           path: |
             build/${{ steps.package.outputs.name }}
             build/SHA256SUMS
@@ -185,7 +212,7 @@ jobs:
         continue-on-error: true
         uses: actions/upload-artifact@v4
         with:
-          name: build-log-${{ github.run_number }}
+          name: build-log-${{ github.run_number }}-${{ matrix.tunnel_core }}
           path: build/xcodebuild.log
           if-no-files-found: ignore
           retention-days: 7

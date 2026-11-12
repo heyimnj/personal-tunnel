@@ -1,5 +1,5 @@
 import Foundation
-import Libbox
+import AppCore
 import Network
 import Security
 import TunnelCore

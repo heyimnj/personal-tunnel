@@ -35,7 +35,8 @@ targets:
     dependencies:
       - target: PacketTunnel
       - package: TunnelCore
-      - framework: Libbox.xcframework
+      # Своя библиотека ядра у приложения: libbox + мост + Xray-core (проверка серверов без VPN).
+      - framework: AppCore.xcframework
         embed: false
       - sdk: libresolv.tbd
       - sdk: libsqlite3.tbd

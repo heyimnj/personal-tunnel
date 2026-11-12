@@ -1,14 +1,18 @@
 # Закреплённые ядра Personal Tunnel. Любое изменение здесь пересобирает Libbox в CI.
-# sing-box (туннель) и Xray-core собираются вместе с мостом core/bridge в одну библиотеку:
-# у двух фреймворков gomobile было бы два рантайма Go с одинаковыми символами.
+# Приложение: AppCore.xcframework — libbox + мост core/bridge + Xray-core одной библиотекой
+# (два фреймворка gomobile в одном процессе — два рантайма Go с одинаковыми символами).
+# Расширение: Libbox.xcframework — свой процесс, своя библиотека.
 SING_BOX_REMOTE=https://github.com/Leadaxe/sing-box-lx.git
 SING_BOX_TAG=v1.14.0-lx.36
 SING_BOX_COMMIT=cbcc7935f7230e67691155bd6f3da6a9cc2d3e0b
 XRAY_REMOTE=https://github.com/XTLS/Xray-core.git
 XRAY_TAG=v26.11.9
 XRAY_COMMIT=676eaf66f8f05d4d558ee7a74b4736623d3feeb9
-# Xray-core v26.9+ требует Go 1.27.
+# Xray-core v26.9+ требует Go 1.27: им собирается библиотека приложения (AppCore).
 GO_VERSION=1.27.4
+# Ядро расширения (Libbox) — только sing-box, тем же Go, что в 2.0.4: в бете 1 расширение
+# с общей библиотекой (Go 1.27 + Xray) перестало подключаться.
+TUNNEL_GO_VERSION=1.26.6
 GOMOBILE_VERSION=v0.1.12
 IOS_MIN_VERSION=15.0
 # Те же теги, что у 1.5.0: VLESS (Reality, Vision), VMess, Trojan, Shadowsocks, Hysteria/Hysteria2, TUIC,

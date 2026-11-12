@@ -1,6 +1,7 @@
 .DS_Store
 /build/
 /Libbox.xcframework/
+/AppCore.xcframework/
 /PersonalTunnel.xcodeproj/
 .build/
 *.xcuserstate

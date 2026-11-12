@@ -1,12 +1,15 @@
 // Версия Personal Tunnel. Номер сборки должен только расти: 1.5.0 была сборкой 179.
-MARKETING_VERSION = 3.0
-CURRENT_PROJECT_VERSION = 212
+MARKETING_VERSION = 3.0.1
+CURRENT_PROJECT_VERSION = 213
 // Номер беты: «3.0, beta 1 (212)» внизу настроек. Пусто у релизной сборки: «3.0 (212)».
 BETA_NUMBER = 1
 
 // App Group, общая для приложения и туннеля. Подписанной сборке нужна группа из её
 // профиля: CI передаёт APP_GROUP_IDENTIFIER=... в xcodebuild.
 APP_GROUP_IDENTIFIER = group.com.personaltunnelapp
+
+// Ядро расширения: singbox (как в 2.0.4) или combined (как в бете 1, для сравнения). Подставляет CI.
+TUNNEL_CORE = singbox
 
 // Коммит, из которого собран IPA; подставляет CI.
 PERSONAL_SOURCE_COMMIT =
