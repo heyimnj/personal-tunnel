@@ -18,7 +18,12 @@ enum SubscriptionService {
         var added = 0
     }
 
-    private static let userAgents = ["Happ/3.13.0", "PersonalTunnel/2.0"]
+    /// Panels pick the answer by the client's name: Incy gets the full Xray JSON
+    /// (Hysteria servers included, which some panels leave out for Happ), Happ the
+    /// next, a plain client the list of links. A panel's "unsupported client" stub
+    /// moves on to the next name.
+    private static let userAgents = ["INCY/2.7.2", "Happ/3.13.0", "PersonalTunnel/2.0"]
+    private static func sendsIdentity(_ agent: String) -> Bool { agent.hasPrefix("Happ/") || agent.hasPrefix("INCY/") }
 
     static func fetch(url text: String, sendIdentity: Bool) async throws -> Fetched {
         guard let url = URL(string: text.trimmingCharacters(in: .whitespacesAndNewlines)), let scheme = url.scheme?.lowercased(),
@@ -29,7 +34,7 @@ enum SubscriptionService {
             var request = URLRequest(url: url, cachePolicy: .reloadIgnoringLocalCacheData, timeoutInterval: 20)
             request.setValue(agent, forHTTPHeaderField: "User-Agent")
             request.setValue("text/plain, application/json, */*", forHTTPHeaderField: "Accept")
-            if sendIdentity, agent.hasPrefix("Happ/") {
+            if sendIdentity, sendsIdentity(agent) {
                 request.setValue(DeviceIdentity.hwid, forHTTPHeaderField: "X-HWID")
                 request.setValue("iOS", forHTTPHeaderField: "X-Device-OS")
                 request.setValue(UIDevice.current.systemVersion, forHTTPHeaderField: "X-Ver-OS")
@@ -47,6 +52,9 @@ enum SubscriptionService {
                 var info = SubscriptionInfo()
                 let title = SubscriptionHeaders.parse(headers, into: &info)
                 let result = try ContentImporter.parse(String(decoding: data, as: UTF8.self))
+                if SubscriptionStub.isStub(result.nodes.map(\.name)) {
+                    throw ImportError(Lf("Панель подписки не отдала серверы клиенту «%@»: %@", agent, result.nodes.map(\.name).joined(separator: " / ")))
+                }
                 var nodes = result.nodes
                 var added = 0
                 if result.format == .xray, agent != userAgents.last, let plain = await plainList(url) {
@@ -75,7 +83,8 @@ enum SubscriptionService {
         request.setValue("text/plain, application/json, */*", forHTTPHeaderField: "Accept")
         guard let (data, response) = try? await URLSession.shared.data(for: request),
               let http = response as? HTTPURLResponse, (200 ..< 300).contains(http.statusCode),
-              let result = try? ContentImporter.parse(String(decoding: data, as: UTF8.self)) else { return nil }
+              let result = try? ContentImporter.parse(String(decoding: data, as: UTF8.self)),
+              !SubscriptionStub.isStub(result.nodes.map(\.name)) else { return nil }
         return result.nodes
     }
 }

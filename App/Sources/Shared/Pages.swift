@@ -238,10 +238,38 @@ final class ServiceLogViewController: UIViewController, UITableViewDataSource, U
         if let paths = App.shared.paths {
             let events = TunnelEvents.read(TunnelEvents.file(paths))
             if !events.isEmpty { text += ["", L("Расширение:")] + events }
+            let xray = ServiceLogViewController.tail(paths.xrayLog, lines: 80)
+            if !xray.isEmpty { text += ["", "Xray-core:"] + xray }
+            if let crash = ServiceLogViewController.lastCrash(paths) { text += ["", L("Последнее падение ядра:")] + crash }
         }
         UIPasteboard.general.string = Redactor.hideServers(Redactor.redact(text.joined(separator: "\n")), hosts: App.shared.library.serverHosts)
         Haptics.result(true)
         App.shared.notice.value = Lf("Скопировано строк: %@.", "\(App.shared.core.logs.count)")
+    }
+
+    static func tail(_ url: URL, lines: Int) -> [String] {
+        guard let text = try? String(contentsOf: url, encoding: .utf8) else { return [] }
+        return Array(text.split(separator: "\n", omittingEmptySubsequences: true).suffix(lines).map(String.init))
+    }
+
+    /// What the core wrote before it last fell (a Go panic), within the last day:
+    /// the live file of the running extension, or the newest archived report.
+    static func lastCrash(_ paths: SharedPaths) -> [String]? {
+        let manager = FileManager.default
+        let dayAgo = Date().addingTimeInterval(-86_400)
+        var candidates: [(URL, Date)] = []
+        func add(_ url: URL) {
+            guard let date = (try? url.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate, date > dayAgo,
+                  let size = (try? url.resourceValues(forKeys: [.fileSizeKey]))?.fileSize, size > 0 else { return }
+            candidates.append((url, date))
+        }
+        add(paths.coreCrashLog)
+        for folder in (try? manager.contentsOfDirectory(at: paths.crashReports, includingPropertiesForKeys: nil)) ?? [] {
+            add(folder.appendingPathComponent("go.log"))
+        }
+        guard let newest = candidates.max(by: { $0.1 < $1.1 }) else { return nil }
+        let formatter = ISO8601DateFormatter()
+        return [formatter.string(from: newest.1)] + tail(newest.0, lines: 60)
     }
 
     @objc private func togglePause() {

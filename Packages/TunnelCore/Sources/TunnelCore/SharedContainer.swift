@@ -40,6 +40,11 @@ public struct SharedPaths: Sendable {
     /// The Xray-core configuration the tunnel runs beside sing-box; absent when
     /// the subscription has no server only Xray can run.
     public var activeXrayConfig: URL { data.appendingPathComponent("tunnel-xray.json") }
+    /// Xray-core's warnings from the running tunnel.
+    public var xrayLog: URL { working.appendingPathComponent("xray.log") }
+    /// Where the core keeps what it wrote before it fell (one folder per crash).
+    public var crashReports: URL { working.appendingPathComponent("crash_reports", isDirectory: true) }
+    public var coreCrashLog: URL { working.appendingPathComponent("CrashReport-packet-tunnel.log") }
     public var networkActivity: URL { data.appendingPathComponent("network-activity.json") }
 
     /// 1.x storage, read once by the migration and left untouched.

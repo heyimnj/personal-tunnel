@@ -105,10 +105,38 @@ public enum XrayBacked {
         }
         let config: JSONValue = [
             "log": ["loglevel": "warning"],
+            // Small per-connection buffers: the extension has about 50 MiB in all.
+            "policy": ["levels": ["0": ["bufferSize": 4]]],
             "inbounds": .array(inbounds),
             "outbounds": .array(outbounds),
             "routing": ["domainStrategy": "AsIs", "rules": .array(rules)],
         ]
         return (config, ports)
+    }
+}
+
+public extension XrayBacked {
+    /// What the extension does to the runtime before starting it: every hop that
+    /// dials the network itself is bound to the physical interface (as sing-box
+    /// binds its own; otherwise Xray's connections could loop back into the
+    /// tunnel), and Xray's warnings go to a file the app can show.
+    static func prepare(_ runtime: JSONValue, interface: String?, logPath: String?) -> JSONValue {
+        var config = runtime
+        if let logPath { config["log"] = ["loglevel": "warning", "error": .string(logPath), "access": "none"] }
+        guard let interface, !interface.isEmpty else { return config }
+        config["outbounds"] = .array((config["outbounds"]?.arrayValue ?? []).map { outbound in
+            let proto = outbound["protocol"]?.stringValue?.lowercased() ?? ""
+            guard proxyProtocols.contains(proto) || proto == "freedom" else { return outbound }
+            var outbound = outbound
+            var stream = outbound["streamSettings"] ?? .object([:])
+            var sockopt = stream["sockopt"] ?? .object([:])
+            // A hop that dials through another one leaves the binding to that one.
+            guard sockopt["dialerProxy"] == nil, outbound["proxySettings"] == nil else { return outbound }
+            sockopt["interface"] = .string(interface)
+            stream["sockopt"] = sockopt
+            outbound["streamSettings"] = stream
+            return outbound
+        })
+        return config
     }
 }

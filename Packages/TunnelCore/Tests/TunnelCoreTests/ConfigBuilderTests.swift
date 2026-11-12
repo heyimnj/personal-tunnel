@@ -251,3 +251,21 @@ final class XrayBackedTests: XCTestCase {
         XCTAssertNil(ConfigBuilder.xrayRuntime(subscription: Subscription(id: 4, name: "Y", nodes: [nodes[1]])))
     }
 }
+
+extension XrayBackedTests {
+    func testPrepareBindsHopsToTheInterfaceAndLogsToAFile() throws {
+        let nodes = NodeAssembler.assemble(try ContentImporter.parse(Self.subscriptionJSON).nodes)
+        let runtime = try XCTUnwrap(ConfigBuilder.xrayRuntime(subscription: Subscription(id: 3, name: "X", nodes: nodes)))
+        let ready = XrayBacked.prepare(runtime, interface: "en0", logPath: "/tmp/xray.log")
+        XCTAssertEqual(ready.at("log", "error"), "/tmp/xray.log")
+        let outbounds = ready["outbounds"]?.arrayValue ?? []
+        func tagged(_ tag: String) -> JSONValue? { outbounds.first { $0["tag"]?.stringValue == tag } }
+        XCTAssertEqual(tagged("n0-proxy")?.at("streamSettings", "sockopt", "interface"), "en0")
+        XCTAssertEqual(tagged("n0-direct")?.at("streamSettings", "sockopt", "interface"), "en0")
+        // The chain's exit dials through its hop; the hop is the one bound.
+        XCTAssertNil(tagged("n1-exit")?.at("streamSettings", "sockopt", "interface"))
+        XCTAssertEqual(tagged("n1-hop")?.at("streamSettings", "sockopt", "interface"), "en0")
+        XCTAssertNil(tagged("pt-block")?["streamSettings"])
+        XCTAssertEqual(XrayBacked.prepare(runtime, interface: nil, logPath: nil), runtime)
+    }
+}

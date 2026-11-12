@@ -136,3 +136,11 @@ final class HideServersTests: XCTestCase {
         XCTAssertTrue(hidden.contains("17.253.53.146"))
     }
 }
+
+final class SubscriptionStubTests: XCTestCase {
+    func testThePanelsMessageIsNotAList() {
+        XCTAssertTrue(SubscriptionStub.isStub(["❌ Ваше приложение не поддерживается", "⚙️ Включите поддержку HWID", "📲 Либо используйте HAPP или INCY"]))
+        XCTAssertFalse(SubscriptionStub.isStub(["Россия", "Финляндия"]))
+        XCTAssertFalse(SubscriptionStub.isStub(Array(repeating: "не поддерживается", count: 8)))
+    }
+}

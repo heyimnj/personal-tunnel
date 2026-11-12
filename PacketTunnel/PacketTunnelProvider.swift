@@ -2,6 +2,7 @@ import Darwin
 import os
 import Foundation
 import Libbox
+import Network
 import NetworkExtension
 import TunnelCore
 
@@ -23,6 +24,9 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
     /// Xray-core for the servers only it can run, beside sing-box.
     private var xray: PtbridgeXrayInstance?
     #endif
+    /// The physical network Xray's connections are bound to; a change restarts Xray.
+    private var xrayPath: NWPathMonitor?
+    private var xrayInterface: String?
     private var memoryPeak: Double = 0
 
     // MARK: Lifecycle
@@ -141,13 +145,20 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
     /// (Re)starts Xray-core when the subscription has servers only it can run.
     private func startXray(_ paths: SharedPaths) throws {
         stopXray()
-        guard let data = try? Data(contentsOf: paths.activeXrayConfig), !data.isEmpty else { return }
+        guard let data = try? Data(contentsOf: paths.activeXrayConfig), !data.isEmpty,
+              let runtime = try? JSONValue.parse(String(decoding: data, as: UTF8.self)) else {
+            stopWatchingPath()
+            return
+        }
         #if TUNNEL_XRAY
+        let interface = watchPath(paths)
+        try? Data().write(to: paths.xrayLog)
+        let config = XrayBacked.prepare(runtime, interface: interface, logPath: paths.xrayLog.path)
         var error: NSError?
-        let instance = PtbridgeStartXray(String(decoding: data, as: UTF8.self), &error)
+        let instance = PtbridgeStartXray(config.serialized(), &error)
         if let error { throw TunnelError("Xray-core не запустился: \(error.localizedDescription)") }
         xray = instance
-        event("Xray-core запущен")
+        event("Xray-core запущен, интерфейс \(interface ?? "—")")
         #else
         event("в подписке есть серверы Xray, но расширение собрано без Xray-core")
         #endif
@@ -158,6 +169,45 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
         xray?.close()
         xray = nil
         #endif
+    }
+
+    /// The current physical interface (Wi-Fi, cellular), and a restart of Xray on
+    /// the queue when it changes. Interfaces of type `other` (tunnels) never count.
+    private func watchPath(_ paths: SharedPaths) -> String? {
+        if xrayPath == nil {
+            let monitor = NWPathMonitor()
+            let first = DispatchSemaphore(value: 0)
+            let once = OnceFlag()
+            monitor.pathUpdateHandler = { [weak self] path in
+                let name = PacketTunnelProvider.physical(path)
+                if once.claim() {
+                    self?.xrayInterface = name
+                    first.signal()
+                    return
+                }
+                self?.queue.async {
+                    guard let self, self.xray != nil, name != self.xrayInterface, let name else { return }
+                    self.xrayInterface = name
+                    self.event("сеть сменилась (\(name)): перезапуск Xray-core")
+                    try? self.startXray(paths)
+                }
+            }
+            monitor.start(queue: DispatchQueue(label: "personaltunnel.xray-path", qos: .utility))
+            xrayPath = monitor
+            _ = first.wait(timeout: .now() + 2)
+        }
+        return xrayInterface ?? xrayPath.map { PacketTunnelProvider.physical($0.currentPath) } ?? nil
+    }
+
+    private func stopWatchingPath() {
+        xrayPath?.cancel()
+        xrayPath = nil
+        xrayInterface = nil
+    }
+
+    private static func physical(_ path: Network.NWPath) -> String? {
+        guard path.status != .unsatisfied else { return nil }
+        return path.availableInterfaces.first { $0.type != .other && $0.type != .loopback }?.name
     }
 
     /// Reads the stored configuration again; called by the app and by the core.
@@ -184,6 +234,7 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
         memoryTimer = nil
         closeService()
         stopXray()
+        stopWatchingPath()
         commandServer?.close()
         commandServer = nil
     }

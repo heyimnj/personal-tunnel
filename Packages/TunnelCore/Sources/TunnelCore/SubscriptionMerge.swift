@@ -53,3 +53,17 @@ public extension Library {
         return hosts
     }
 }
+
+/// A panel that does not like the client's name answers with a few fake
+/// "servers" whose names are the message (Remnawave: «Ваше приложение не
+/// поддерживается», «Включите поддержку HWID»). Such an answer is not the list.
+public enum SubscriptionStub {
+    static let markers = ["не поддерживается", "поддержку hwid", "используйте happ", "используйте incy", "not supported", "enable hwid",
+                          "обновите приложение", "update the app", "unsupported client"]
+
+    public static func isStub(_ names: [String]) -> Bool {
+        guard !names.isEmpty, names.count <= 5 else { return false }
+        let lowered = names.map { $0.lowercased() }
+        return lowered.contains { name in markers.contains { name.contains($0) } }
+    }
+}
