@@ -1,0 +1,19 @@
+History secret scan, 2026-11-12 (UTC)
+
+Scope
+- All branches of this repository (99 commits)
+- Every historical version of personal-tunnel-source.bundle on main (32 bundles, 127 commits)
+- incoming-1.4.2/personaltunnel-build-repo.bundle (54 commits)
+
+Method
+- gitleaks 8.28.0 over all histories
+- Pattern search over every blob: proxy share links, subscription URLs,
+  private keys, API tokens, Apple signing material, .env files, real IPs
+
+Result
+- No owner keys, subscription links, signing certificates or tokens found
+- Share links with real hosts exist only in parser tests and come from public
+  free-proxy collections (tagged @Raydikalx, JOKERRVPN, dailyv2ry)
+- gitleaks findings on branches are test fixtures (REALITY public key and a
+  WireGuard test keypair in TunnelCore fixtures; UserDefaults key names)
+- Submodules point to public repositories only
