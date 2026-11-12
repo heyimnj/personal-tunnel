@@ -321,8 +321,8 @@ final class MinimalAnalyticsViewController: UIViewController {
         ])
         tcp.caption.text = L("Активные соединения")
         udp.caption.text = L("Активные соединения")
-        tcp.onTap = { [weak self] in self?.navigationController?.pushViewController(ConnectionsViewController(udp: false), animated: true) }
-        udp.onTap = { [weak self] in self?.navigationController?.pushViewController(ConnectionsViewController(udp: true), animated: true) }
+        tcp.onTap = { [weak self] in self?.present(ConnectionsViewController.wrapped(udp: false), animated: true) }
+        udp.onTap = { [weak self] in self?.present(ConnectionsViewController.wrapped(udp: true), animated: true) }
 
         let core = App.shared.core
         core.status.observe(self) { [weak self] in self?.show($0) }
@@ -364,8 +364,13 @@ final class MinimalAnalyticsViewController: UIViewController {
         timer?.invalidate()
         timer = nil
         if value {
+            // The first redraw in two steps: the graph and the session now, the
+            // routes legend (views built) on the next turn of the run loop.
             graph.history = App.shared.core.history.value
-            show(App.shared.core.connections.value)
+            DispatchQueue.main.async { [weak self] in
+                guard let self, self.visible else { return }
+                self.show(App.shared.core.connections.value)
+            }
             tick()
             timer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in self?.tick() }
         }
@@ -442,18 +447,26 @@ final class MinimalAnalyticsViewController: UIViewController {
     }
 }
 
-/// The open TCP or UDP connections, live: where each goes, through which
-/// server, how much it carried and for how long. The core sends them only
-/// while this screen is open (`CoreClient.listsConnections`).
-final class ConnectionsViewController: UITableViewController {
+/// The TCP or UDP connections, as 1.5.0 showed them: a sheet with «Готово» and a
+/// card per connection — a dot (green while open), where it goes, through which
+/// server, and the bytes each way. Live: the core sends the list only while
+/// this sheet is open (`CoreClient.listsConnections`).
+final class ConnectionsViewController: UIViewController, UITableViewDataSource {
     private let udp: Bool
+    private let table = UITableView(frame: .zero, style: .plain)
+    private let empty = UILabel(L("Данные соединений пока недоступны"), font: Theme.font(.body), color: .secondaryLabel, lines: 0)
     private var items: [CoreConnection] = []
-    private var timer: Timer?
+
+    static func wrapped(udp: Bool) -> UIViewController {
+        let navigation = UINavigationController(rootViewController: ConnectionsViewController(udp: udp))
+        navigation.modalPresentationStyle = .pageSheet
+        return navigation
+    }
 
     init(udp: Bool) {
         self.udp = udp
-        super.init(style: .insetGrouped)
-        title = udp ? L("UDP-соединения") : L("TCP-соединения")
+        super.init(nibName: nil, bundle: nil)
+        title = udp ? "UDP" : "TCP"
     }
 
     @available(*, unavailable)
@@ -461,11 +474,26 @@ final class ConnectionsViewController: UITableViewController {
 
     override func viewDidLoad() {
         super.viewDidLoad()
+        view.backgroundColor = Theme.background
         navigationItem.largeTitleDisplayMode = .never
-        tableView.backgroundColor = Theme.background
-        tableView.allowsSelection = false
-        tableView.rowHeight = UITableView.automaticDimension
-        tableView.estimatedRowHeight = 64
+        navigationItem.rightBarButtonItem = UIBarButtonItem(title: L("Готово"), primaryAction: UIAction { [weak self] _ in self?.dismiss(animated: true) })
+        table.backgroundColor = .clear
+        table.separatorStyle = .none
+        table.allowsSelection = false
+        table.dataSource = self
+        table.rowHeight = UITableView.automaticDimension
+        table.estimatedRowHeight = 96
+        table.contentInset = UIEdgeInsets(top: 10, left: 0, bottom: 30, right: 0)
+        table.register(ConnectionCell.self, forCellReuseIdentifier: "connection")
+        view.addSubview(table)
+        table.pin(to: view)
+        view.addSubview(empty)
+        empty.translatesAutoresizingMaskIntoConstraints = false
+        NSLayoutConstraint.activate([
+            empty.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor, constant: 24),
+            empty.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 20),
+            empty.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -20),
+        ])
         App.shared.core.connections.observe(self) { [weak self] in self?.show($0) }
     }
 
@@ -473,64 +501,69 @@ final class ConnectionsViewController: UITableViewController {
         super.viewWillAppear(animated)
         App.shared.core.listsConnections = true
         show(App.shared.core.connections.value)
-        // The durations move on between the core's updates.
-        timer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in self?.refreshVisible() }
     }
 
     override func viewDidDisappear(_ animated: Bool) {
         super.viewDidDisappear(animated)
         App.shared.core.listsConnections = false
-        timer?.invalidate()
-        timer = nil
     }
 
     private func show(_ connections: CoreConnections) {
         let next = connections.open.filter { $0.udp == udp }.sorted { $0.createdAt > $1.createdAt }
+        empty.isHidden = !next.isEmpty
         guard next != items else { return }
+        let sameRows = next.map(\.id) == items.map(\.id)
         items = next
-        tableView.reloadData()
-    }
-
-    private func refreshVisible() {
-        for cell in tableView.visibleCells {
-            guard let index = tableView.indexPath(for: cell)?.row, items.indices.contains(index) else { continue }
-            configure(cell, items[index])
+        if sameRows {
+            // Only the numbers moved: update the cards in place, no reload flicker.
+            for cell in table.visibleCells {
+                guard let cell = cell as? ConnectionCell, let row = table.indexPath(for: cell)?.row, items.indices.contains(row) else { continue }
+                cell.show(items[row])
+            }
+        } else {
+            table.reloadData()
         }
     }
 
-    override func numberOfSections(in _: UITableView) -> Int { 1 }
+    func tableView(_: UITableView, numberOfRowsInSection _: Int) -> Int { items.count }
 
-    override func tableView(_: UITableView, numberOfRowsInSection _: Int) -> Int { items.count }
-
-    override func tableView(_: UITableView, titleForFooterInSection _: Int) -> String? {
-        items.isEmpty ? L("Открытых соединений нет.") : Format.plural(items.count, L("соединение"), L("соединения"), L("соединений"))
-    }
-
-    override func tableView(_ tableView: UITableView, cellForRowAt indexPath: IndexPath) -> UITableViewCell {
-        let cell = tableView.dequeueReusableCell(withIdentifier: "connection") ?? UITableViewCell(style: .subtitle, reuseIdentifier: "connection")
-        cell.backgroundColor = Theme.card
-        configure(cell, items[indexPath.row])
+    func tableView(_ tableView: UITableView, cellForRowAt indexPath: IndexPath) -> UITableViewCell {
+        let cell = tableView.dequeueReusableCell(withIdentifier: "connection", for: indexPath)
+        (cell as? ConnectionCell)?.show(items[indexPath.row])
         return cell
     }
+}
 
-    private func configure(_ cell: UITableViewCell, _ item: CoreConnection) {
-        var content = UIListContentConfiguration.subtitleCell()
-        content.text = item.destination
-        content.textProperties.font = Theme.mono(13, .medium)
-        content.textProperties.numberOfLines = 1
-        content.textProperties.lineBreakMode = .byTruncatingMiddle
-        let route = item.chain.isEmpty ? (item.outbound.isEmpty ? "—" : item.outbound) : item.chain.joined(separator: " → ")
-        let age = Format.duration(Int(max(0, Date().timeIntervalSince(item.createdAt))))
-        var details = [route]
-        if !item.protocolName.isEmpty { details.append(item.protocolName.uppercased()) }
-        details.append("↓ " + Format.bytes(item.downloadTotal) + "  ↑ " + Format.bytes(item.uploadTotal))
-        details.append(age)
-        content.secondaryText = details.joined(separator: " · ")
-        content.secondaryTextProperties.font = Theme.font(.caption1)
-        content.secondaryTextProperties.color = .secondaryLabel
-        content.secondaryTextProperties.numberOfLines = 2
-        content.textToSecondaryTextVerticalPadding = 4
-        content.directionalLayoutMargins = NSDirectionalEdgeInsets(top: 10, leading: 16, bottom: 10, trailing: 16)
-        cell.contentConfiguration = content
+/// One connection card (1.5.0): dot and destination, the server, ↑ and ↓.
+private final class ConnectionCell: UITableViewCell {
+    private let dot = UIView()
+    private let destination = UILabel(font: Theme.font(.callout), lines: 2)
+    private let outbound = UILabel(font: Theme.font(.caption1), color: .secondaryLabel)
+    private let traffic = UILabel(font: UIFont.monospacedDigitSystemFont(ofSize: Theme.font(.caption1).pointSize, weight: .regular))
+
+    override init(style: UITableViewCell.CellStyle, reuseIdentifier: String?) {
+        super.init(style: style, reuseIdentifier: reuseIdentifier)
+        backgroundColor = .clear
+        let card = AnalyticsCard(insets: UIEdgeInsets(top: 16, left: 16, bottom: 16, right: 16))
+        card.stack.spacing = 8
+        dot.backgroundColor = .systemGreen
+        dot.layer.cornerRadius = 3.5
+        dot.translatesAutoresizingMaskIntoConstraints = false
+        NSLayoutConstraint.activate([dot.widthAnchor.constraint(equalToConstant: 7), dot.heightAnchor.constraint(equalToConstant: 7)])
+        destination.lineBreakMode = .byTruncatingMiddle
+        card.stack.addArrangedSubview(UIStackView(.horizontal, spacing: 8, alignment: .center, [dot, destination]))
+        card.stack.addArrangedSubview(outbound)
+        card.stack.addArrangedSubview(traffic)
+        contentView.addSubview(card)
+        card.pin(to: contentView, insets: UIEdgeInsets(top: 8, left: 20, bottom: 8, right: 20))
+    }
+
+    @available(*, unavailable)
+    required init?(coder _: NSCoder) { fatalError() }
+
+    func show(_ item: CoreConnection) {
+        destination.text = item.destination
+        outbound.text = item.chain.isEmpty ? (item.outbound.isEmpty ? "—" : item.outbound) : item.chain.joined(separator: " → ")
+        traffic.text = "↑ " + Format.bytes(item.uploadTotal) + "   ↓ " + Format.bytes(item.downloadTotal)
     }
 }

@@ -488,9 +488,4 @@
 "день" = "day";
 "дня" = "days";
 "дней" = "days";
-"UDP-соединения" = "UDP connections";
-"TCP-соединения" = "TCP connections";
-"Открытых соединений нет." = "No open connections.";
-"соединение" = "connection";
-"соединения" = "connections";
-"соединений" = "connections";
+"Готово" = "Done";
