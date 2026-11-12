@@ -10,6 +10,8 @@ enum FormRow {
     case value(title: String, detail: () -> String)
     case color(title: String, get: () -> UIColor, set: (UIColor) -> Void)
     case check(title: String, selected: () -> Bool, action: () -> Void)
+    /// A text field: title on the left, the value typed on the right.
+    case field(title: String, placeholder: String, get: () -> String, set: (String) -> Void, keyboard: UIKeyboardType)
 }
 
 struct FormSection {
@@ -170,6 +172,27 @@ class FormViewController: UITableViewController, UIColorPickerViewControllerDele
             content.text = title
             cell.accessoryType = selected() ? .checkmark : .none
             cell.selectionStyle = .default
+        case let .field(title, placeholder, get, set, keyboard):
+            let label = UILabel(title, font: Theme.font(17), color: Theme.text)
+            label.setContentHuggingPriority(.required, for: .horizontal)
+            label.setContentCompressionResistancePriority(.required, for: .horizontal)
+            let field = UITextField()
+            field.text = get()
+            field.placeholder = placeholder
+            field.font = Theme.font(17)
+            field.textAlignment = .right
+            field.textColor = .secondaryLabel
+            field.keyboardType = keyboard
+            field.autocapitalizationType = .none
+            field.autocorrectionType = .no
+            field.spellCheckingType = .no
+            field.clearButtonMode = .whileEditing
+            field.addAction(UIAction { [weak field] _ in set(field?.text ?? "") }, for: .editingChanged)
+            let stack = UIStackView(.horizontal, spacing: 12, alignment: .center, [label, field])
+            cell.contentView.addSubview(stack)
+            stack.pin(to: cell.contentView, insets: UIEdgeInsets(top: 11, left: 20, bottom: 11, right: 16))
+            stack.heightAnchor.constraint(greaterThanOrEqualToConstant: 30).isActive = true
+            return cell
         }
         cell.contentConfiguration = content
         return cell

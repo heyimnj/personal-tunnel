@@ -144,3 +144,63 @@ final class SubscriptionStubTests: XCTestCase {
         XCTAssertFalse(SubscriptionStub.isStub(Array(repeating: "не поддерживается", count: 8)))
     }
 }
+
+final class ServerDraftTests: XCTestCase {
+    func testRealityVisionDraftAndBack() throws {
+        var draft = ServerDraft()
+        draft.name = "Ручной"
+        draft.host = "r.example.net"
+        draft.secret = "11111111-2222-3333-4444-555555555555"
+        draft.vision = true
+        draft.security = .reality
+        draft.sni = "www.apple.com"
+        draft.publicKey = "SbVKOEMjK0sIlbwg4akyBg5mL5KZwwB-ed4eEE7YnRc"
+        draft.shortID = "ab12"
+        let object = try draft.outbound()
+        XCTAssertEqual(object["type"], "vless")
+        XCTAssertEqual(object["flow"], "xtls-rprx-vision")
+        XCTAssertEqual(object.at("tls", "reality", "short_id"), "ab12")
+        XCTAssertEqual(object.at("tls", "utls", "fingerprint"), "chrome")
+        XCTAssertEqual(object.at("tls", "server_name"), "www.apple.com")
+        XCTAssertNil(object["transport"])
+        var back = try XCTUnwrap(ServerDraft(outbound: object, name: "Ручной"))
+        XCTAssertEqual(back, draft)
+        back.transport = .ws
+        back.path = "/ws"
+        back.hostHeader = "cdn.example.net"
+        let ws = try back.outbound()
+        XCTAssertNil(ws["flow"])   // Vision only over TCP
+        XCTAssertEqual(ws.at("transport", "headers", "Host"), "cdn.example.net")
+    }
+
+    func testOtherProtocolsAndMistakes() throws {
+        var draft = ServerDraft()
+        draft.proto = .hysteria2
+        draft.host = "hy.example.net"
+        draft.secret = "pw"
+        draft.obfsPassword = "mask"
+        draft.hopPorts = "20000-30000"
+        let hy = try draft.outbound()
+        XCTAssertEqual(hy.at("tls", "alpn"), ["h3"])
+        XCTAssertEqual(hy["server_ports"], ["20000:30000"])
+        XCTAssertEqual(hy.at("obfs", "type"), "salamander")
+
+        draft = ServerDraft()
+        draft.proto = .wireguard
+        draft.host = "wg.example.net"
+        draft.port = "51820"
+        draft.privateKey = "a"
+        draft.peerPublicKey = "b"
+        draft.localAddress = "10.7.0.2"
+        let wg = try draft.outbound()
+        XCTAssertEqual(wg["address"], ["10.7.0.2/32"])
+        XCTAssertEqual(ServerDraft(outbound: wg, name: "W")?.localAddress, "10.7.0.2/32")
+
+        draft = ServerDraft()
+        XCTAssertThrowsError(try draft.outbound())   // no address
+        draft.host = "x.example.net"
+        draft.port = "70000"
+        XCTAssertThrowsError(try draft.outbound())
+        XCTAssertNil(ServerDraft(outbound: ["type": "urltest"], name: "G"))
+    }
+}

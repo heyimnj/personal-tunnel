@@ -201,7 +201,8 @@ final class ServiceLogViewController: UIViewController, UITableViewDataSource, U
         NSLayoutConstraint.activate([
             stack.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor, constant: 12),
             stack.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 16), stack.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -16),
-            stack.bottomAnchor.constraint(equalTo: view.bottomAnchor),
+            // Above the tab bar, so the card's rounded bottom is seen whole.
+            stack.bottomAnchor.constraint(equalTo: view.safeAreaLayoutGuide.bottomAnchor, constant: -12),
         ])
         stack.setCustomSpacing(8, after: caption)
         caption.isLayoutMarginsRelativeArrangement = true
@@ -217,10 +218,12 @@ final class ServiceLogViewController: UIViewController, UITableViewDataSource, U
 
     private func refilter() {
         let needle = query.lowercased()
-        lines = App.shared.core.logs.filter { $0.level <= minimumLevel && (needle.isEmpty || $0.text.lowercased().contains(needle)) }
-        let atBottom = table.contentOffset.y >= table.contentSize.height - table.bounds.height - 80
+        // Newest first: the screen opens on the latest lines and keeps them in view
+        // while the reader stays at the top.
+        lines = App.shared.core.logs.filter { $0.level <= minimumLevel && (needle.isEmpty || $0.text.lowercased().contains(needle)) }.reversed()
+        let atTop = table.contentOffset.y <= -table.adjustedContentInset.top + 40
         table.reloadData()
-        if atBottom, !lines.isEmpty { table.scrollToRow(at: IndexPath(row: lines.count - 1, section: 0), at: .bottom, animated: false) }
+        if atTop, !lines.isEmpty { table.setContentOffset(CGPoint(x: 0, y: -table.adjustedContentInset.top), animated: false) }
         let running = App.shared.tunnel.state.value.isOn
         state.text = !running ? "STOPPED" : (App.shared.core.logsPaused ? "PAUSED" : "STREAMING")
         live.text = running && !App.shared.core.logsPaused ? "LIVE" : "PAUSE"
@@ -433,7 +436,9 @@ final class ServerOrderViewController: UITableViewController {
 enum AddServerFlow {
     private static let picker = FilePicker()
 
-    static func present(from host: UIViewController) {
+    /// `source`: the control the menu comes from (iOS 26 shows the sheet as a
+    /// popover anchored to it; without one it went off the top of the screen).
+    static func present(from host: UIViewController, source: UIView? = nil) {
         let sheet = UIAlertController(title: L("Добавить сервер или подписку"), message: nil, preferredStyle: .actionSheet)
         sheet.addAction(UIAlertAction(title: L("Вставить из буфера обмена"), style: .default) { _ in
             guard let text = UIPasteboard.general.string, !text.isEmpty else {
@@ -449,11 +454,27 @@ enum AddServerFlow {
             alert.addAction(UIAlertAction(title: L("Добавить"), style: .default) { _ in add(alert.textFields?.first?.text ?? "", from: host) })
             host.present(alert, animated: true)
         })
+        sheet.addAction(UIAlertAction(title: L("Отсканировать QR"), style: .default) { _ in
+            host.present(QRScannerViewController.wrapped { code in add(code, from: host) }, animated: true)
+        })
         sheet.addAction(UIAlertAction(title: L("Выбрать файл"), style: .default) { _ in
             picker.pick(from: host) { text in add(text, from: host) }
         })
+        sheet.addAction(UIAlertAction(title: L("Создать вручную"), style: .default) { _ in
+            host.present(ServerEditorViewController.wrapped(title: L("Новый сервер")) { outbound, name in
+                App.shared.addManual(outbound, name: name)
+            }, animated: true)
+        })
         sheet.addAction(UIAlertAction(title: L("Отмена"), style: .cancel))
-        sheet.popoverPresentationController?.sourceView = host.view
+        if let popover = sheet.popoverPresentationController {
+            if let source {
+                popover.sourceView = source
+                popover.sourceRect = source.bounds
+            } else {
+                popover.sourceView = host.view
+                popover.sourceRect = CGRect(x: host.view.bounds.midX, y: host.view.bounds.maxY - 80, width: 1, height: 1)
+            }
+        }
         host.present(sheet, animated: true)
     }
 

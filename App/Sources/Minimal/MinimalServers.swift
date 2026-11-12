@@ -257,7 +257,7 @@ final class MinimalServersViewController: UIViewController {
             copySelected()
             return
         }
-        AddServerFlow.present(from: self)
+        AddServerFlow.present(from: self, source: plusButton)
     }
 
     // MARK: Selection
@@ -389,7 +389,7 @@ final class MinimalServersViewController: UIViewController {
         }
         list.actionsForRow = { [weak self] id, tag in
             if self?.selecting == true { return [] }
-            return [SwipeAction(symbol: "pencil", color: .systemOrange, title: L("Изменить")) { self?.rename(node: tag, in: id) },
+            return [SwipeAction(symbol: "pencil", color: .systemOrange, title: L("Изменить")) { self?.edit(node: tag, in: id) },
              SwipeAction(symbol: "waveform.path.ecg", color: .systemBlue, title: L("Пинг")) {
                  if let subscription = App.shared.library.subscription(id), let node = subscription.node(tag) { App.shared.ping(node: node, in: subscription) }
              },
@@ -527,7 +527,7 @@ final class MinimalServersViewController: UIViewController {
             items = [
                 HoldMenuItem(title: L("Ссылка, QR и JSON"), symbol: "info.circle") { [weak self] in self?.inspect(tag, in: id) },
                 HoldMenuItem(title: L("Проверить пинг"), symbol: "waveform.path.ecg") { App.shared.ping(node: node, in: subscription) },
-                HoldMenuItem(title: L("Редактировать"), symbol: "pencil") { [weak self] in self?.rename(node: tag, in: id) },
+                HoldMenuItem(title: L("Редактировать"), symbol: "pencil") { [weak self] in self?.edit(node: tag, in: id) },
             ]
             if subscription.isStandalone, subscription.isRemote {
                 items.append(HoldMenuItem(title: L("Обновить"), symbol: "arrow.clockwise") { App.shared.refresh(id) })
@@ -585,6 +585,19 @@ final class MinimalServersViewController: UIViewController {
     private func rename(subscription id: Int64) {
         guard let subscription = App.shared.library.subscription(id) else { return }
         prompt(L("Название подписки"), value: subscription.name) { App.shared.rename(subscription: id, to: $0) }
+    }
+
+    /// «Редактировать»: the full form for servers it can describe; a name otherwise
+    /// (groups, servers Xray runs).
+    private func edit(node tag: String, in id: Int64) {
+        guard let node = App.shared.library.subscription(id)?.node(tag) else { return }
+        guard let draft = ServerDraft(outbound: node.outbound, name: node.name) else {
+            rename(node: tag, in: id)
+            return
+        }
+        present(ServerEditorViewController.wrapped(draft, title: L("Редактировать")) { outbound, name in
+            App.shared.replace(node: tag, in: id, outbound: outbound, name: name)
+        }, animated: true)
     }
 
     private func rename(node tag: String, in id: Int64) {

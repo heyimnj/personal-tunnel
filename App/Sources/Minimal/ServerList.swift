@@ -99,7 +99,8 @@ private final class SwipePill: UIControl {
     @available(*, unavailable)
     required init?(coder _: NSCoder) { fatalError() }
 
-    /// Grey while the row is still being pulled, the action's colour once fully out.
+    /// Dark grey while the row is still being pulled, the action's colour once fully
+    /// out; the symbol and the title are white throughout.
     func setTinted(_ value: Bool, animated: Bool) {
         guard value != tinted else { return }
         tinted = value
@@ -107,8 +108,8 @@ private final class SwipePill: UIControl {
     }
 
     private func paint() {
-        clip.backgroundColor = tinted ? action.color : UIColor.tertiarySystemFill
-        let ink: UIColor = tinted ? .white : .label
+        clip.backgroundColor = tinted ? action.color : UIColor.systemGray2
+        let ink: UIColor = .white
         label.textColor = ink
         icon.tintColor = ink
     }

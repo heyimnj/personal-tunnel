@@ -48,6 +48,8 @@
 	<false/>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
+	<key>NSCameraUsageDescription</key>
+	<string>Чтобы отсканировать QR-код сервера или подписки.</string>
 	<key>NSFaceIDUsageDescription</key>
 	<string>Чтобы открывать Personal Tunnel по Face ID, если включена блокировка приложения.</string>
 	<key>UIApplicationSceneManifest</key>

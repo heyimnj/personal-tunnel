@@ -153,6 +153,33 @@ final class App {
         }
     }
 
+    /// A server typed in by hand: a subscription of its own, like a pasted link.
+    func addManual(_ outbound: JSONValue, name: String) {
+        let nodes = NodeAssembler.assemble([ParsedNode(name: name, outbound: outbound)])
+        store.update { library in
+            let id = library.allocateID()
+            library.subscriptions.append(Subscription(id: id, name: name, nodes: nodes, updatedAt: Date()))
+            if library.activeSubscriptionID == nil { library.activeSubscriptionID = id }
+        }
+        notice.value = Lf("Сервер «%@» добавлен.", name)
+    }
+
+    /// A server changed in the editor: same tag, new fields.
+    func replace(node tag: String, in id: Int64, outbound: JSONValue, name: String) {
+        store.update { library in
+            guard var subscription = library.subscription(id), let index = subscription.nodes.firstIndex(where: { $0.id == tag }) else { return }
+            var object = outbound
+            object["tag"] = .string(tag)
+            subscription.nodes[index].outbound = object
+            subscription.nodes[index].members = []
+            subscription.nodes[index].name = name
+            // The provider's link no longer describes the server.
+            subscription.nodes[index].link = nil
+            library.replace(subscription)
+        }
+        if library.activeSubscription?.id == id { reloadTunnel() }
+    }
+
     func refresh(_ id: Int64) {
         guard let subscription = library.subscription(id), let url = subscription.url, !refreshing.value.contains(id) else { return }
         refreshing.value.insert(id)
