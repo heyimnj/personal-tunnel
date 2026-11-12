@@ -128,6 +128,8 @@ guard let carried = migrated.subscriptions.first, carried.nodes.count == 5 else 
 }
 try write("legacy-1x-subscription", carried)
 try write("legacy-1x-auto-select", carried) { $0.autoSelect = true }
+try write("ad-block-extended", try samples[0].1.map(ShareLink.parse)) { $0.adBlockLevel = .extended }
+try write("ad-block-basic", try samples[0].1.map(ShareLink.parse)) { $0.adBlockLevel = .basic }
 try write("auto-select", try samples.prefix(3).flatMap { try $0.1.map(ShareLink.parse) }) { $0.autoSelect = true }
 // What the app's own core measures servers with, without the VPN.
 for (name, subscription) in [("probe-all-together", Subscription(id: 1, name: "all", nodes: NodeAssembler.assemble(try samples.flatMap { try $0.1.map(ShareLink.parse) } + ContentImporter.parse(xray).nodes))),

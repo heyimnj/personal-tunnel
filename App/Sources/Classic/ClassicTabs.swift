@@ -418,7 +418,7 @@ final class ClassicSettingsViewController: ClassicPage {
             toggle(L("Автоматический failover"), Prefs.autoFailover) { Prefs.autoFailover = $0 },
         ], spacing: 14))
         content.addArrangedSubview(section(L("МАРШРУТИЗАЦИЯ"), [
-            toggle(L("Блокировка рекламы"), Prefs.adBlocking) { Prefs.adBlocking = $0; changed() },
+            link(L("Блокировка рекламы")) { AdBlockViewController() },
             toggle(L("Обход российских сайтов"), Prefs.bypassRussia) { Prefs.bypassRussia = $0; changed() },
             toggle(L("Защищённый DNS"), Prefs.secureDNS) { Prefs.secureDNS = $0; App.shared.tunnel.applySettings() },
             toggle(L("Локальная сеть"), Prefs.localNetwork) { Prefs.localNetwork = $0; changed() },

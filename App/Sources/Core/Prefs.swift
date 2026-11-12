@@ -162,6 +162,11 @@ enum Prefs {
         set { defaults.set(newValue, forKey: "pt.net.adBlocking") }
     }
 
+    static var adBlockLevel: AdBlockLevel {
+        get { AdBlockLevel(rawValue: defaults.string(forKey: "pt.net.adBlockLevel") ?? "") ?? .standard }
+        set { defaults.set(newValue.rawValue, forKey: "pt.net.adBlockLevel") }
+    }
+
     static var bypassRussia: Bool {
         get { bool("pt.net.bypassRussia", true) }
         set { defaults.set(newValue, forKey: "pt.net.bypassRussia") }
@@ -208,6 +213,7 @@ enum Prefs {
     static var tunnelOptions: TunnelOptions {
         var options = TunnelOptions()
         options.adBlocking = adBlocking
+        options.adBlockLevel = adBlockLevel
         options.bypassRussia = bypassRussia
         options.bypassPrivate = localNetwork
         options.autoSelect = autoSelect

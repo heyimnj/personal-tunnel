@@ -4,6 +4,9 @@ import Foundation
 public struct TunnelOptions: Codable, Equatable, Sendable {
     /// Reject domains of the bundled ad list.
     public var adBlocking = true
+    /// Which bundled ad list: `basic` (geosite ads, as before 3.0), `standard`
+    /// (+ HaGeZi Light, the default) or `extended` (+ HaGeZi Normal).
+    public var adBlockLevel = AdBlockLevel.standard
     /// Russian domains and addresses go outside the VPN.
     public var bypassRussia = true
     /// Private (LAN) addresses go outside the VPN.
@@ -18,6 +21,19 @@ public struct TunnelOptions: Codable, Equatable, Sendable {
     public init() {}
 }
 
+public enum AdBlockLevel: String, Codable, CaseIterable, Sendable {
+    case basic, standard, extended
+
+    /// The bundled rule sets this level blocks with.
+    public var ruleSets: [String] {
+        switch self {
+        case .basic: return [ConfigBuilder.RuleSet.adBlock]
+        case .standard: return [ConfigBuilder.RuleSet.adBlock, ConfigBuilder.RuleSet.adStandard]
+        case .extended: return [ConfigBuilder.RuleSet.adBlock, ConfigBuilder.RuleSet.adExtended]
+        }
+    }
+}
+
 /// Builds the sing-box configuration the packet tunnel runs: one subscription,
 /// all of its servers behind the `proxy` selector, so the server can be changed
 /// in the running tunnel without restarting it.
@@ -29,9 +45,12 @@ public enum ConfigBuilder {
     /// Bundled rule sets: tag → file name inside the extension's `Rules` folder.
     public enum RuleSet {
         public static let adBlock = "pt-ad-block"
+        public static let adStandard = "pt-ad-standard"
+        public static let adExtended = "pt-ad-extended"
         public static let russia = ["pt-ru-domains", "pt-ru-inside", "pt-ru-ip"]
         public static let files: [String: String] = [
-            "pt-ad-block": "ad-block.srs", "pt-ru-domains": "ru-domains.srs",
+            "pt-ad-block": "ad-block.srs", "pt-ad-standard": "ad-standard.srs", "pt-ad-extended": "ad-extended.srs",
+            "pt-ru-domains": "ru-domains.srs",
             "pt-ru-inside": "ru-inside.srs", "pt-ru-ip": "ru-ip.srs",
         ]
         /// Marks a path the extension must point at its own bundle.
@@ -159,10 +178,15 @@ public enum ConfigBuilder {
             ["tag": .string(tag), "type": "local", "format": "binary", "path": .string(RuleSet.pathPrefix + (RuleSet.files[tag] ?? tag))]
         }
         if options.adBlocking {
-            ruleSets.append(local(RuleSet.adBlock))
-            let reject: JSONValue = ["rule_set": [.string(RuleSet.adBlock)], "action": "reject", "no_drop": true]
-            routeRules.append(reject)
-            dnsRules.append(["rule_set": [.string(RuleSet.adBlock)], "action": "reject"])
+            // Ad rules come first after DNS: before any bypass, as in Anywhere's Purify.
+            let sets = options.adBlockLevel.ruleSets
+            ruleSets.append(contentsOf: sets.map(local))
+            routeRules.append(["rule_set": JSONValue(sets), "action": "reject", "no_drop": true])
+            // A blocked name resolves to 0.0.0.0 / :: (an answer, not a refusal: apps
+            // that retry on a refusal give up at once), other record types to nothing.
+            dnsRules.append(["rule_set": JSONValue(sets), "query_type": ["A"], "action": "predefined", "answer": ["*. 300 IN A 0.0.0.0"]])
+            dnsRules.append(["rule_set": JSONValue(sets), "query_type": ["AAAA"], "action": "predefined", "answer": ["*. 300 IN AAAA ::"]])
+            dnsRules.append(["rule_set": JSONValue(sets), "action": "predefined", "rcode": "NOERROR"])
         }
         if options.bypassPrivate {
             routeRules.append(["ip_is_private": true, "outbound": "direct"])

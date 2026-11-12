@@ -29,6 +29,26 @@ final class ConfigBuilderTests: XCTestCase {
         XCTAssertEqual(try JSONValue.parse(config.serialized(pretty: true)), config)
     }
 
+    func testAdBlockLevelsAndDNSAnswers() throws {
+        let subscription = try subscription()
+        var options = TunnelOptions()
+        let standard = try ConfigBuilder.build(subscription: subscription, selected: nil, options: options)
+        XCTAssertEqual(standard.at("route", "rules")?[2]?["rule_set"], ["pt-ad-block", "pt-ad-standard"])
+        XCTAssertEqual(standard.at("route", "rules")?[2]?["action"], "reject")
+        let dns = standard.at("dns", "rules")?.arrayValue ?? []
+        XCTAssertEqual(dns[0]["answer"], ["*. 300 IN A 0.0.0.0"])
+        XCTAssertEqual(dns[1]["answer"], ["*. 300 IN AAAA ::"])
+        XCTAssertEqual(dns[2]["rcode"], "NOERROR")
+        let paths = (standard.at("route", "rule_set")?.arrayValue ?? []).compactMap { $0["path"]?.stringValue }
+        XCTAssertTrue(paths.contains("@rules/ad-standard.srs"))
+        options.adBlockLevel = .extended
+        let extended = try ConfigBuilder.build(subscription: subscription, selected: nil, options: options)
+        XCTAssertEqual(extended.at("route", "rules")?[2]?["rule_set"], ["pt-ad-block", "pt-ad-extended"])
+        options.adBlockLevel = .basic
+        let basic = try ConfigBuilder.build(subscription: subscription, selected: nil, options: options)
+        XCTAssertEqual(basic.at("route", "rules")?[2]?["rule_set"], ["pt-ad-block"])
+    }
+
     func testProbeConfigurationHasServersButNoTunnel() throws {
         let subscription = try subscription()
         let config = try ConfigBuilder.probe(subscription: subscription, options: TunnelOptions())
@@ -81,7 +101,7 @@ final class ConfigBuilderTests: XCTestCase {
         XCTAssertEqual(rules[2]["action"], "reject")
         XCTAssertEqual(rules[3]["ip_is_private"], true)
         XCTAssertEqual(rules[4]["outbound"], "direct")
-        XCTAssertEqual(full.at("route", "rule_set")?.arrayValue?.count, 4)
+        XCTAssertEqual(full.at("route", "rule_set")?.arrayValue?.count, 5)
         XCTAssertEqual(full.at("dns", "final"), "dns-remote")
         XCTAssertEqual(full.at("dns", "servers")?[0]?["detour"], "proxy")
         XCTAssertNil(full.at("dns", "servers")?[1]?["detour"])
@@ -101,7 +121,7 @@ final class ConfigBuilderTests: XCTestCase {
         XCTAssertEqual(config.at("route", "rule_set")?[0]?["path"], "@rules/ad-block.srs")
         let moved = ConfigBuilder.relocateRuleSets(in: config, directory: "/bundle/Rules")
         XCTAssertEqual(moved.at("route", "rule_set")?[0]?["path"], "/bundle/Rules/ad-block.srs")
-        XCTAssertEqual(moved.at("route", "rule_set")?[3]?["path"], "/bundle/Rules/ru-ip.srs")
+        XCTAssertEqual(moved.at("route", "rule_set")?[4]?["path"], "/bundle/Rules/ru-ip.srs")
     }
 
     /// A configuration 1.x stored: locations are selectors over leaves, every leaf

@@ -1,0 +1,5 @@
+Personal Tunnel ad-block lists from HaGeZi DNS Blocklists
+https://github.com/hagezi/dns-blocklists — GNU General Public License v3.0
+
+ad-standard.srs: HaGeZi DNS Blocklists, light, version 2026.1111.1525.53
+ad-extended.srs: HaGeZi DNS Blocklists, multi, version 2026.1111.1522.32

@@ -119,8 +119,7 @@ final class NetworkSettingsViewController: FormViewController {
                 .toggle(title: L("Автоматический failover"), get: { Prefs.autoFailover }, set: { Prefs.autoFailover = $0 }),
             ]),
             FormSection(L("Маршрутизация"), [
-                .toggle(title: L("Блокировка рекламы"), get: { Prefs.adBlocking }, set: { Prefs.adBlocking = $0; changed() }),
-                .note(L("Рекламные домены блокируются локально в трафике VPN. Список встроен в приложение и обновляется вместе с ним. Реклама с домена самого сайта может остаться. Изменение применяется к работающему туннелю.")),
+                .link(symbol: nil, title: L("Блокировка рекламы")) { [weak self] in self?.navigationController?.pushViewController(AdBlockViewController(), animated: true) },
                 .toggle(title: L("Обход российских сайтов"), get: { Prefs.bypassRussia }, set: { Prefs.bypassRussia = $0; changed() }),
                 .toggle(title: L("Защищённый DNS"), get: { Prefs.secureDNS }, set: { Prefs.secureDNS = $0; App.shared.tunnel.applySettings() }),
                 .toggle(title: L("Локальная сеть"), get: { Prefs.localNetwork }, set: { Prefs.localNetwork = $0; changed() }),
