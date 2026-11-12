@@ -372,7 +372,13 @@ final class MinimalServersViewController: UIViewController {
             guard let subscription = App.shared.library.subscription(id) else { return }
             header.title.text = subscription.name
             header.title.font = Theme.font(17, .semibold)
-            header.count.text = "\(subscription.nodes.count)"
+            // With a filter on: shown of all.
+            let section = self?.list.sections.first { $0.id == id }
+            if let section, !section.selected.isEmpty {
+                header.count.text = "\(section.nodes.count)/\(subscription.nodes.count)"
+            } else {
+                header.count.text = "\(subscription.nodes.count)"
+            }
             header.pin.isHidden = !Prefs.arrangement.isPinned(Arrangement.subscription(id))
             header.setMark(self?.selecting == true ? self?.selectedSubscriptions.contains(id) : nil)
             if App.shared.refreshing.value.contains(id) { header.spinner.startAnimating() } else { header.spinner.stopAnimating() }
@@ -395,6 +401,7 @@ final class MinimalServersViewController: UIViewController {
              },
              SwipeAction(symbol: "trash", color: .systemRed, title: L("Удалить")) { self?.confirmDelete(node: tag, in: id) }]
         }
+        list.onFilter = { [weak self] id, tag in self?.pickFilter(id, tag) }
         list.onToggle = { [weak self] id in
             guard let self else { return }
             if self.selecting { self.toggleSelected(subscription: id) } else { self.toggle(id) }
@@ -490,10 +497,47 @@ final class MinimalServersViewController: UIViewController {
         rowModels = [:]
         let library = App.shared.library
         ordered = Prefs.arrangement.sorted(library.subscriptions.filter { !$0.nodes.isEmpty }, key: { Arrangement.subscription($0.id) }, name: { $0.name })
-        let sections = ordered.map { subscription in
-            ServerListView.Section(id: subscription.id, standalone: subscription.isStandalone, nodes: sortedNodes(subscription).map(\.id))
+        let filters = Prefs.serverFilters
+        let sections = ordered.map { subscription -> ServerListView.Section in
+            let nodes = sortedNodes(subscription)
+            let tags = Self.filterTags(subscription)
+            let selected = Set(filters[String(subscription.id)] ?? []).intersection(tags)
+            let shown = selected.isEmpty ? nodes : nodes.filter { selected.isSubset(of: Set($0.facts.badges)) }
+            return ServerListView.Section(id: subscription.id, standalone: subscription.isStandalone, nodes: shown.map(\.id),
+                                          tags: tags, selected: selected)
         }
         list.set(sections, open: expanded)
+    }
+
+    /// The tags a subscription's servers carry, most common first; a bar only
+    /// when they differ (one kind of server has nothing to narrow).
+    private static func filterTags(_ subscription: Subscription) -> [String] {
+        guard !subscription.isStandalone, subscription.nodes.count > 1 else { return [] }
+        var counts: [String: Int] = [:]
+        var order: [String] = []
+        for node in subscription.nodes {
+            for tag in node.facts.badges {
+                if counts[tag] == nil { order.append(tag) }
+                counts[tag, default: 0] += 1
+            }
+        }
+        // A tag every server has does not narrow anything.
+        let useful = order.filter { counts[$0] ?? 0 < subscription.nodes.count }
+        guard !useful.isEmpty else { return [] }
+        return useful.enumerated().sorted { (counts[$0.element] ?? 0, -$0.offset) > (counts[$1.element] ?? 0, -$1.offset) }.map(\.element)
+    }
+
+    private func pickFilter(_ id: Int64, _ tag: String?) {
+        var filters = Prefs.serverFilters
+        var selected = Set(filters[String(id)] ?? [])
+        if let tag {
+            if selected.contains(tag) { selected.remove(tag) } else { selected.insert(tag) }
+        } else {
+            selected = []
+        }
+        filters[String(id)] = selected.isEmpty ? nil : Array(selected)
+        Prefs.serverFilters = filters
+        reload()
     }
 
     /// A latency batch touches only the rows it changed.

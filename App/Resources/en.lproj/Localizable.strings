@@ -470,3 +470,5 @@
 "Укажите пароль." = "Enter the password.";
 "Укажите закрытый ключ и ключ сервера." = "Enter the private key and the server's key.";
 "Укажите адрес интерфейса WireGuard." = "Enter the WireGuard interface address.";
+"Подробный журнал" = "Verbose log";
+"Каждый пакет: нагружает туннель" = "Every packet: loads the tunnel";

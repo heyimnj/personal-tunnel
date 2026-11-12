@@ -419,6 +419,65 @@ final class SubscriptionHeaderView: SwipeRow {
     }
 }
 
+/// The tags an open subscription can be narrowed by (protocol, security,
+/// transport, Vision, Xray): «Все» and the subscription's own, several at once.
+final class FilterBar: UIScrollView {
+    var onPick: ((String?) -> Void)?
+    private let stack = UIStackView(.horizontal, spacing: 6, alignment: .center, [])
+    private var shown: (tags: [String], selected: Set<String>) = ([], [])
+
+    override init(frame: CGRect) {
+        super.init(frame: frame)
+        showsHorizontalScrollIndicator = false
+        alwaysBounceHorizontal = true
+        clipsToBounds = true
+        contentInset = UIEdgeInsets(top: 0, left: 14, bottom: 0, right: 14)
+        addSubview(stack)
+        stack.translatesAutoresizingMaskIntoConstraints = false
+        NSLayoutConstraint.activate([
+            stack.leadingAnchor.constraint(equalTo: contentLayoutGuide.leadingAnchor),
+            stack.trailingAnchor.constraint(equalTo: contentLayoutGuide.trailingAnchor),
+            stack.topAnchor.constraint(equalTo: contentLayoutGuide.topAnchor, constant: 4),
+            stack.bottomAnchor.constraint(equalTo: contentLayoutGuide.bottomAnchor, constant: -4),
+            stack.heightAnchor.constraint(equalTo: frameLayoutGuide.heightAnchor, constant: -8),
+        ])
+    }
+
+    @available(*, unavailable)
+    required init?(coder _: NSCoder) { fatalError() }
+
+    func show(tags: [String], selected: Set<String>) {
+        guard tags != shown.tags || selected != shown.selected else { return }
+        shown = (tags, selected)
+        stack.arrangedSubviews.forEach { $0.removeFromSuperview() }
+        stack.addArrangedSubview(chip(L("Все"), on: selected.isEmpty) { [weak self] in self?.onPick?(nil) })
+        for tag in tags {
+            stack.addArrangedSubview(chip(tag, on: selected.contains(tag)) { [weak self] in self?.onPick?(tag) })
+        }
+    }
+
+    private func chip(_ title: String, on: Bool, action: @escaping () -> Void) -> UIView {
+        let button = UIButton(type: .system)
+        var configuration = UIButton.Configuration.filled()
+        configuration.title = title
+        configuration.cornerStyle = .capsule
+        configuration.contentInsets = NSDirectionalEdgeInsets(top: 6, leading: 12, bottom: 6, trailing: 12)
+        configuration.baseBackgroundColor = on ? Theme.accent : UIColor.label.withAlphaComponent(0.06)
+        configuration.baseForegroundColor = on ? .white : .label
+        configuration.titleTextAttributesTransformer = UIConfigurationTextAttributesTransformer { attributes in
+            var attributes = attributes
+            attributes.font = Theme.font(14, .semibold)
+            return attributes
+        }
+        button.configuration = configuration
+        button.addAction(UIAction { _ in
+            Haptics.selection()
+            action()
+        }, for: .touchUpInside)
+        return button
+    }
+}
+
 /// The circle «Выбрать несколько» puts in front of rows and subscriptions.
 enum SelectionMark {
     static func apply(_ selected: Bool?, to view: UIImageView) {
@@ -436,6 +495,7 @@ enum SelectionMark {
 /// It clips what it holds, so its moving bottom edge uncovers the server cards.
 final class SurfaceView: UIView {
     let header = SubscriptionHeaderView()
+    let filters = FilterBar()
     static let card = UIColor.secondarySystemGroupedBackground
     static let container = UIColor { traits in
         traits.userInterfaceStyle == .dark ? UIColor(red: 0.067, green: 0.067, blue: 0.075, alpha: 1) : UIColor(red: 0.914, green: 0.914, blue: 0.933, alpha: 1)
@@ -449,7 +509,9 @@ final class SurfaceView: UIView {
         // No clipping: a rounded mask over moving content renders offscreen every
         // frame. The server rows clip themselves at the container's edge instead.
         layer.cornerCurve = .continuous
+        addSubview(filters)
         addSubview(header)
+        filters.isHidden = true
     }
 
     override func traitCollectionDidChange(_ previous: UITraitCollection?) {
@@ -489,6 +551,16 @@ final class ServerListView: UIScrollView {
         var id: Int64
         var standalone: Bool
         var nodes: [String]
+        /// Tags to narrow the open subscription by; empty: no filter bar.
+        var tags: [String] = []
+        var selected: Set<String> = []
+    }
+
+    static let filterHeight: CGFloat = 44
+
+    /// Where the open subscription's server rows begin, under the head and its filters.
+    private func rowsTop(_ section: Section) -> CGFloat {
+        Self.headerHeight + (section.tags.isEmpty ? 0 : Self.filterHeight)
     }
 
     static let margin: CGFloat = 16
@@ -504,6 +576,8 @@ final class ServerListView: UIScrollView {
     var actionsForHeader: ((Int64) -> [SwipeAction])?
     var actionsForRow: ((Int64, String) -> [SwipeAction])?
     var onToggle: ((Int64) -> Void)?
+    /// A filter tag tapped (nil: «Все»).
+    var onFilter: ((Int64, String?) -> Void)?
     var onSelect: ((Int64, String) -> Void)?
     var onPing: ((Int64, String) -> Void)?
     /// A long press: the subscription, the server (nil for the head) and how to undo the highlight.
@@ -573,6 +647,7 @@ final class ServerListView: UIScrollView {
             if surfaces[section.id] == nil {
                 let surface = SurfaceView()
                 surface.header.tap.onTap = { [weak self] in self?.tappedHeader(section.id) }
+                surface.filters.onPick = { [weak self] tag in self?.onFilter?(section.id, tag) }
                 surface.header.onOpen = { [weak self] row in self?.swipeStarted(row) }
                 insertSubview(surface, at: 0)
                 surfaces[section.id] = surface
@@ -734,7 +809,10 @@ final class ServerListView: UIScrollView {
     // MARK: Layout
 
     private func bodyHeight(_ section: Section) -> CGFloat {
-        section.standalone || section.nodes.isEmpty ? 0 : CGFloat(section.nodes.count) * Self.rowPitch + Self.tail
+        guard !section.standalone else { return 0 }
+        let filter = section.tags.isEmpty ? 0 : Self.filterHeight
+        if section.nodes.isEmpty { return filter }
+        return filter + CGFloat(section.nodes.count) * Self.rowPitch + Self.tail
     }
 
     /// Height of the open part of a subscription right now.
@@ -769,6 +847,16 @@ final class ServerListView: UIScrollView {
             if surface.frame != frame { surface.frame = frame }
             let headerFrame = CGRect(x: 0, y: 0, width: width, height: Self.headerHeight)
             if surface.header.frame != headerFrame { surface.header.frame = headerFrame }
+            // The filter bar is uncovered by the moving edge like the rows.
+            let shown = height - Self.headerHeight
+            let hasFilters = !section.standalone && !section.tags.isEmpty && shown > 0.5
+            surface.filters.isHidden = !hasFilters
+            if hasFilters {
+                surface.filters.show(tags: section.tags, selected: section.selected)
+                let filterFrame = CGRect(x: 0, y: Self.headerHeight, width: width, height: min(Self.filterHeight, shown))
+                if surface.filters.frame != filterFrame { surface.filters.frame = filterFrame }
+                surface.filters.alpha = min(1, shown / Self.filterHeight)
+            }
             surface.show(progress: min(1, progress), standalone: section.standalone)
             y += height + Self.gap
         }
@@ -807,13 +895,14 @@ final class ServerListView: UIScrollView {
             }
             let revealed = frame.height - Self.headerHeight
             guard revealed > 0.5 else { continue }
-            let firstTop = visible.minY - frame.minY - Self.headerHeight
-            let lastBottom = min(visible.maxY - frame.minY, frame.height) - Self.headerHeight
+            let top0 = rowsTop(section)
+            let firstTop = visible.minY - frame.minY - top0
+            let lastBottom = min(visible.maxY - frame.minY, frame.height) - top0
             let first = max(0, Int(floor(firstTop / Self.rowPitch)))
             let last = min(section.nodes.count - 1, Int(ceil(lastBottom / Self.rowPitch)))
             guard first <= last else { continue }
             for index in first ... last {
-                let top = Self.headerHeight + 3 + CGFloat(index) * Self.rowPitch
+                let top = top0 + 3 + CGFloat(index) * Self.rowPitch
                 guard top < frame.height else { break }
                 let row = rowView(section.id, section.nodes[index], in: surface, used: &used, plain: false)
                 row.contentHeight = Self.rowHeight

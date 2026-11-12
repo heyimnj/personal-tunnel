@@ -115,9 +115,12 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
         options.workingPath = paths.working.path
         options.tempPath = paths.temp.path
         options.crashReportSource = "packet-tunnel"
-        options.logMaxLines = 3000
-        // The extension has about 50 MiB: let the core watch its own memory.
+        options.logMaxLines = 1000
+        // The extension has about 50 MiB: let the core watch its own memory, and
+        // collect garbage earlier than its default (40 MiB, 4/5 of the limit given):
+        // with Xray-core linked in the footprint reached 38 MiB under load.
         options.oomKillerEnabled = true
+        options.oomMemoryLimit = 42 * 1024 * 1024
         var error: NSError?
         LibboxSetup(options, &error)
         if let error { throw TunnelError("Ядро не инициализировалось: \(error.localizedDescription)") }

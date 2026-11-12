@@ -172,7 +172,13 @@ final class ServiceLogViewController: UIViewController, UITableViewDataSource, U
                         self?.minimumLevel = level
                         self?.refilter()
                     }
-                } + [UIAction(title: L("Очистить журнал"), attributes: .destructive) { _ in App.shared.core.clearLogs() }])
+                } + [
+                    UIAction(title: L("Подробный журнал"), subtitle: L("Каждый пакет: нагружает туннель"), state: Prefs.verboseLog ? .on : .off) { _ in
+                        Prefs.verboseLog.toggle()
+                        App.shared.reloadTunnel()
+                    },
+                    UIAction(title: L("Очистить журнал"), attributes: .destructive) { _ in App.shared.core.clearLogs() },
+                ])
             },
         ])
         let bar = UIStackView(.horizontal, spacing: 12, alignment: .center, [dot, live, UIView(), tool("doc.on.doc", #selector(copyAll)), tool("magnifyingglass", #selector(toggleSearch)), pause, filter])
@@ -272,7 +278,11 @@ final class ServiceLogViewController: UIViewController, UITableViewDataSource, U
         }
         guard let newest = candidates.max(by: { $0.1 < $1.1 }) else { return nil }
         let formatter = ISO8601DateFormatter()
-        return [formatter.string(from: newest.1)] + tail(newest.0, lines: 60)
+        guard let text = try? String(contentsOf: newest.0, encoding: .utf8) else { return nil }
+        let all = text.split(separator: "\n", omittingEmptySubsequences: false).map(String.init)
+        // The reason (`panic: …`, `fatal error: …`) and the failing goroutine come first.
+        let lines = all.count <= 120 ? all : Array(all.prefix(80)) + ["… (\(all.count - 120))"] + Array(all.suffix(40))
+        return [formatter.string(from: newest.1)] + lines
     }
 
     @objc private func togglePause() {
@@ -610,13 +620,13 @@ final class NetworkActivityViewController: FormViewController {
 }
 
 final class AboutViewController: FormViewController {
-    /// «3.0, beta 1 (212)»; a release build has no beta number: «3.0 (212)».
+    /// «3.0, RC 1 (216)», «3.0, beta 3 (215)»; a release has no label: «3.0 (217)».
     static var version: String {
         let info = Bundle.main.infoDictionary
         let marketing = info?["CFBundleShortVersionString"] as? String ?? "3.0"
         let build = info?["CFBundleVersion"] as? String ?? ""
-        let beta = (info?["PersonalBetaNumber"] as? String)?.trimmingCharacters(in: .whitespaces) ?? ""
-        return beta.isEmpty ? "\(marketing) (\(build))" : "\(marketing), beta \(beta) (\(build))"
+        let label = (info?["PersonalPrerelease"] as? String)?.trimmingCharacters(in: .whitespaces) ?? ""
+        return label.isEmpty ? "\(marketing) (\(build))" : "\(marketing), \(label) (\(build))"
     }
 
     init() { super.init(title: L("О приложении")) }

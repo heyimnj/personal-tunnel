@@ -82,8 +82,10 @@ public enum CrashReport {
         if let systemReason, !systemReason.isEmpty { parts.append(CoreText.f("Система: %@", systemReason)) }
         if let memory { parts.append(CoreText.f("Память (%@): %@", formatter.string(from: memory.date), memory.line)) }
         if let coreCrash, !coreCrash.isEmpty {
-            let tail = coreCrash.split(separator: "\n").suffix(40).joined(separator: "\n")
-            parts.append(CoreText.t("Ядро:") + "\n" + Redactor.redact(tail))
+            // The reason (`panic: …`) and the failing goroutine come first in the file.
+            let lines = coreCrash.split(separator: "\n").map(String.init)
+            let kept = lines.count <= 100 ? lines : Array(lines.prefix(70)) + ["…"] + Array(lines.suffix(20))
+            parts.append(CoreText.t("Ядро:") + "\n" + Redactor.redact(kept.joined(separator: "\n")))
         }
         if !events.isEmpty {
             parts.append(CoreText.t("Последние события расширения:") + "\n" + events.suffix(40).map(Redactor.redact).joined(separator: "\n"))

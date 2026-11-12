@@ -135,6 +135,12 @@ enum Prefs {
         set { defaults.set(newValue, forKey: "pt.autoPing") }
     }
 
+    /// Tags each subscription's list is narrowed by (subscription id → tags).
+    static var serverFilters: [String: [String]] {
+        get { defaults.dictionary(forKey: "pt.serverFilters") as? [String: [String]] ?? [:] }
+        set { defaults.set(newValue, forKey: "pt.serverFilters") }
+    }
+
     static var sortByLatency: Bool {
         get { bool("personal.modernSortByLatency", false) }
         set { defaults.set(newValue, forKey: "personal.modernSortByLatency") }
@@ -210,8 +216,15 @@ enum Prefs {
         set { defaults.set(newValue, forKey: "pt.autoSelect") }
     }
 
+    /// «Подробный журнал»: the core logs every level (one line per packet at TRACE).
+    static var verboseLog: Bool {
+        get { bool("pt.verboseLog", false) }
+        set { defaults.set(newValue, forKey: "pt.verboseLog") }
+    }
+
     static var tunnelOptions: TunnelOptions {
         var options = TunnelOptions()
+        options.logLevel = verboseLog ? "trace" : "info"
         options.adBlocking = adBlocking
         options.adBlockLevel = adBlockLevel
         options.bypassRussia = bypassRussia

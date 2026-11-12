@@ -26,6 +26,16 @@ fetch_core() {
   # Только подмодули, на которые ссылается go.mod; клиентские приложения не нужны.
   git -C "$CORE_CHECKOUT" submodule update --init --depth 1 \
     submodules/wireguard-go submodules/sing-tun submodules/gvisor
+  # Свои правки поверх закреплённого коммита (core/patches), каждая один раз.
+  local patch
+  for patch in "$CORE_ROOT"/core/patches/*.patch; do
+    [ -e "$patch" ] || continue
+    if git -C "$CORE_CHECKOUT" apply --reverse --check "$patch" 2>/dev/null; then
+      continue
+    fi
+    git -C "$CORE_CHECKOUT" apply "$patch"
+    echo "ядро: наложен $(basename "$patch")"
+  done
 }
 
 fetch_xray() {
