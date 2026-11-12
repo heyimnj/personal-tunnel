@@ -82,7 +82,7 @@ jobs:
 
   ios:
     name: Неподписанный IPA (ядро расширения ${{ matrix.tunnel_core }})
-    runs-on: macos-26
+    runs-on: macos-26-intel
     timeout-minutes: 90
     strategy:
       fail-fast: false
