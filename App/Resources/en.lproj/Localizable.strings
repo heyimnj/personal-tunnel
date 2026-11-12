@@ -481,3 +481,16 @@
 "Случайный (каждый раз)" = "Random (every time)";
 "Упорядочить по задержке" = "Order by latency";
 "Упорядочить по имени" = "Order by name";
+"%@ из %@" = "%@ of %@";
+"Истекла %@" = "Expired %@";
+"Активна до %@ (%@)" = "Active until %@ (%@)";
+"сегодня" = "today";
+"день" = "day";
+"дня" = "days";
+"дней" = "days";
+"UDP-соединения" = "UDP connections";
+"TCP-соединения" = "TCP connections";
+"Открытых соединений нет." = "No open connections.";
+"соединение" = "connection";
+"соединения" = "connections";
+"соединений" = "connections";

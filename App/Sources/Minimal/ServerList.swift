@@ -65,7 +65,6 @@ private final class SwipePill: UIControl {
     private let content = UIStackView()
     private let icon = UIImageView()
     private let label = UILabel()
-    private(set) var tinted = false
     let naturalWidth: CGFloat
 
     /// `titled`: the capsule at the edge carries its title; the others only a symbol
@@ -99,16 +98,10 @@ private final class SwipePill: UIControl {
     @available(*, unavailable)
     required init?(coder _: NSCoder) { fatalError() }
 
-    /// Dark grey while the row is still being pulled, the action's colour once fully
-    /// out; the symbol and the title are white throughout.
-    func setTinted(_ value: Bool, animated: Bool) {
-        guard value != tinted else { return }
-        tinted = value
-        if animated { UIView.animate(withDuration: 0.22, delay: 0, options: [.beginFromCurrentState, .allowUserInteraction]) { self.paint() } } else { paint() }
-    }
-
+    /// The action's colour from the first point of the swipe; the symbol and the
+    /// title are white.
     private func paint() {
-        clip.backgroundColor = tinted ? action.color : UIColor.systemGray2
+        clip.backgroundColor = action.color
         let ink: UIColor = .white
         label.textColor = ink
         icon.tintColor = ink
@@ -138,6 +131,8 @@ class SwipeRow: UIView, UIGestureRecognizerDelegate {
     var onOpen: ((SwipeRow) -> Void)?
     private let rail = UIView()
     private var pills: [SwipePill] = []
+    /// The actions are fully out (a light tap of the haptics when they get there).
+    private var fullyOut = false
     private(set) var offset: CGFloat = 0
     private var panStart: CGFloat = 0
     private var animator: UIViewPropertyAnimator?
@@ -202,10 +197,10 @@ class SwipeRow: UIView, UIGestureRecognizerDelegate {
             pill.isHidden = width < 1
             right -= width + Self.gap * progress
         }
-        let tinted = progress > 0.97
-        if tinted != pills[0].tinted {
-            for pill in pills { pill.setTinted(tinted, animated: true) }
-            if tinted, panning { Haptics.soft(0.45) }
+        let out = progress > 0.97
+        if out != fullyOut {
+            fullyOut = out
+            if out, panning { Haptics.soft(0.45) }
         }
     }
 
@@ -493,10 +488,82 @@ enum SelectionMark {
     }
 }
 
+/// The provider's line under an open subscription's head: traffic used of the
+/// limit on the left, until when it is active on the right.
+final class SubscriptionInfoStrip: UIView {
+    private let traffic = UILabel(font: Theme.font(.footnote), color: .secondaryLabel)
+    private let expiry = UILabel(font: Theme.font(.footnote), color: .secondaryLabel)
+    private let trafficIcon = UIImageView(image: UIImage(systemName: "arrow.up.arrow.down", withConfiguration: UIImage.SymbolConfiguration(font: Theme.font(.caption1, .medium))))
+    private let expiryIcon = UIImageView(image: UIImage(systemName: "calendar", withConfiguration: UIImage.SymbolConfiguration(font: Theme.font(.caption1, .medium))))
+    private var shown: (String?, String?) = (nil, nil)
+
+    override init(frame: CGRect) {
+        super.init(frame: frame)
+        clipsToBounds = true
+        isUserInteractionEnabled = false
+        for icon in [trafficIcon, expiryIcon] {
+            icon.tintColor = .secondaryLabel
+            icon.contentMode = .center
+            addSubview(icon)
+        }
+        for label in [traffic, expiry] {
+            label.adjustsFontSizeToFitWidth = true
+            label.minimumScaleFactor = 0.8
+            addSubview(label)
+        }
+        expiry.textAlignment = .right
+    }
+
+    @available(*, unavailable)
+    required init?(coder _: NSCoder) { fatalError() }
+
+    func show(traffic text: String?, expiry date: String?) {
+        guard shown.0 != text || shown.1 != date else { return }
+        shown = (text, date)
+        traffic.text = text
+        expiry.text = date
+        trafficIcon.isHidden = text == nil
+        expiryIcon.isHidden = date == nil
+        accessibilityLabel = [text, date].compactMap { $0 }.joined(separator: ", ")
+        setNeedsLayout()
+    }
+
+    override func layoutSubviews() {
+        super.layoutSubviews()
+        let inset: CGFloat = 20, icon: CGFloat = 16, gap: CGFloat = 5
+        let height: CGFloat = ServerListView.infoHeight
+        let top: CGFloat = 0
+        var left = inset
+        let right = bounds.width - inset
+        let both = shown.0 != nil && shown.1 != nil
+        let half = (bounds.width - 2 * inset - 12) / 2
+        if shown.0 != nil {
+            let want = ceil(traffic.intrinsicContentSize.width)
+            let width = min(want, (both ? half : bounds.width - 2 * inset) - icon - gap)
+            trafficIcon.frame = CGRect(x: left, y: top, width: icon, height: height)
+            traffic.frame = CGRect(x: left + icon + gap, y: top, width: width, height: height)
+            left += icon + gap + width + 12
+        }
+        if shown.1 != nil {
+            let want = ceil(expiry.intrinsicContentSize.width)
+            let room = both ? max(half, right - left) : bounds.width - 2 * inset
+            let width = min(want, room - icon - gap)
+            expiry.frame = CGRect(x: right - width, y: top, width: width, height: height)
+            expiryIcon.frame = CGRect(x: right - width - gap - icon, y: top, width: icon, height: height)
+            if !both {
+                // Alone it sits where the traffic would: on the left.
+                expiryIcon.frame.origin.x = inset
+                expiry.frame.origin.x = inset + icon + gap
+            }
+        }
+    }
+}
+
 /// The surface of one subscription: the card when closed, the container when open.
 /// It clips what it holds, so its moving bottom edge uncovers the server cards.
 final class SurfaceView: UIView {
     let header = SubscriptionHeaderView()
+    let info = SubscriptionInfoStrip()
     let filters = FilterBar()
     static let card = UIColor.secondarySystemGroupedBackground
     static let container = UIColor { traits in
@@ -512,8 +579,10 @@ final class SurfaceView: UIView {
         // frame. The server rows clip themselves at the container's edge instead.
         layer.cornerCurve = .continuous
         addSubview(filters)
+        addSubview(info)
         addSubview(header)
         filters.isHidden = true
+        info.isHidden = true
     }
 
     override func traitCollectionDidChange(_ previous: UITraitCollection?) {
@@ -556,13 +625,24 @@ final class ServerListView: UIScrollView {
         /// Tags to narrow the open subscription by; empty: no filter bar.
         var tags: [String] = []
         var selected: Set<String> = []
+        /// What the provider reports: traffic used of the limit, and until when.
+        var traffic: String?
+        var expiry: String?
+
+        var hasInfo: Bool { !standalone && (traffic != nil || expiry != nil) }
     }
 
     static let filterHeight: CGFloat = 44
+    static let infoHeight: CGFloat = 26
 
-    /// Where the open subscription's server rows begin, under the head and its filters.
+    /// Height of the strip under the open head: the provider's line, then the filters.
+    private func stripHeight(_ section: Section) -> CGFloat {
+        (section.hasInfo ? Self.infoHeight : 0) + (section.tags.isEmpty ? 0 : Self.filterHeight)
+    }
+
+    /// Where the open subscription's server rows begin, under the head, its line and its filters.
     private func rowsTop(_ section: Section) -> CGFloat {
-        Self.headerHeight + (section.tags.isEmpty ? 0 : Self.filterHeight)
+        Self.headerHeight + stripHeight(section)
     }
 
     static let margin: CGFloat = 16
@@ -815,9 +895,9 @@ final class ServerListView: UIScrollView {
 
     private func bodyHeight(_ section: Section) -> CGFloat {
         guard !section.standalone else { return 0 }
-        let filter = section.tags.isEmpty ? 0 : Self.filterHeight
-        if section.nodes.isEmpty { return filter }
-        return filter + CGFloat(section.nodes.count) * Self.rowPitch + Self.tail
+        let strip = stripHeight(section)
+        if section.nodes.isEmpty { return strip }
+        return strip + CGFloat(section.nodes.count) * Self.rowPitch + Self.tail
     }
 
     /// Height of the open part of a subscription right now.
@@ -852,15 +932,26 @@ final class ServerListView: UIScrollView {
             if surface.frame != frame { surface.frame = frame }
             let headerFrame = CGRect(x: 0, y: 0, width: width, height: Self.headerHeight)
             if surface.header.frame != headerFrame { surface.header.frame = headerFrame }
-            // The filter bar is uncovered by the moving edge like the rows.
+            // The provider's line and the filter bar are uncovered by the moving edge like the rows.
             let shown = height - Self.headerHeight
-            let hasFilters = !section.standalone && !section.tags.isEmpty && shown > 0.5
+            let hasInfo = section.hasInfo && shown > 0.5
+            surface.info.isHidden = !hasInfo
+            var stripTop = Self.headerHeight
+            if hasInfo {
+                surface.info.show(traffic: section.traffic, expiry: section.expiry)
+                let infoFrame = CGRect(x: 0, y: stripTop, width: width, height: min(Self.infoHeight, shown))
+                if surface.info.frame != infoFrame { surface.info.frame = infoFrame }
+                surface.info.alpha = min(1, shown / Self.infoHeight)
+            }
+            if section.hasInfo { stripTop += Self.infoHeight }
+            let filtersShown = shown - (stripTop - Self.headerHeight)
+            let hasFilters = !section.standalone && !section.tags.isEmpty && filtersShown > 0.5
             surface.filters.isHidden = !hasFilters
             if hasFilters {
                 surface.filters.show(tags: section.tags, selected: section.selected)
-                let filterFrame = CGRect(x: 0, y: Self.headerHeight, width: width, height: min(Self.filterHeight, shown))
+                let filterFrame = CGRect(x: 0, y: stripTop, width: width, height: min(Self.filterHeight, filtersShown))
                 if surface.filters.frame != filterFrame { surface.filters.frame = filterFrame }
-                surface.filters.alpha = min(1, shown / Self.filterHeight)
+                surface.filters.alpha = min(1, filtersShown / Self.filterHeight)
             }
             surface.show(progress: min(1, progress), standalone: section.standalone)
             y += height + Self.gap

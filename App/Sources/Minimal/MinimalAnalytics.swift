@@ -28,20 +28,47 @@ final class AnalyticsCard: UIView {
     }
 }
 
-/// Small stat card: title, big value, grey caption.
+/// Small stat card: title, big value, grey caption. With `onTap` it opens a
+/// page (a chevron by the title says so) and answers the finger like a button.
 final class StatCard: UIView {
     private let card = AnalyticsCard()
     let value = UILabel(font: UIFont.monospacedDigitSystemFont(ofSize: Theme.font(.title3).pointSize, weight: .semibold))
     let caption = UILabel(font: Theme.font(.caption1), color: .secondaryLabel, lines: 2)
+    private let titleRow: UIStackView
+    private let press = TapControl()
+
+    var onTap: (() -> Void)? {
+        didSet {
+            press.onTap = onTap
+            press.isHidden = onTap == nil
+            guard onTap != nil, titleRow.arrangedSubviews.count == 2 else { return }
+            let chevron = UIImageView(image: UIImage(systemName: "chevron.right", withConfiguration: UIImage.SymbolConfiguration(font: Theme.font(.caption2, .semibold))))
+            chevron.tintColor = .tertiaryLabel
+            chevron.setContentHuggingPriority(.required, for: .horizontal)
+            titleRow.addArrangedSubview(chevron)
+            isAccessibilityElement = false
+            press.accessibilityTraits = .button
+        }
+    }
 
     init(symbol: String, title: String, tint: UIColor) {
+        titleRow = AnalyticsCard.title(symbol, title, tint: tint)
         super.init(frame: .zero)
         addSubview(card)
         card.pin(to: self)
         card.stack.spacing = 14
-        card.stack.addArrangedSubview(AnalyticsCard.title(symbol, title, tint: tint))
+        card.stack.addArrangedSubview(titleRow)
         card.stack.addArrangedSubview(value)
         card.stack.addArrangedSubview(caption)
+        // Over the whole card: the ripple spreads across it from the finger.
+        press.ripple = true
+        press.pressScale = 1
+        press.rippleCornerRadius = 28
+        press.isHidden = true
+        press.isAccessibilityElement = true
+        press.accessibilityLabel = title
+        addSubview(press)
+        press.pin(to: self)
         value.adjustsFontSizeToFitWidth = true
         value.minimumScaleFactor = 0.7
         heightAnchor.constraint(greaterThanOrEqualToConstant: 136).isActive = true
@@ -294,6 +321,8 @@ final class MinimalAnalyticsViewController: UIViewController {
         ])
         tcp.caption.text = L("Активные соединения")
         udp.caption.text = L("Активные соединения")
+        tcp.onTap = { [weak self] in self?.navigationController?.pushViewController(ConnectionsViewController(udp: false), animated: true) }
+        udp.onTap = { [weak self] in self?.navigationController?.pushViewController(ConnectionsViewController(udp: true), animated: true) }
 
         let core = App.shared.core
         core.status.observe(self) { [weak self] in self?.show($0) }
@@ -301,7 +330,10 @@ final class MinimalAnalyticsViewController: UIViewController {
             guard let self, self.visible else { return }
             self.graph.history = history
         }
-        core.connections.observe(self) { [weak self] in self?.show($0) }
+        core.connections.observe(self) { [weak self] connections in
+            guard let self, self.visible else { return }
+            self.show(connections)
+        }
         App.shared.latency.changed.observe(self) { [weak self] _ in self?.showDelay() }
         App.shared.tunnel.connectedSince.observe(self) { [weak self] _ in self?.tick() }
         showDelay()
@@ -328,11 +360,12 @@ final class MinimalAnalyticsViewController: UIViewController {
     /// Only the visible page keeps its timer and the detailed streams.
     func setVisible(_ value: Bool) {
         visible = value
-        App.shared.core.setDetails(value)
+        App.shared.core.setConnectionsStreamed(value)
         timer?.invalidate()
         timer = nil
         if value {
             graph.history = App.shared.core.history.value
+            show(App.shared.core.connections.value)
             tick()
             timer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in self?.tick() }
         }
@@ -353,14 +386,30 @@ final class MinimalAnalyticsViewController: UIViewController {
         graphHint.isHidden = status != nil
     }
 
+    /// Names in the legend, in order; the rows are rebuilt only when they change.
+    private var legendNames: [String] = []
+    private var legendAmounts: [UILabel] = []
+
     private func show(_ connections: CoreConnections) {
-        tcp.value.text = "\(connections.tcp)"
-        udp.value.text = "\(connections.udp)"
-        let top = connections.routes.sorted { $0.value > $1.value }.prefix(6)
-        donut.shares = top.map(\.value)
-        legend.arrangedSubviews.forEach { $0.removeFromSuperview() }
+        let tcpText = "\(connections.tcp)", udpText = "\(connections.udp)"
+        if tcp.value.text != tcpText { tcp.value.text = tcpText }
+        if udp.value.text != udpText { udp.value.text = udpText }
+        let top = Array(connections.routes.sorted { $0.value > $1.value }.prefix(6))
+        let shares = top.map(\.value)
+        if donut.shares != shares { donut.shares = shares }
         routesEmpty.isHidden = !top.isEmpty
         routesChart?.isHidden = top.isEmpty
+        let names = top.map(\.key)
+        if names == legendNames {
+            for (label, route) in zip(legendAmounts, top) {
+                let text = Format.bytes(route.value)
+                if label.text != text { label.text = text }
+            }
+            return
+        }
+        legendNames = names
+        legendAmounts = []
+        legend.arrangedSubviews.forEach { $0.removeFromSuperview() }
         for (index, route) in top.enumerated() {
             let dot = UIView()
             dot.backgroundColor = DonutView.palette[index % DonutView.palette.count]
@@ -372,6 +421,7 @@ final class MinimalAnalyticsViewController: UIViewController {
             name.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
             let amount = UILabel(Format.bytes(route.value), font: Theme.font(.caption1))
             amount.setContentHuggingPriority(.required, for: .horizontal)
+            legendAmounts.append(amount)
             legend.addArrangedSubview(UIStackView(.horizontal, spacing: 10, alignment: .center, [dot, name, amount]))
         }
     }
@@ -389,5 +439,98 @@ final class MinimalAnalyticsViewController: UIViewController {
             delay.value.text = "— MS"
         }
         delay.caption.text = Prefs.pingMode == "alternative" ? "HTTP" : "HTTPS"
+    }
+}
+
+/// The open TCP or UDP connections, live: where each goes, through which
+/// server, how much it carried and for how long. The core sends them only
+/// while this screen is open (`CoreClient.listsConnections`).
+final class ConnectionsViewController: UITableViewController {
+    private let udp: Bool
+    private var items: [CoreConnection] = []
+    private var timer: Timer?
+
+    init(udp: Bool) {
+        self.udp = udp
+        super.init(style: .insetGrouped)
+        title = udp ? L("UDP-соединения") : L("TCP-соединения")
+    }
+
+    @available(*, unavailable)
+    required init?(coder _: NSCoder) { fatalError() }
+
+    override func viewDidLoad() {
+        super.viewDidLoad()
+        navigationItem.largeTitleDisplayMode = .never
+        tableView.backgroundColor = Theme.background
+        tableView.allowsSelection = false
+        tableView.rowHeight = UITableView.automaticDimension
+        tableView.estimatedRowHeight = 64
+        App.shared.core.connections.observe(self) { [weak self] in self?.show($0) }
+    }
+
+    override func viewWillAppear(_ animated: Bool) {
+        super.viewWillAppear(animated)
+        App.shared.core.listsConnections = true
+        show(App.shared.core.connections.value)
+        // The durations move on between the core's updates.
+        timer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in self?.refreshVisible() }
+    }
+
+    override func viewDidDisappear(_ animated: Bool) {
+        super.viewDidDisappear(animated)
+        App.shared.core.listsConnections = false
+        timer?.invalidate()
+        timer = nil
+    }
+
+    private func show(_ connections: CoreConnections) {
+        let next = connections.open.filter { $0.udp == udp }.sorted { $0.createdAt > $1.createdAt }
+        guard next != items else { return }
+        items = next
+        tableView.reloadData()
+    }
+
+    private func refreshVisible() {
+        for cell in tableView.visibleCells {
+            guard let index = tableView.indexPath(for: cell)?.row, items.indices.contains(index) else { continue }
+            configure(cell, items[index])
+        }
+    }
+
+    override func numberOfSections(in _: UITableView) -> Int { 1 }
+
+    override func tableView(_: UITableView, numberOfRowsInSection _: Int) -> Int { items.count }
+
+    override func tableView(_: UITableView, titleForFooterInSection _: Int) -> String? {
+        items.isEmpty ? L("Открытых соединений нет.") : Format.plural(items.count, L("соединение"), L("соединения"), L("соединений"))
+    }
+
+    override func tableView(_ tableView: UITableView, cellForRowAt indexPath: IndexPath) -> UITableViewCell {
+        let cell = tableView.dequeueReusableCell(withIdentifier: "connection") ?? UITableViewCell(style: .subtitle, reuseIdentifier: "connection")
+        cell.backgroundColor = Theme.card
+        configure(cell, items[indexPath.row])
+        return cell
+    }
+
+    private func configure(_ cell: UITableViewCell, _ item: CoreConnection) {
+        var content = UIListContentConfiguration.subtitleCell()
+        content.text = item.destination
+        content.textProperties.font = Theme.mono(13, .medium)
+        content.textProperties.numberOfLines = 1
+        content.textProperties.lineBreakMode = .byTruncatingMiddle
+        let route = item.chain.isEmpty ? (item.outbound.isEmpty ? "—" : item.outbound) : item.chain.joined(separator: " → ")
+        let age = Format.duration(Int(max(0, Date().timeIntervalSince(item.createdAt))))
+        var details = [route]
+        if !item.protocolName.isEmpty { details.append(item.protocolName.uppercased()) }
+        details.append("↓ " + Format.bytes(item.downloadTotal) + "  ↑ " + Format.bytes(item.uploadTotal))
+        details.append(age)
+        content.secondaryText = details.joined(separator: " · ")
+        content.secondaryTextProperties.font = Theme.font(.caption1)
+        content.secondaryTextProperties.color = .secondaryLabel
+        content.secondaryTextProperties.numberOfLines = 2
+        content.textToSecondaryTextVerticalPadding = 4
+        content.directionalLayoutMargins = NSDirectionalEdgeInsets(top: 10, leading: 16, bottom: 10, trailing: 16)
+        cell.contentConfiguration = content
     }
 }

@@ -131,37 +131,40 @@ final class DiagnosticsViewController: UIViewController {
 /// «Журнал службы»: the core's log, streamed while the screen is open.
 final class ServiceLogViewController: UIViewController, UITableViewDataSource, UISearchBarDelegate {
     private let table = UITableView(frame: .zero, style: .plain)
-    private let live = UILabel("LIVE", font: Theme.font(13, .bold), color: .systemRed)
-    private let state = UILabel("STREAMING", font: Theme.font(20, .semibold))
+    private let live = UILabel("LIVE", font: Theme.font(12, .bold), color: .systemRed)
+    private let state = UILabel("STREAMING", font: Theme.font(12, .semibold), color: .secondaryLabel)
     private let search = UISearchBar()
     private var lines: [LogLine] = []
     private var query = ""
     private var minimumLevel: Int32 = 7
     private let pause = UIButton(type: .system)
     private static let levels = ["PANIC", "FATAL", "ERROR", "WARN", "INFO", "DEBUG", "TRACE"]
+    private static let toolSymbol = UIImage.SymbolConfiguration(pointSize: 16, weight: .medium)
 
     override func viewDidLoad() {
         super.viewDidLoad()
         title = L("Журнал")
         navigationItem.largeTitleDisplayMode = .never
         view.backgroundColor = Theme.background
+        // Compact, in the scale of the rest of the app: 16 pt tools in 38 pt targets.
         func tool(_ symbol: String, _ selector: Selector?) -> UIButton {
             let button = UIButton(type: .system)
-            button.setImage(UIImage(systemName: symbol, withConfiguration: UIImage.SymbolConfiguration(pointSize: 19, weight: .medium)), for: .normal)
+            button.setImage(UIImage(systemName: symbol, withConfiguration: Self.toolSymbol), for: .normal)
             button.tintColor = .label
             if let selector { button.addTarget(self, action: selector, for: .touchUpInside) }
-            button.widthAnchor.constraint(equalToConstant: 44).isActive = true
+            button.widthAnchor.constraint(equalToConstant: 38).isActive = true
+            button.heightAnchor.constraint(equalToConstant: 38).isActive = true
             return button
         }
         let dot = UIView()
         dot.backgroundColor = .systemRed
-        dot.layer.cornerRadius = 7
+        dot.layer.cornerRadius = 4
         dot.translatesAutoresizingMaskIntoConstraints = false
-        NSLayoutConstraint.activate([dot.widthAnchor.constraint(equalToConstant: 14), dot.heightAnchor.constraint(equalToConstant: 14)])
-        pause.setImage(UIImage(systemName: "pause.fill", withConfiguration: UIImage.SymbolConfiguration(pointSize: 19, weight: .medium)), for: .normal)
+        NSLayoutConstraint.activate([dot.widthAnchor.constraint(equalToConstant: 8), dot.heightAnchor.constraint(equalToConstant: 8)])
+        pause.setImage(UIImage(systemName: "pause.fill", withConfiguration: Self.toolSymbol), for: .normal)
         pause.tintColor = .label
         pause.addTarget(self, action: #selector(togglePause), for: .touchUpInside)
-        pause.widthAnchor.constraint(equalToConstant: 44).isActive = true
+        pause.widthAnchor.constraint(equalToConstant: 38).isActive = true
         let filter = tool("line.3.horizontal.decrease", nil)
         filter.showsMenuAsPrimaryAction = true
         filter.menu = UIMenu(children: [
@@ -181,27 +184,28 @@ final class ServiceLogViewController: UIViewController, UITableViewDataSource, U
                 ])
             },
         ])
-        let bar = UIStackView(.horizontal, spacing: 12, alignment: .center, [dot, live, UIView(), tool("doc.on.doc", #selector(copyAll)), tool("magnifyingglass", #selector(toggleSearch)), pause, filter])
+        let bar = UIStackView(.horizontal, spacing: 6, alignment: .center, [dot, live, UIView(), tool("doc.on.doc", #selector(copyAll)), tool("magnifyingglass", #selector(toggleSearch)), pause, filter])
+        bar.setCustomSpacing(6, after: dot)
         let panel = UIView()
         panel.backgroundColor = FormViewController.cellColor
-        panel.layer.cornerRadius = 28
+        panel.layer.cornerRadius = 20
         panel.layer.cornerCurve = .continuous
         panel.addSubview(bar)
-        bar.pin(to: panel, insets: UIEdgeInsets(top: 14, left: 24, bottom: 14, right: 16))
-        let caption = UIStackView(.horizontal, spacing: 8, alignment: .center, [UILabel("SERVICE.LOG", font: Theme.font(20, .semibold)), UIView(), state])
+        bar.pin(to: panel, insets: UIEdgeInsets(top: 6, left: 16, bottom: 6, right: 8))
+        let caption = UIStackView(.horizontal, spacing: 8, alignment: .center, [UILabel("SERVICE.LOG", font: Theme.font(13, .semibold), color: .secondaryLabel), UIView(), state])
         search.searchBarStyle = .minimal
         search.placeholder = L("Поиск")
         search.delegate = self
         search.isHidden = true
         table.dataSource = self
         table.backgroundColor = FormViewController.cellColor
-        table.layer.cornerRadius = 28
+        table.layer.cornerRadius = 20
         table.layer.cornerCurve = .continuous
-        table.separatorInset = UIEdgeInsets(top: 0, left: 20, bottom: 0, right: 20)
+        table.separatorInset = UIEdgeInsets(top: 0, left: 14, bottom: 0, right: 14)
         table.rowHeight = UITableView.automaticDimension
-        table.estimatedRowHeight = 70
+        table.estimatedRowHeight = 44
         table.allowsSelection = false
-        let stack = UIStackView(.vertical, spacing: 16, alignment: .fill, [panel, search, caption, table])
+        let stack = UIStackView(.vertical, spacing: 10, alignment: .fill, [panel, search, caption, table])
         view.addSubview(stack)
         stack.translatesAutoresizingMaskIntoConstraints = false
         NSLayoutConstraint.activate([
@@ -210,16 +214,21 @@ final class ServiceLogViewController: UIViewController, UITableViewDataSource, U
             // Above the tab bar, so the card's rounded bottom is seen whole.
             stack.bottomAnchor.constraint(equalTo: view.safeAreaLayoutGuide.bottomAnchor, constant: -12),
         ])
-        stack.setCustomSpacing(8, after: caption)
+        stack.setCustomSpacing(6, after: caption)
         caption.isLayoutMarginsRelativeArrangement = true
-        caption.layoutMargins = UIEdgeInsets(top: 0, left: 20, bottom: 0, right: 20)
+        caption.layoutMargins = UIEdgeInsets(top: 0, left: 14, bottom: 0, right: 14)
         App.shared.core.logsChanged.observe(self) { [weak self] in self?.refilter() }
     }
 
     override func viewWillAppear(_ animated: Bool) {
         super.viewWillAppear(animated)
-        App.shared.core.setDetails(true)
+        App.shared.core.setLogStreamed(true)
         refilter()
+    }
+
+    override func viewDidDisappear(_ animated: Bool) {
+        super.viewDidDisappear(animated)
+        App.shared.core.setLogStreamed(false)
     }
 
     private func refilter() {
@@ -287,7 +296,7 @@ final class ServiceLogViewController: UIViewController, UITableViewDataSource, U
 
     @objc private func togglePause() {
         App.shared.core.logsPaused.toggle()
-        pause.setImage(UIImage(systemName: App.shared.core.logsPaused ? "play.fill" : "pause.fill", withConfiguration: UIImage.SymbolConfiguration(pointSize: 19, weight: .medium)), for: .normal)
+        pause.setImage(UIImage(systemName: App.shared.core.logsPaused ? "play.fill" : "pause.fill", withConfiguration: Self.toolSymbol), for: .normal)
         refilter()
     }
 
@@ -304,18 +313,18 @@ final class ServiceLogViewController: UIViewController, UITableViewDataSource, U
     func tableView(_: UITableView, numberOfRowsInSection _: Int) -> Int { lines.count }
 
     func tableView(_: UITableView, cellForRowAt indexPath: IndexPath) -> UITableViewCell {
-        let cell = UITableViewCell(style: .subtitle, reuseIdentifier: nil)
+        let cell = table.dequeueReusableCell(withIdentifier: "line") ?? UITableViewCell(style: .subtitle, reuseIdentifier: "line")
         cell.backgroundColor = .clear
         let line = lines[indexPath.row]
         var content = cell.defaultContentConfiguration()
         content.text = ServiceLogViewController.levels.indices.contains(Int(line.level)) ? ServiceLogViewController.levels[Int(line.level)] : "LOG"
-        content.textProperties.font = Theme.font(12, .semibold)
-        content.textProperties.color = line.level <= 2 ? .systemRed : .secondaryLabel
+        content.textProperties.font = Theme.font(10, .semibold)
+        content.textProperties.color = line.level <= 2 ? .systemRed : (line.level == 3 ? .systemOrange : .secondaryLabel)
         content.secondaryText = line.text
-        content.secondaryTextProperties.font = Theme.mono(13)
+        content.secondaryTextProperties.font = Theme.mono(11.5)
         content.secondaryTextProperties.color = .label
-        content.textToSecondaryTextVerticalPadding = 6
-        content.directionalLayoutMargins = NSDirectionalEdgeInsets(top: 12, leading: 20, bottom: 12, trailing: 20)
+        content.textToSecondaryTextVerticalPadding = 3
+        content.directionalLayoutMargins = NSDirectionalEdgeInsets(top: 8, leading: 14, bottom: 8, trailing: 14)
         cell.contentConfiguration = content
         return cell
     }
@@ -446,46 +455,37 @@ final class ServerOrderViewController: UITableViewController {
 enum AddServerFlow {
     private static let picker = FilePicker()
 
-    /// `source`: the control the menu comes from (iOS 26 shows the sheet as a
-    /// popover anchored to it; without one it went off the top of the screen).
-    static func present(from host: UIViewController, source: UIView? = nil) {
-        let sheet = UIAlertController(title: L("Добавить сервер или подписку"), message: nil, preferredStyle: .actionSheet)
-        sheet.addAction(UIAlertAction(title: L("Вставить из буфера обмена"), style: .default) { _ in
-            guard let text = UIPasteboard.general.string, !text.isEmpty else {
-                App.shared.notice.value = L("Буфер обмена пуст.")
-                return
-            }
-            add(text, from: host)
-        })
-        sheet.addAction(UIAlertAction(title: L("Ввести ссылку или адрес подписки"), style: .default) { _ in
-            let alert = UIAlertController(title: L("Ссылка"), message: L("Адрес подписки (https://…) или ссылка сервера (vless://, ss://, hysteria2://…)"), preferredStyle: .alert)
-            alert.addTextField { $0.placeholder = "https://"; $0.autocapitalizationType = .none; $0.autocorrectionType = .no; $0.keyboardType = .URL }
-            alert.addAction(UIAlertAction(title: L("Отмена"), style: .cancel))
-            alert.addAction(UIAlertAction(title: L("Добавить"), style: .default) { _ in add(alert.textFields?.first?.text ?? "", from: host) })
-            host.present(alert, animated: true)
-        })
-        sheet.addAction(UIAlertAction(title: L("Отсканировать QR"), style: .default) { _ in
-            host.present(QRScannerViewController.wrapped { code in add(code, from: host) }, animated: true)
-        })
-        sheet.addAction(UIAlertAction(title: L("Выбрать файл"), style: .default) { _ in
-            picker.pick(from: host) { text in add(text, from: host) }
-        })
-        sheet.addAction(UIAlertAction(title: L("Создать вручную"), style: .default) { _ in
-            host.present(ServerEditorViewController.wrapped(title: L("Новый сервер")) { outbound, name in
-                App.shared.addManual(outbound, name: name)
-            }, animated: true)
-        })
-        sheet.addAction(UIAlertAction(title: L("Отмена"), style: .cancel))
-        if let popover = sheet.popoverPresentationController {
-            if let source {
-                popover.sourceView = source
-                popover.sourceRect = source.bounds
-            } else {
-                popover.sourceView = host.view
-                popover.sourceRect = CGRect(x: host.view.bounds.midX, y: host.view.bounds.maxY - 80, width: 1, height: 1)
-            }
-        }
-        host.present(sheet, animated: true)
+    /// The ways to add, in a sheet that slides up from the bottom. `source` is
+    /// kept for callers; the sheet does not need an anchor.
+    static func present(from host: UIViewController, source _: UIView? = nil) {
+        let options: [AddSheetViewController.Option] = [
+            .init(symbol: "doc.on.clipboard", title: L("Вставить из буфера обмена")) {
+                guard let text = UIPasteboard.general.string, !text.isEmpty else {
+                    App.shared.notice.value = L("Буфер обмена пуст.")
+                    return
+                }
+                add(text, from: host)
+            },
+            .init(symbol: "link", title: L("Ввести ссылку или адрес подписки")) {
+                let alert = UIAlertController(title: L("Ссылка"), message: L("Адрес подписки (https://…) или ссылка сервера (vless://, ss://, hysteria2://…)"), preferredStyle: .alert)
+                alert.addTextField { $0.placeholder = "https://"; $0.autocapitalizationType = .none; $0.autocorrectionType = .no; $0.keyboardType = .URL }
+                alert.addAction(UIAlertAction(title: L("Отмена"), style: .cancel))
+                alert.addAction(UIAlertAction(title: L("Добавить"), style: .default) { _ in add(alert.textFields?.first?.text ?? "", from: host) })
+                host.present(alert, animated: true)
+            },
+            .init(symbol: "qrcode.viewfinder", title: L("Отсканировать QR")) {
+                host.present(QRScannerViewController.wrapped { code in add(code, from: host) }, animated: true)
+            },
+            .init(symbol: "folder", title: L("Выбрать файл")) {
+                picker.pick(from: host) { text in add(text, from: host) }
+            },
+            .init(symbol: "square.and.pencil", title: L("Создать вручную")) {
+                host.present(ServerEditorViewController.wrapped(title: L("Новый сервер")) { outbound, name in
+                    App.shared.addManual(outbound, name: name)
+                }, animated: true)
+            },
+        ]
+        host.present(AddSheetViewController(title: L("Добавить сервер или подписку"), options: options), animated: true)
     }
 
     private static func add(_ text: String, from host: UIViewController) {
@@ -497,6 +497,103 @@ enum AddServerFlow {
                 if let message { App.shared.notice.value = message }
             }
         }
+    }
+}
+
+/// A sheet from the bottom with a title and a card of options; it is as tall as
+/// its content and closes with a swipe down. A chosen option runs once the sheet
+/// has gone, so whatever it presents comes from the screen underneath.
+final class AddSheetViewController: UIViewController {
+    struct Option {
+        var symbol: String
+        var title: String
+        var action: () -> Void
+    }
+
+    private let heading: String
+    private let options: [Option]
+    private let content = UIStackView(.vertical, spacing: 14, alignment: .fill, [])
+
+    init(title: String, options: [Option]) {
+        heading = title
+        self.options = options
+        super.init(nibName: nil, bundle: nil)
+        modalPresentationStyle = .pageSheet
+    }
+
+    @available(*, unavailable)
+    required init?(coder _: NSCoder) { fatalError() }
+
+    override func viewDidLoad() {
+        super.viewDidLoad()
+        view.backgroundColor = Theme.background
+        let title = UILabel(heading, font: Theme.font(.headline), lines: 0)
+        title.textAlignment = .center
+        content.addArrangedSubview(title)
+
+        let card = UIView()
+        card.backgroundColor = Theme.card
+        card.layer.cornerRadius = 22
+        card.layer.cornerCurve = .continuous
+        card.clipsToBounds = true
+        let rows = UIStackView(.vertical, spacing: 0, alignment: .fill, [])
+        for (index, option) in options.enumerated() {
+            if index > 0 {
+                let divider = UIView()
+                divider.backgroundColor = .separator
+                divider.heightAnchor.constraint(equalToConstant: 0.5).isActive = true
+                rows.addArrangedSubview(Classic.padded(divider, UIEdgeInsets(top: 0, left: 56, bottom: 0, right: 0)))
+            }
+            rows.addArrangedSubview(row(option))
+        }
+        card.addSubview(rows)
+        rows.pin(to: card)
+        content.addArrangedSubview(card)
+
+        view.addSubview(content)
+        content.translatesAutoresizingMaskIntoConstraints = false
+        NSLayoutConstraint.activate([
+            content.topAnchor.constraint(equalTo: view.topAnchor, constant: 26),
+            content.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 16),
+            content.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -16),
+        ])
+        if let sheet = sheetPresentationController {
+            sheet.prefersGrabberVisible = true
+            sheet.preferredCornerRadius = 30
+            sheet.detents = [.custom(identifier: .init("content")) { [weak self] context in
+                guard let self else { return context.maximumDetentValue }
+                let width = self.view.bounds.width > 0 ? self.view.bounds.width : UIScreen.main.bounds.width
+                let fitted = self.content.systemLayoutSizeFitting(CGSize(width: width - 32, height: UIView.layoutFittingCompressedSize.height),
+                                                                 withHorizontalFittingPriority: .required, verticalFittingPriority: .fittingSizeLevel)
+                // Below the card: room for the home indicator (the detent excludes the bottom safe area).
+                return min(context.maximumDetentValue, 26 + fitted.height + 16)
+            }]
+        }
+    }
+
+    private func row(_ option: Option) -> UIView {
+        let control = TapControl()
+        control.ripple = true
+        control.rippleCornerRadius = 0
+        control.pressScale = 1
+        let icon = UIImageView(image: UIImage(systemName: option.symbol, withConfiguration: UIImage.SymbolConfiguration(font: Theme.font(.body, .medium))))
+        icon.tintColor = Theme.accent
+        icon.contentMode = .center
+        icon.widthAnchor.constraint(equalToConstant: 26).isActive = true
+        let title = UILabel(option.title, font: Theme.font(.body), lines: 0)
+        let line = UIStackView(.horizontal, spacing: 14, alignment: .center, [icon, title])
+        line.isUserInteractionEnabled = false
+        control.addSubview(line)
+        line.pin(to: control, insets: UIEdgeInsets(top: 15, left: 16, bottom: 15, right: 16))
+        control.heightAnchor.constraint(greaterThanOrEqualToConstant: 54).isActive = true
+        control.accessibilityLabel = option.title
+        control.accessibilityTraits = .button
+        control.isAccessibilityElement = true
+        control.onTap = { [weak self] in
+            let action = option.action
+            self?.dismiss(animated: true) { action() }
+        }
+        return control
     }
 }
 

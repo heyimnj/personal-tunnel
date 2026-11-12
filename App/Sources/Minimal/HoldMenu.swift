@@ -7,85 +7,52 @@ struct HoldMenuItem {
     var action: () -> Void
 }
 
-/// Sizes of the hold menu, as in 1.5.0: a 268 pt card with 26 pt corners and a
-/// soft arrow whose tip sits on the finger.
+/// Sizes of the hold menu: a 268 pt card with 26 pt corners. It has no arrow:
+/// like the system's context menus it stands a little apart from the lifted row,
+/// under it (or over it when there is no room), and grows out of the point of
+/// its edge nearest to the finger.
 enum HoldMenuMetrics {
     static let width: CGFloat = 268
     static let radius: CGFloat = 26
-    static let arrowWidth: CGFloat = 34
-    static let arrowHeight: CGFloat = 12
     static let margin: CGFloat = 12
     static let rowHeight: CGFloat = 46
     static let padding: CGFloat = 6
+    /// Space between the lifted row and the menu.
+    static let gap: CGFloat = 8
 
     struct Placement {
-        /// The card with its arrow strip, in the host's coordinates.
+        /// The card, in the host's coordinates.
         var frame: CGRect
-        /// The arrow is on the top edge: the menu hangs below the finger.
-        var arrowUp: Bool
-        /// The arrow tip's x inside the card.
-        var arrowX: CGFloat
+        /// The menu hangs below the row (it grows downwards).
+        var below: Bool
+        /// Where it grows from, on its edge facing the row: x inside the card.
+        var originX: CGFloat
     }
 
-    /// A press in the left third gets a left arrow and a menu running right, the
-    /// right third the mirror image, the middle a centred arrow. Below the finger,
+    /// A press in the left third gets a menu running right from the finger, the
+    /// right third the mirror image, the middle a centred menu. Below the row,
     /// above it without room, always inside the safe area.
-    static func placement(content: CGSize, touch: CGPoint, bounds: CGRect, safe: UIEdgeInsets) -> Placement {
-        let size = CGSize(width: content.width, height: content.height + arrowHeight)
+    /// `row`: the pressed row's frame (the finger's point when there is none).
+    static func placement(content: CGSize, touch: CGPoint, row: CGRect, bounds: CGRect, safe: UIEdgeInsets) -> Placement {
+        let size = content
         let minX = bounds.minX + max(margin, safe.left + 8)
         let maxX = bounds.maxX - max(margin, safe.right + 8) - size.width
         let minY = bounds.minY + safe.top + 8
         let maxY = bounds.maxY - safe.bottom - 8 - size.height
-        let edgeArrow = radius + arrowWidth / 2 + 10
+        let edge = radius + 10
         let third = bounds.width / 3
         let preferredX: CGFloat
-        if touch.x < bounds.minX + third { preferredX = touch.x - edgeArrow }
-        else if touch.x > bounds.maxX - third { preferredX = touch.x - size.width + edgeArrow }
+        if touch.x < bounds.minX + third { preferredX = touch.x - edge }
+        else if touch.x > bounds.maxX - third { preferredX = touch.x - size.width + edge }
         else { preferredX = touch.x - size.width / 2 }
         let x = min(max(minX, preferredX), max(minX, maxX))
-        let below = touch.y, above = touch.y - size.height
-        let arrowUp: Bool, y: CGFloat
-        if below <= maxY { arrowUp = true; y = below }
-        else if above >= minY { arrowUp = false; y = above }
-        else { arrowUp = true; y = min(max(minY, below), max(minY, maxY)) }
-        let inset = radius + arrowWidth / 2
-        let arrowX = min(max(inset, touch.x - x), size.width - inset)
-        return Placement(frame: CGRect(x: x, y: y, width: size.width, height: size.height), arrowUp: arrowUp, arrowX: arrowX)
-    }
-
-    /// Body and arrow as one contour, so the surface, its edge and the shadow
-    /// share it without a seam.
-    static func outline(size: CGSize, arrowUp: Bool, arrowX: CGFloat) -> UIBezierPath {
-        let h = arrowHeight, half = arrowWidth / 2
-        let top: CGFloat = arrowUp ? h : 0
-        let bottom: CGFloat = arrowUp ? size.height : size.height - h
-        let r = max(0, min(radius, (bottom - top) / 2, size.width / 2))
-        let w = size.width, H = size.height
-        let ax = min(max(r + half, arrowX), w - r - half)
-        let path = UIBezierPath()
-        path.move(to: CGPoint(x: r, y: top))
-        if arrowUp {
-            path.addLine(to: CGPoint(x: ax - half, y: top))
-            path.addCurve(to: CGPoint(x: ax - 2.2, y: 1), controlPoint1: CGPoint(x: ax - half * 0.55, y: top), controlPoint2: CGPoint(x: ax - 4.2, y: 2.6))
-            path.addQuadCurve(to: CGPoint(x: ax + 2.2, y: 1), controlPoint: CGPoint(x: ax, y: -0.4))
-            path.addCurve(to: CGPoint(x: ax + half, y: top), controlPoint1: CGPoint(x: ax + 4.2, y: 2.6), controlPoint2: CGPoint(x: ax + half * 0.55, y: top))
-        }
-        path.addLine(to: CGPoint(x: w - r, y: top))
-        path.addArc(withCenter: CGPoint(x: w - r, y: top + r), radius: r, startAngle: -.pi / 2, endAngle: 0, clockwise: true)
-        path.addLine(to: CGPoint(x: w, y: bottom - r))
-        path.addArc(withCenter: CGPoint(x: w - r, y: bottom - r), radius: r, startAngle: 0, endAngle: .pi / 2, clockwise: true)
-        if !arrowUp {
-            path.addLine(to: CGPoint(x: ax + half, y: bottom))
-            path.addCurve(to: CGPoint(x: ax + 2.2, y: H - 1), controlPoint1: CGPoint(x: ax + half * 0.55, y: bottom), controlPoint2: CGPoint(x: ax + 4.2, y: H - 2.6))
-            path.addQuadCurve(to: CGPoint(x: ax - 2.2, y: H - 1), controlPoint: CGPoint(x: ax, y: H + 0.4))
-            path.addCurve(to: CGPoint(x: ax - half, y: bottom), controlPoint1: CGPoint(x: ax - 4.2, y: H - 2.6), controlPoint2: CGPoint(x: ax - half * 0.55, y: bottom))
-        }
-        path.addLine(to: CGPoint(x: r, y: bottom))
-        path.addArc(withCenter: CGPoint(x: r, y: bottom - r), radius: r, startAngle: .pi / 2, endAngle: .pi, clockwise: true)
-        path.addLine(to: CGPoint(x: 0, y: top + r))
-        path.addArc(withCenter: CGPoint(x: r, y: top + r), radius: r, startAngle: .pi, endAngle: .pi * 1.5, clockwise: true)
-        path.close()
-        return path
+        let below = row.maxY + gap, above = row.minY - gap - size.height
+        let down: Bool, y: CGFloat
+        if below <= maxY { down = true; y = below }
+        else if above >= minY { down = false; y = above }
+        else { down = true; y = min(max(minY, below), max(minY, maxY)) }
+        let originX = min(max(radius, touch.x - x), size.width - radius)
+        return Placement(frame: CGRect(x: x, y: y, width: size.width, height: size.height), below: down, originX: originX)
     }
 }
 
@@ -133,16 +100,16 @@ private final class HoldMenuRow: UIControl {
     }
 }
 
-/// The menu a long press opens, as in 1.5.0: a card with an arrow at the finger
-/// that pours out of the pressed row (down first, then sideways, the items settling
-/// a beat later) and drains back into it. A touch outside closes it.
+/// The menu a long press opens, as in 1.5.0: a card that pours out of the pressed
+/// row (down first, then sideways, the items settling a beat later) and drains
+/// back into it. A touch outside closes it.
 ///
 /// The card is one even surface in the cards' own tone (glass took its colour from
 /// whatever lay under each part of it, so the menu looked patchy and sat on a layer
 /// of its own). The rest of the sheet dims, and the pressed row is lifted above the
 /// dim together with the menu: the two read as one piece.
 final class HoldMenuView: UIView {
-    /// Horizontal half of the pour (scale X), anchored at the arrow tip.
+    /// Horizontal half of the pour (scale X), anchored at the point it grows from.
     private let card = UIView()
     /// Vertical half of the pour (scale Y); carries the shadow and the surface.
     private let stretch = UIView()
@@ -170,8 +137,12 @@ final class HoldMenuView: UIView {
         menu.accessibilityLabel = title
         menu.build(items)
         host.addSubview(menu)
-        if let source { menu.lift(source.view, source.rect) }
-        menu.place(at: point)
+        var row = CGRect(origin: point, size: .zero)
+        if let source {
+            menu.lift(source.view, source.rect)
+            row = source.view.convert(source.rect, to: menu)
+        }
+        menu.place(at: point, row: row)
         menu.animateIn()
         Haptics.soft()
     }
@@ -185,13 +156,13 @@ final class HoldMenuView: UIView {
 
         let dark = traitCollection.userInterfaceStyle == .dark
         surface.fillColor = Self.fill.resolvedColor(with: traitCollection).cgColor
-        surface.strokeColor = UIColor.label.withAlphaComponent(dark ? 0.1 : 0.05).resolvedColor(with: traitCollection).cgColor
+        surface.strokeColor = UIColor.label.withAlphaComponent(dark ? 0.08 : 0.04).resolvedColor(with: traitCollection).cgColor
         surface.lineWidth = 0.5
         stretch.layer.addSublayer(surface)
         stretch.layer.shadowColor = UIColor.black.cgColor
-        stretch.layer.shadowOffset = CGSize(width: 0, height: 10)
-        stretch.layer.shadowRadius = 28
-        stretch.layer.shadowOpacity = dark ? 0.45 : 0.14
+        stretch.layer.shadowOffset = CGSize(width: 0, height: 8)
+        stretch.layer.shadowRadius = 24
+        stretch.layer.shadowOpacity = dark ? 0.4 : 0.12
         card.addSubview(stretch)
         card.accessibilityViewIsModal = true
         addSubview(card)
@@ -233,27 +204,27 @@ final class HoldMenuView: UIView {
         return box
     }
 
-    private func place(at touch: CGPoint) {
+    private func place(at touch: CGPoint, row: CGRect) {
         let fitted = items.systemLayoutSizeFitting(CGSize(width: HoldMenuMetrics.width, height: UIView.layoutFittingCompressedSize.height),
                                                    withHorizontalFittingPriority: .required, verticalFittingPriority: .fittingSizeLevel)
         let content = CGSize(width: HoldMenuMetrics.width, height: ceil(max(44, fitted.height)))
-        let place = HoldMenuMetrics.placement(content: content, touch: touch, bounds: bounds, safe: safeAreaInsets)
+        let place = HoldMenuMetrics.placement(content: content, touch: touch, row: row, bounds: bounds, safe: safeAreaInsets)
         let frame = place.frame
-        // Both halves of the pour grow out of the arrow tip.
-        let tip = CGPoint(x: place.arrowX, y: place.arrowUp ? 0 : frame.height)
-        let anchor = CGPoint(x: tip.x / frame.width, y: tip.y / frame.height)
+        // Both halves of the pour grow out of the edge facing the row, under the finger.
+        let origin = CGPoint(x: place.originX, y: place.below ? 0 : frame.height)
+        let anchor = CGPoint(x: origin.x / frame.width, y: origin.y / frame.height)
         card.layer.anchorPoint = anchor
         card.bounds = CGRect(origin: .zero, size: frame.size)
-        card.layer.position = CGPoint(x: frame.minX + tip.x, y: frame.minY + tip.y)
+        card.layer.position = CGPoint(x: frame.minX + origin.x, y: frame.minY + origin.y)
         stretch.layer.anchorPoint = anchor
         stretch.bounds = card.bounds
-        stretch.layer.position = tip
-        let outline = HoldMenuMetrics.outline(size: frame.size, arrowUp: place.arrowUp, arrowX: place.arrowX)
+        stretch.layer.position = origin
+        let outline = UIBezierPath(roundedRect: CGRect(origin: .zero, size: frame.size), cornerRadius: HoldMenuMetrics.radius)
         stretch.layer.shadowPath = outline.cgPath
         surface.frame = stretch.bounds
         surface.path = outline.cgPath
-        items.frame = CGRect(x: 0, y: place.arrowUp ? HoldMenuMetrics.arrowHeight : 0, width: frame.width, height: content.height)
-        direction = place.arrowUp ? 1 : -1
+        items.frame = CGRect(origin: .zero, size: frame.size)
+        direction = place.below ? 1 : -1
     }
 
     private func run(_ animator: UIViewPropertyAnimator, delay: TimeInterval = 0) {

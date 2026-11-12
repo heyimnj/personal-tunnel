@@ -504,9 +504,37 @@ final class MinimalServersViewController: UIViewController {
             let selected = Set(filters[String(subscription.id)] ?? []).intersection(tags)
             let shown = selected.isEmpty ? nodes : nodes.filter { selected.isSubset(of: Set($0.facts.badges)) }
             return ServerListView.Section(id: subscription.id, standalone: subscription.isStandalone, nodes: shown.map(\.id),
-                                          tags: tags, selected: selected)
+                                          tags: tags, selected: selected,
+                                          traffic: Self.trafficText(subscription.info), expiry: Self.expiryText(subscription.info))
         }
         list.set(sections, open: expanded)
+    }
+
+    /// «65 GB из 500 GB»; without a limit «65 GB из ∞». Nothing when the provider
+    /// reports no traffic.
+    static func trafficText(_ info: SubscriptionInfo) -> String? {
+        guard let used = info.usedBytes else { return nil }
+        let limit = info.isLimited ? amount(info.totalBytes ?? 0) : "∞"
+        return Lf("%@ из %@", amount(used), limit)
+    }
+
+    /// «Активна до 12.12.2026 (30 дней)», «… (сегодня)», or «Истекла 12.12.2026».
+    static func expiryText(_ info: SubscriptionInfo, now: Date = Date()) -> String? {
+        guard let expires = info.expiresAt else { return nil }
+        let formatter = DateFormatter()
+        formatter.locale = Language.locale
+        formatter.setLocalizedDateFormatFromTemplate("ddMMyyyy")
+        let date = formatter.string(from: expires)
+        guard expires > now else { return Lf("Истекла %@", date) }
+        let calendar = Calendar.current
+        let days = calendar.dateComponents([.day], from: calendar.startOfDay(for: now), to: calendar.startOfDay(for: expires)).day ?? 0
+        let left = days <= 0 ? L("сегодня") : Format.plural(days, L("день"), L("дня"), L("дней"))
+        return Lf("Активна до %@ (%@)", date, left)
+    }
+
+    /// Bytes without a needless «.0»: «65 GB», «1.5 TB».
+    private static func amount(_ bytes: Int64) -> String {
+        Format.bytes(bytes).replacingOccurrences(of: ".0 ", with: " ")
     }
 
     /// The tags a subscription's servers carry, most common first; a bar only

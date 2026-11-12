@@ -311,7 +311,8 @@ extension UIStackView {
 
 /// A plain control that dims while pressed and calls a closure. With `ripple`
 /// it gives 1.5.0's `ModernTouchFeedback` instead: the control grows by 1.2 %
-/// and a soft shade appears under the finger and spreads to the edges, fading.
+/// and a shade appears under the finger and spreads to the edges; it stays while
+/// the finger holds the control and fades once it lets go.
 class TapControl: UIControl {
     var onTap: (() -> Void)?
     var pressScale: CGFloat = 0.97
@@ -321,6 +322,8 @@ class TapControl: UIControl {
     /// Corner radius the shade is clipped to; `nil` makes a capsule or circle.
     var rippleCornerRadius: CGFloat?
     private var rippleClip: UIView?
+    /// The shade of the current press, faded when the press ends.
+    private var shade: CALayer?
 
     override init(frame: CGRect) {
         super.init(frame: frame)
@@ -338,6 +341,7 @@ class TapControl: UIControl {
             let pressed = isHighlighted
             let reduce = UIAccessibility.isReduceMotionEnabled
             if ripple {
+                if !pressed { fadeShade() }
                 UIView.animate(withDuration: reduce ? 0 : (pressed ? 0.10 : 0.18), delay: 0, options: [.curveEaseOut, .beginFromCurrentState, .allowUserInteraction]) {
                     self.transform = pressed && !reduce ? CGAffineTransform(scaleX: self.pressScale, y: self.pressScale) : .identity
                 }
@@ -355,6 +359,16 @@ class TapControl: UIControl {
         return super.beginTracking(touch, with: event)
     }
 
+    override func endTracking(_ touch: UITouch?, with event: UIEvent?) {
+        super.endTracking(touch, with: event)
+        fadeShade()
+    }
+
+    override func cancelTracking(with event: UIEvent?) {
+        super.cancelTracking(with: event)
+        fadeShade()
+    }
+
     override func layoutSubviews() {
         super.layoutSubviews()
         guard let rippleClip else { return }
@@ -363,7 +377,8 @@ class TapControl: UIControl {
         bringSubviewToFront(rippleClip)
     }
 
-    /// The shade: a radial gradient twice the diagonal, from 1.5 % to full size in 0.38 s.
+    /// The shade: a radial gradient twice the diagonal under the finger. It grows
+    /// from 1.5 % to full size in 0.6 s and holds there until the press ends.
     private func spread(from point: CGPoint) {
         let clip: UIView
         if let rippleClip { clip = rippleClip } else {
@@ -376,10 +391,14 @@ class TapControl: UIControl {
             rippleClip = clip
         }
         bringSubviewToFront(clip)
+        fadeShade()
         let reach = hypot(bounds.width, bounds.height) * 2
         let shade = CAGradientLayer()
         shade.type = .radial
-        shade.colors = [UIColor.label.resolvedColor(with: traitCollection).withAlphaComponent(0.10).cgColor, UIColor.clear.cgColor]
+        shade.colors = [UIColor.label.resolvedColor(with: traitCollection).withAlphaComponent(0.2).cgColor,
+                        UIColor.label.resolvedColor(with: traitCollection).withAlphaComponent(0.08).cgColor,
+                        UIColor.clear.cgColor]
+        shade.locations = [0, 0.55, 1]
         shade.startPoint = CGPoint(x: 0.5, y: 0.5)
         shade.endPoint = CGPoint(x: 1, y: 1)
         CATransaction.begin()
@@ -387,22 +406,37 @@ class TapControl: UIControl {
         shade.bounds = CGRect(x: 0, y: 0, width: reach, height: reach)
         shade.position = point
         shade.transform = CATransform3DIdentity
-        shade.opacity = 0
+        shade.opacity = 1
         clip.layer.addSublayer(shade)
         CATransaction.commit()
         let grow = CABasicAnimation(keyPath: "transform.scale")
         grow.fromValue = 0.015
         grow.toValue = 1
-        let fade = CABasicAnimation(keyPath: "opacity")
-        fade.fromValue = 1
-        fade.toValue = 0
-        let group = CAAnimationGroup()
-        group.animations = [grow, fade]
-        group.duration = 0.38
-        group.timingFunction = CAMediaTimingFunction(name: .easeOut)
+        grow.duration = 0.6
+        grow.timingFunction = CAMediaTimingFunction(controlPoints: 0.2, 0.7, 0.3, 1)
+        shade.add(grow, forKey: "spread")
+        let appear = CABasicAnimation(keyPath: "opacity")
+        appear.fromValue = 0
+        appear.toValue = 1
+        appear.duration = 0.08
+        shade.add(appear, forKey: "appear")
+        self.shade = shade
+    }
+
+    /// The press ended: the shade keeps spreading and fades over 0.45 s.
+    private func fadeShade() {
+        guard let shade else { return }
+        self.shade = nil
+        let current = shade.presentation()?.opacity ?? shade.opacity
         CATransaction.begin()
         CATransaction.setCompletionBlock { shade.removeFromSuperlayer() }
-        shade.add(group, forKey: "spread")
+        let fade = CABasicAnimation(keyPath: "opacity")
+        fade.fromValue = current
+        fade.toValue = 0
+        fade.duration = 0.45
+        fade.timingFunction = CAMediaTimingFunction(name: .easeOut)
+        shade.opacity = 0
+        shade.add(fade, forKey: "fade")
         CATransaction.commit()
     }
 }

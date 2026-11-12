@@ -16,6 +16,25 @@ struct CoreConnections: Equatable {
     var udp = 0
     /// Bytes per outbound tag, observed while the stream was open.
     var routes: [String: Int64] = [:]
+    /// The open connections themselves, filled only while a screen lists them.
+    var open: [CoreConnection] = []
+}
+
+/// One open connection, as the list of TCP or UDP connections shows it.
+struct CoreConnection: Equatable {
+    let id: String
+    let udp: Bool
+    /// The domain when the core knows it, else the address with its port.
+    let destination: String
+    let outbound: String
+    let chain: [String]
+    let createdAt: Date
+    let upload: Int64
+    let download: Int64
+    let uploadTotal: Int64
+    let downloadTotal: Int64
+    let rule: String
+    let protocolName: String
 }
 
 struct LogLine {
@@ -38,10 +57,19 @@ final class CoreClient {
     private var client: LibboxCommandClient?
     private var generation = 0
     private var running = false
-    private var wantsDetails = false
+    private var wantsConnections = false
+    private var wantsLog = false
     private var logCounter = 0
-    private var store: LibboxConnections?
     private let work = DispatchQueue(label: "personaltunnel.core-client", qos: .utility)
+    /// Connection events and log lines are prepared here, off the main thread:
+    /// the core replays its whole log (up to 1000 lines) on every new stream and
+    /// sends connection events every second, and cleaning, masking and counting
+    /// them on the main thread stalled the analytics page as it came in.
+    private let parse = DispatchQueue(label: "personaltunnel.core-client.parse", qos: .userInitiated)
+    /// Owned by `parse`.
+    private var store: LibboxConnections?
+    /// Owned by `parse`: whether to copy the open connections out (`CoreConnections.open`).
+    private var parseListsConnections = false
 
     static func setUp(paths: SharedPaths) {
         let options = LibboxSetupOptions()
@@ -64,13 +92,13 @@ final class CoreClient {
         disconnect()
         status.value = nil
         connections.value = CoreConnections()
-        store = nil
+        parse.async { self.store = nil }
     }
 
     func resetStatistics() {
         history.value = TrafficHistory()
         connections.value = CoreConnections()
-        store = nil
+        parse.async { self.store = nil }
     }
 
     /// A line from the app itself; the core's own lines arrive over the socket.
@@ -89,11 +117,27 @@ final class CoreClient {
         logsChanged.fire()
     }
 
-    /// Connection list and log are streamed only while a screen needs them.
-    func setDetails(_ enabled: Bool) {
-        guard wantsDetails != enabled else { return }
-        wantsDetails = enabled
+    /// Connection events are streamed only while analytics is on screen.
+    func setConnectionsStreamed(_ enabled: Bool) {
+        guard wantsConnections != enabled else { return }
+        wantsConnections = enabled
         if running { disconnect(); connect() }
+    }
+
+    /// The log is streamed only while the log screen is open: a new log stream
+    /// starts with the core's whole buffer, which analytics does not need.
+    func setLogStreamed(_ enabled: Bool) {
+        guard wantsLog != enabled else { return }
+        wantsLog = enabled
+        if running { disconnect(); connect() }
+    }
+
+    /// While a screen lists the open connections, they are copied out with every update.
+    var listsConnections = false {
+        didSet {
+            let value = listsConnections
+            parse.async { self.parseListsConnections = value }
+        }
     }
 
     private func disconnect() {
@@ -107,10 +151,8 @@ final class CoreClient {
         let token = generation
         let options = LibboxCommandClientOptions()
         options.addCommand(LibboxCommandStatus)
-        if wantsDetails {
-            options.addCommand(LibboxCommandConnections)
-            options.addCommand(LibboxCommandLog)
-        }
+        if wantsConnections { options.addCommand(LibboxCommandConnections) }
+        if wantsLog { options.addCommand(LibboxCommandLog) }
         options.statusInterval = Int64(NSEC_PER_SEC)
         guard let client = LibboxNewCommandClient(Handler(owner: self, token: token), options) else { return }
         self.client = client
@@ -140,34 +182,56 @@ final class CoreClient {
         history.value = next
     }
 
+    /// The app's own lines; cleaned here, they are short and few.
     fileprivate func append(_ entries: [(Int32, String)]) {
+        appendPrepared(entries.map { ($0.0, Redactor.redact(LogText.clean($0.1))) })
+    }
+
+    /// Lines already cleaned and masked (on `parse`).
+    fileprivate func appendPrepared(_ entries: [(Int32, String)]) {
         guard !logsPaused else { return }
         for (level, text) in entries {
             logCounter += 1
-            logs.append(LogLine(id: logCounter, level: level, text: Redactor.redact(LogText.clean(text))))
+            logs.append(LogLine(id: logCounter, level: level, text: text))
         }
         if logs.count > 1500 { logs.removeFirst(logs.count - 1500) }
         logsChanged.fire()
     }
 
-    fileprivate func apply(_ events: LibboxConnectionEvents) {
+    /// On `parse`: applies the events and counts what is open.
+    fileprivate func prepare(_ events: LibboxConnectionEvents) -> CoreConnections {
         if store == nil { store = LibboxNewConnections() }
-        guard let store else { return }
-        store.apply(events)
         var result = CoreConnections()
+        guard let store else { return result }
+        store.apply(events)
+        let list = parseListsConnections
         if let iterator = store.iterator() {
             while iterator.hasNext() {
                 guard let item = iterator.next() else { continue }
                 if item.outboundType == "dns" { continue }
                 if item.closedAt == 0 {
-                    if item.network == "udp" { result.udp += 1 } else { result.tcp += 1 }
+                    let udp = item.network == "udp"
+                    if udp { result.udp += 1 } else { result.tcp += 1 }
+                    if list {
+                        var chain: [String] = []
+                        if let links = item.chain() { while links.hasNext() { chain.append(links.next()) } }
+                        let domain = item.domain
+                        result.open.append(CoreConnection(
+                            id: item.id_, udp: udp, destination: domain.isEmpty ? item.destination : domain,
+                            outbound: item.outbound, chain: chain,
+                            createdAt: Date(timeIntervalSince1970: Double(item.createdAt) / 1000),
+                            upload: item.uplink, download: item.downlink,
+                            uploadTotal: item.uplinkTotal, downloadTotal: item.downlinkTotal,
+                            rule: item.rule, protocolName: item.protocol
+                        ))
+                    }
                 }
                 if item.outboundType != "direct", !item.outbound.isEmpty {
                     result.routes[item.outbound, default: 0] += item.uplinkTotal + item.downlinkTotal
                 }
             }
         }
-        connections.set(result)
+        return result
     }
 
     private final class Handler: NSObject, LibboxCommandClientHandlerProtocol {
@@ -184,16 +248,24 @@ final class CoreClient {
         func setDefaultLogLevel(_: Int32) {}
 
         func clearLogs() {
-            owner?.receive(token) { $0.clearCoreLines() }
+            // Through `parse`, so it stays in order with the lines prepared there.
+            guard let owner else { return }
+            let token = self.token
+            owner.parse.async { [weak owner] in owner?.receive(token) { $0.clearCoreLines() } }
         }
 
         func writeLogs(_ messageList: (any LibboxLogIteratorProtocol)?) {
-            guard let messageList else { return }
+            guard let messageList, let owner else { return }
             var entries: [(Int32, String)] = []
             while messageList.hasNext() {
                 if let entry = messageList.next() { entries.append((entry.level, entry.message)) }
             }
-            if !entries.isEmpty { owner?.receive(token) { $0.append(entries) } }
+            guard !entries.isEmpty else { return }
+            let token = self.token
+            owner.parse.async { [weak owner] in
+                let prepared = entries.map { ($0.0, Redactor.redact(LogText.clean($0.1))) }
+                owner?.receive(token) { $0.appendPrepared(prepared) }
+            }
         }
 
         func writeStatus(_ message: LibboxStatusMessage?) {
@@ -209,8 +281,13 @@ final class CoreClient {
         func updateClashMode(_: String?) {}
 
         func write(_ events: LibboxConnectionEvents?) {
-            guard let events else { return }
-            owner?.receive(token) { $0.apply(events) }
+            guard let events, let owner else { return }
+            let token = self.token
+            owner.parse.async { [weak owner] in
+                guard let owner else { return }
+                let result = owner.prepare(events)
+                owner.receive(token) { $0.connections.set(result) }
+            }
         }
 
         func write(_: LibboxDnsQuery?) {}
