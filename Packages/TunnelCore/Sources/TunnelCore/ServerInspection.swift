@@ -5,6 +5,8 @@ public enum ServerInspection {
     /// Keys whose values are secrets: masked in the JSON a person can show or copy.
     static let secretKeys: Set<String> = [
         "uuid", "password", "private_key", "pre_shared_key", "psk", "auth", "auth_str", "token", "secret", "short_id",
+        // Xray's own names.
+        "id", "privatekey", "presharedkey", "shortid", "seed",
     ]
 
     /// Flow, uTLS fingerprint and ALPN, as in 1.5.0.

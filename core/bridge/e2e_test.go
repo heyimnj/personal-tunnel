@@ -10,6 +10,8 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"testing"
 
 	xray "github.com/xtls/xray-core/core"
@@ -99,6 +101,73 @@ func TestSingBoxReachesXrayServers(t *testing.T) {
 			t.Errorf("%s: %s", tag, result.Error)
 		} else {
 			t.Logf("%s: %d ms", tag, result.Delay)
+		}
+	}
+}
+
+// A server only Xray-core can run (a sudoku mask the server undoes): the app's
+// Xray instance serves it on a local SOCKS port, sing-box reaches it through
+// that port — the path the tunnel and the app's measurements take.
+func TestSingBoxReachesXrayOnlyServerThroughLocalXray(t *testing.T) {
+	target := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusNoContent) }))
+	defer target.Close()
+	uuid := "11111111-2222-3333-4444-555555555555"
+	serverPort, localPort := freePort(t), freePort(t)
+	mask := `"finalmask": {"tcp": [{"type": "sudoku", "settings": {"password": "mask"}}]}`
+	startXray(t, fmt.Sprintf(`{
+		"log": {"loglevel": "warning"},
+		"inbounds": [{"listen": "127.0.0.1", "port": %d, "protocol": "vless",
+		  "settings": {"clients": [{"id": "%s"}], "decryption": "none"}, "streamSettings": {"network": "raw", %s}}],
+		"outbounds": [{"protocol": "freedom", "settings": {"finalRules": [{"action": "allow"}]}}]
+	}`, serverPort, uuid, mask))
+
+	// What XrayBacked.runtime writes for one server.
+	client, err := StartXray(fmt.Sprintf(`{
+		"log": {"loglevel": "warning"},
+		"inbounds": [{"tag": "in0", "listen": "127.0.0.1", "port": %d, "protocol": "socks", "settings": {"auth": "noauth", "udp": true, "ip": "127.0.0.1"}}],
+		"outbounds": [{"protocol": "blackhole", "tag": "pt-block"},
+		  {"tag": "n0-proxy", "protocol": "vless", "settings": {"vnext": [{"address": "127.0.0.1", "port": %d, "users": [{"id": "%s", "encryption": "none"}]}]},
+		   "streamSettings": {"network": "raw", %s}}],
+		"routing": {"domainStrategy": "AsIs", "rules": [{"type": "field", "inboundTag": ["in0"], "outboundTag": "n0-proxy"}]}
+	}`, localPort, serverPort, uuid, mask))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer client.Close()
+
+	prober, err := NewProber(fmt.Sprintf(`{
+		"log": {"level": "warn"},
+		"outbounds": [{"type": "socks", "tag": "sudoku", "server": "127.0.0.1", "server_port": %d, "version": "5"}, {"type": "direct", "tag": "direct"}],
+		"route": {"final": "direct"}
+	}`, localPort))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer prober.Close()
+	if result := prober.Test("sudoku", target.URL, 5000); result.Error != "" {
+		t.Fatalf("sudoku: %s", result.Error)
+	} else {
+		t.Logf("sudoku through local Xray: %d ms", result.Delay)
+	}
+}
+
+// The Xray configurations the app writes for its subscriptions (tunnelcore-fixtures).
+func TestXrayRuntimeFixturesLoad(t *testing.T) {
+	folder := os.Getenv("PT_PROBE_FIXTURES")
+	if folder == "" {
+		t.Skip("PT_PROBE_FIXTURES not set")
+	}
+	files, _ := filepath.Glob(filepath.Join(folder, "xray-runtime-*.json"))
+	if len(files) == 0 {
+		t.Fatalf("no xray-runtime-*.json in %s", folder)
+	}
+	for _, file := range files {
+		content, err := os.ReadFile(file)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := CheckXray(string(content)); err != nil {
+			t.Errorf("%s: %v", filepath.Base(file), err)
 		}
 	}
 }

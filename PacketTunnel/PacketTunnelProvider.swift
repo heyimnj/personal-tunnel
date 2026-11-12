@@ -19,6 +19,10 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
     /// Memory written to the service log once a minute (3.0 beta: measuring the
     /// extension with both cores linked in).
     private var memoryTimer: DispatchSourceTimer?
+    #if TUNNEL_XRAY
+    /// Xray-core for the servers only it can run, beside sing-box.
+    private var xray: PtbridgeXrayInstance?
+    #endif
     private var memoryPeak: Double = 0
 
     // MARK: Lifecycle
@@ -96,6 +100,7 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
         let configuration = try loadConfiguration(options, paths: paths)
         try setUpCore(paths)
         try startCommandServer()
+        try startXray(paths)
         try startService(configuration)
     }
 
@@ -133,11 +138,34 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
         try commandServer.startOrReloadService(relocated, options: LibboxOverrideOptions())
     }
 
+    /// (Re)starts Xray-core when the subscription has servers only it can run.
+    private func startXray(_ paths: SharedPaths) throws {
+        stopXray()
+        guard let data = try? Data(contentsOf: paths.activeXrayConfig), !data.isEmpty else { return }
+        #if TUNNEL_XRAY
+        var error: NSError?
+        let instance = PtbridgeStartXray(String(decoding: data, as: UTF8.self), &error)
+        if let error { throw TunnelError("Xray-core не запустился: \(error.localizedDescription)") }
+        xray = instance
+        event("Xray-core запущен")
+        #else
+        event("в подписке есть серверы Xray, но расширение собрано без Xray-core")
+        #endif
+    }
+
+    private func stopXray() {
+        #if TUNNEL_XRAY
+        xray?.close()
+        xray = nil
+        #endif
+    }
+
     /// Reads the stored configuration again; called by the app and by the core.
     func reload() throws {
         guard let paths else { throw TunnelError("Туннель не запущен.") }
         reasserting = true
         defer { reasserting = false }
+        try startXray(paths)
         try startService(try readStoredConfiguration(paths))
     }
 
@@ -155,6 +183,7 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
         memoryTimer?.cancel()
         memoryTimer = nil
         closeService()
+        stopXray()
         commandServer?.close()
         commandServer = nil
     }

@@ -54,10 +54,12 @@ final class ImportTests: XCTestCase {
     func testXraySubscription() throws {
         let result = try ContentImporter.parse(Self.xraySubscription)
         XCTAssertEqual(result.format, .xray)
-        XCTAssertEqual(result.nodes.map(\.name), ["🇺🇸 США-2", "Самый быстрый | Авто", "XHTTP", "Hy2"])
-        XCTAssertEqual(result.issues.map(\.name), ["Сломанный"])
-        XCTAssertTrue(result.issues[0].reason.contains("mKCP"))
-        XCTAssertNotNil(result.summary)
+        // mKCP is not sing-box's: Xray-core runs that server (3.0.1).
+        XCTAssertEqual(result.nodes.map(\.name), ["🇺🇸 США-2", "Самый быстрый | Авто", "XHTTP", "Hy2", "Сломанный"])
+        XCTAssertEqual(result.nodes[4].outbound["type"], "xray")
+        XCTAssertEqual(result.nodes[4].outbound["server"], "k.example.net")
+        XCTAssertTrue(result.issues.isEmpty)
+        XCTAssertNil(result.summary)
 
         let reality = result.nodes[0].outbound
         XCTAssertEqual(reality["server"], "us.example.net")
@@ -88,7 +90,7 @@ final class ImportTests: XCTestCase {
     func testAssemblerMakesUniqueTagsAndRelinksGroups() throws {
         let result = try ContentImporter.parse(Self.xraySubscription)
         let nodes = NodeAssembler.assemble(result.nodes + [result.nodes[0]])
-        XCTAssertEqual(nodes.map(\.id), ["🇺🇸 США-2", "Самый быстрый | Авто", "XHTTP", "Hy2", "🇺🇸 США-2 (2)"])
+        XCTAssertEqual(nodes.map(\.id), ["🇺🇸 США-2", "Самый быстрый | Авто", "XHTTP", "Hy2", "Сломанный", "🇺🇸 США-2 (2)"])
         let group = nodes[1]
         XCTAssertTrue(group.isGroup)
         XCTAssertEqual(group.outbound["outbounds"], ["Самый быстрый | Авто · 1", "Самый быстрый | Авто · 2"])
@@ -165,10 +167,13 @@ final class ImportTests: XCTestCase {
         XCTAssertEqual(kept.count, 1)
         XCTAssertEqual(kept[0].outbound.at("tls", "fragment"), true)
         XCTAssertEqual(kept[0].outbound.at("tls", "reality", "enabled"), true)
-        // A mask the server must undo: skipped, named.
-        XCTAssertThrowsError(try ContentImporter.parse(server(#"{"tcp": [{"type": "header-custom"}]}"#))) { error in
-            XCTAssertTrue((error as? ImportError)?.message.contains("header-custom") ?? false)
-        }
+        // A mask the server must undo: Xray-core runs that server, with its own outbounds.
+        let backed = try ContentImporter.parse(server(#"{"tcp": [{"type": "header-custom"}]}"#)).nodes
+        XCTAssertEqual(backed.count, 1)
+        XCTAssertEqual(backed[0].outbound["type"], "xray")
+        XCTAssertEqual(backed[0].outbound.at("xray", "outbounds")?[0]?.at("streamSettings", "finalmask", "tcp")?[0]?["type"], "header-custom")
+        let node = NodeAssembler.assemble(backed)[0]
+        XCTAssertEqual(node.facts.badges, ["VLESS", "Reality", "TCP", "Vision", "Xray"])
     }
 
     func testPlainSingBoxFileListsEveryLeaf() throws {

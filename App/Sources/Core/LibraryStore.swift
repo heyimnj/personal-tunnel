@@ -95,6 +95,13 @@ final class LibraryStore {
         if let paths {
             try Data(text.utf8).write(to: paths.activeConfig, options: .atomic)
             try? FileManager.default.setAttributes([.protectionKey: FileProtectionType.completeUntilFirstUserAuthentication], ofItemAtPath: paths.activeConfig.path)
+            // Written first and read by the extension before sing-box starts.
+            if let xray = ConfigBuilder.xrayRuntime(subscription: subscription) {
+                try Data(xray.serialized().utf8).write(to: paths.activeXrayConfig, options: .atomic)
+                try? FileManager.default.setAttributes([.protectionKey: FileProtectionType.completeUntilFirstUserAuthentication], ofItemAtPath: paths.activeXrayConfig.path)
+            } else {
+                try? FileManager.default.removeItem(at: paths.activeXrayConfig)
+            }
         }
         return text
     }

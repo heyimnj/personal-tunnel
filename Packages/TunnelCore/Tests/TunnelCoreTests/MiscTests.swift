@@ -114,6 +114,10 @@ final class SubscriptionMergeTests: XCTestCase {
         ]
         let added = SubscriptionMerge.missing(from: extra, in: base)
         XCTAssertEqual(added.map(\.name), ["B", "Other port"])
+        // A server Xray runs is the same server as its plain link.
+        let xray = try ContentImporter.parse(#"[{"remarks": "X", "outbounds": [{"protocol": "vless", "settings": {"vnext": [{"address": "x.example", "port": 443, "users": [{"id": "11111111-2222-3333-4444-555555555555"}]}]}, "streamSettings": {"finalmask": {"tcp": [{"type": "sudoku"}]}}}]}]"#).nodes
+        XCTAssertEqual(xray[0].outbound["type"], "xray")
+        XCTAssertTrue(SubscriptionMerge.missing(from: [try ShareLink.parse("vless://11111111-2222-3333-4444-555555555555@x.example:443#X")], in: xray).isEmpty)
     }
 }
 

@@ -15,9 +15,9 @@ final class ConfigBuilderTests: XCTestCase {
         let selector = outbounds.first { $0["tag"] == "proxy" }
         XCTAssertEqual(selector?["type"], "selector")
         XCTAssertEqual(selector?["default"], "Hy2")
-        XCTAssertEqual(selector?["outbounds"], ["auto", "🇺🇸 США-2", "Самый быстрый | Авто", "XHTTP", "Hy2", "WG"])
+        XCTAssertEqual(selector?["outbounds"], ["auto", "🇺🇸 США-2", "Самый быстрый | Авто", "XHTTP", "Hy2", "Сломанный", "WG"])
         // Provider groups are servers, not members of the app's own auto group.
-        XCTAssertEqual(outbounds.first { $0["tag"] == "auto" }?["outbounds"], ["🇺🇸 США-2", "XHTTP", "Hy2", "WG"])
+        XCTAssertEqual(outbounds.first { $0["tag"] == "auto" }?["outbounds"], ["🇺🇸 США-2", "XHTTP", "Hy2", "Сломанный", "WG"])
         XCTAssertEqual(outbounds.last?["type"], "direct")
         XCTAssertEqual(config["endpoints"]?.arrayValue?.count, 1)
         XCTAssertEqual(config.at("inbounds")?[0]?["mtu"], 1280)
@@ -209,5 +209,45 @@ final class ConfigBuilderTests: XCTestCase {
         let once = try ConfigBuilder.build(subscription: Subscription(id: 1, name: "x", nodes: [twin, twin]), selected: nil, options: TunnelOptions())
         XCTAssertEqual(once["outbounds"]?.arrayValue?.first?["outbounds"], ["a"])
         XCTAssertEqual(once["outbounds"]?.arrayValue?.count, 3)
+    }
+}
+
+final class XrayBackedTests: XCTestCase {
+    static let subscriptionJSON = #"""
+    [{"remarks": "Sudoku", "outbounds": [
+       {"tag": "proxy", "protocol": "vless", "settings": {"vnext": [{"address": "s.example.net", "port": 443, "users": [{"id": "11111111-2222-3333-4444-555555555555", "encryption": "none"}]}]},
+        "streamSettings": {"network": "raw", "security": "tls", "tlsSettings": {"serverName": "s.example.net"}, "finalmask": {"tcp": [{"type": "sudoku", "settings": {"password": "mask"}}]}}},
+       {"tag": "direct", "protocol": "freedom"}]},
+     {"remarks": "Plain", "outbounds": [
+       {"tag": "proxy", "protocol": "trojan", "settings": {"servers": [{"address": "t.example.net", "port": 443, "password": "pw"}]}, "streamSettings": {"security": "tls"}}]},
+     {"remarks": "Chain", "outbounds": [
+       {"tag": "exit", "protocol": "vless", "settings": {"vnext": [{"address": "c.example.net", "port": 443, "users": [{"id": "11111111-2222-3333-4444-555555555555", "encryption": "none"}]}]},
+        "streamSettings": {"network": "raw", "finalmask": {"tcp": [{"type": "header-custom"}]}, "sockopt": {"dialerProxy": "hop"}}},
+       {"tag": "hop", "protocol": "trojan", "settings": {"servers": [{"address": "h.example.net", "port": 443, "password": "pw"}]}}]}]
+    """#
+
+    func testTunnelReachesXrayServersThroughLocalSocks() throws {
+        let nodes = NodeAssembler.assemble(try ContentImporter.parse(Self.subscriptionJSON).nodes)
+        XCTAssertEqual(nodes.map(\.type), ["xray", "trojan", "xray"])
+        let subscription = Subscription(id: 3, name: "X", nodes: nodes)
+        let config = try ConfigBuilder.build(subscription: subscription, selected: nil, options: TunnelOptions())
+        let outbounds = config["outbounds"]?.arrayValue ?? []
+        let sudoku = outbounds.first { $0["tag"]?.stringValue == nodes[0].id }
+        XCTAssertEqual(sudoku?["type"], "socks")
+        XCTAssertEqual(sudoku?["server"], "127.0.0.1")
+        XCTAssertEqual(sudoku?["server_port"], .int(Int64(XrayBacked.tunnelPortBase)))
+        XCTAssertNil(sudoku?["xray"])
+        XCTAssertFalse(config.serialized().contains("\"xray\""))
+        // The probe uses the app's own ports.
+        let probe = try ConfigBuilder.probe(subscription: subscription, options: TunnelOptions())
+        XCTAssertEqual(probe["outbounds"]?.arrayValue?.first { $0["tag"]?.stringValue == nodes[2].id }?["server_port"], .int(Int64(XrayBacked.appPortBase + 1)))
+
+        let runtime = try XCTUnwrap(ConfigBuilder.xrayRuntime(subscription: subscription))
+        XCTAssertEqual(runtime["inbounds"]?.arrayValue?.map { $0["port"] }, [.int(Int64(XrayBacked.tunnelPortBase)), .int(Int64(XrayBacked.tunnelPortBase + 1))])
+        let rules = runtime.at("routing", "rules")?.arrayValue ?? []
+        XCTAssertEqual(rules.map { $0["outboundTag"] }, ["n0-proxy", "n1-exit"])
+        let exit = runtime["outbounds"]?.arrayValue?.first { $0["tag"] == "n1-exit" }
+        XCTAssertEqual(exit?.at("streamSettings", "sockopt", "dialerProxy"), "n1-hop")
+        XCTAssertNil(ConfigBuilder.xrayRuntime(subscription: Subscription(id: 4, name: "Y", nodes: [nodes[1]])))
     }
 }

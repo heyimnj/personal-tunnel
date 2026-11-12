@@ -68,6 +68,8 @@ jobs:
           set -uo pipefail
           failed=0
           for file in build/fixtures/*.json; do
+            # Xray's own configurations are checked by the bridge's tests (Xray-core).
+            case "$(basename "$file")" in xray-runtime-*) continue ;; esac
             if output="$(build/sing-box-check check -c "$file" 2>&1)"; then
               echo "ok   $(basename "$file")"
             else

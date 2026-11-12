@@ -138,4 +138,29 @@ for (name, subscription) in [("probe-all-together", Subscription(id: 1, name: "a
     try text.write(to: output.appendingPathComponent(name + ".json"), atomically: true, encoding: .utf8)
     written += 1
 }
+// Servers only Xray-core runs: the sing-box side (SOCKS hops) and the Xray side.
+let xrayOnly = #"""
+[{"remarks": "Sudoku", "outbounds": [
+   {"tag": "proxy", "protocol": "vless", "settings": {"vnext": [{"address": "s.example.net", "port": 443, "users": [{"id": "11111111-2222-3333-4444-555555555555", "encryption": "none", "flow": "xtls-rprx-vision"}]}]},
+    "streamSettings": {"network": "raw", "security": "reality", "realitySettings": {"serverName": "www.apple.com", "publicKey": "\#(key)", "shortId": "ab12", "fingerprint": "chrome"},
+      "finalmask": {"tcp": [{"type": "sudoku", "settings": {"password": "mask"}}]}}},
+   {"tag": "direct", "protocol": "freedom"}]},
+ {"remarks": "Header", "outbounds": [
+   {"tag": "proxy", "protocol": "vless", "settings": {"vnext": [{"address": "h.example.net", "port": 443, "users": [{"id": "11111111-2222-3333-4444-555555555555", "encryption": "none"}]}]},
+    "streamSettings": {"network": "xhttp", "security": "tls", "tlsSettings": {"serverName": "h.example.net"}, "xhttpSettings": {"path": "/x"},
+      "finalmask": {"tcp": [{"type": "header-custom", "settings": {"clients": [[{"packet": [1, 2, 3]}]], "servers": [[{"packet": [4, 5, 6]}]]}}]}}}]},
+ {"remarks": "Plain", "outbounds": [
+   {"tag": "proxy", "protocol": "trojan", "settings": {"servers": [{"address": "t.example.net", "port": 443, "password": "pw"}]}, "streamSettings": {"security": "tls"}}]}]
+"""#
+let xraySubscription = Subscription(id: 9, name: "xray-only", nodes: NodeAssembler.assemble(try ContentImporter.parse(xrayOnly).nodes))
+guard xraySubscription.nodes.filter({ $0.type == XrayBacked.type }).count == 2 else {
+    FileHandle.standardError.write(Data("xray-only sample: the two masked servers did not become Xray-backed\n".utf8))
+    exit(1)
+}
+try write("xray-only-servers", xraySubscription)
+for (name, base) in [("tunnel", XrayBacked.tunnelPortBase), ("app", XrayBacked.appPortBase)] {
+    let runtime = ConfigBuilder.xrayRuntime(subscription: xraySubscription, portBase: base)!
+    try runtime.serialized(pretty: true).write(to: output.appendingPathComponent("xray-runtime-\(name).json"), atomically: true, encoding: .utf8)
+    written += 1
+}
 print("written \(written) configurations to \(output.path)")

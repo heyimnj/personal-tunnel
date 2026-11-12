@@ -8,7 +8,10 @@ public enum SubscriptionMerge {
     static func endpoints(_ node: ParsedNode) -> Set<String> {
         var result = Set<String>()
         for object in [node.outbound] + node.members {
-            let type = object["type"]?.stringValue?.lowercased() ?? ""
+            var type = object["type"]?.stringValue?.lowercased() ?? ""
+            // An Xray-backed server is the same server as its plain link.
+            if type == XrayBacked.type { type = XrayBacked.facts(object).proto.lowercased() }
+            if type.hasPrefix("hysteria") { type = "hysteria" }
             if let server = object["server"]?.stringValue?.lowercased(), !server.isEmpty {
                 let port = object["server_port"]?.intValue ?? 0
                 result.insert("\(type)|\(server)|\(port)")

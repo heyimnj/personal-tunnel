@@ -34,7 +34,12 @@ public enum XrayImport {
             do {
                 nodes.append(try node(from: config, name: name))
             } catch {
-                issues.append(ImportIssue(name: name, reason: (error as? ImportError)?.message ?? error.localizedDescription))
+                // What sing-box cannot run, Xray-core can: the server keeps its own outbounds.
+                if let backed = XrayBacked.node(config: config, name: name) {
+                    nodes.append(backed)
+                } else {
+                    issues.append(ImportIssue(name: name, reason: (error as? ImportError)?.message ?? error.localizedDescription))
+                }
             }
         }
         return (nodes, issues)
@@ -60,6 +65,8 @@ public enum XrayImport {
             }
         }
         guard !converted.isEmpty else { throw firstError ?? ImportError(CoreText.t("Сервер не удалось преобразовать.")) }
+        // A hop sing-box cannot run (a chain's exit, say): the whole server goes to Xray-core.
+        if let firstError { throw firstError }
 
         let placeholders = Dictionary(converted.enumerated().map { ($1.tag, "#\($0)") }, uniquingKeysWith: { first, _ in first })
         var detourTargets = Set<String>()

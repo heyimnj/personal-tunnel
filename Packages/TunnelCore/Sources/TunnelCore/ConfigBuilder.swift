@@ -57,8 +57,11 @@ public enum ConfigBuilder {
         public static let pathPrefix = "@rules/"
     }
 
-    public static func build(subscription: Subscription, selected: String?, options: TunnelOptions) throws -> JSONValue {
+    public static func build(subscription: Subscription, selected: String?, options: TunnelOptions,
+                             xrayPortBase: Int = XrayBacked.tunnelPortBase) throws -> JSONValue {
         let nodes = subscription.nodes
+        // Xray-backed servers become SOCKS hops to the Xray instance beside sing-box.
+        let xrayPorts = XrayBacked.runtime(nodes, portBase: xrayPortBase)?.ports ?? [:]
         guard !nodes.isEmpty else { throw ImportError(CoreText.f("В подписке «%@» нет серверов.", "\(subscription.name)")) }
 
         var outbounds: [JSONValue] = []
@@ -126,6 +129,11 @@ public enum ConfigBuilder {
         for node in nodes {
             var main = Carried.adapt(node.outbound, known: known)
             var members = node.members
+            if node.type == XrayBacked.type {
+                guard let port = xrayPorts[node.id] else { continue }
+                main = XrayBacked.socks(tag: node.id, port: port)
+                members = []
+            }
             if let unwrap = unwrapped[node.id] {
                 main = Carried.adapt(unwrap.object, known: known)
                 main["tag"] = .string(node.id)
@@ -241,8 +249,8 @@ public enum ConfigBuilder {
     /// the same servers as the tunnel's, built the same way, but no tunnel, no rules
     /// and no groups of the app's own (the `auto` group would test on its own timer).
     /// Server addresses resolve through `dns-direct`, as in the tunnel.
-    public static func probe(subscription: Subscription, options: TunnelOptions) throws -> JSONValue {
-        var config = try build(subscription: subscription, selected: nil, options: options)
+    public static func probe(subscription: Subscription, options: TunnelOptions, xrayPortBase: Int = XrayBacked.appPortBase) throws -> JSONValue {
+        var config = try build(subscription: subscription, selected: nil, options: options, xrayPortBase: xrayPortBase)
         let own: Set<String> = [selectorTag, autoTag]
         config["outbounds"] = .array((config["outbounds"]?.arrayValue ?? []).filter { !own.contains($0["tag"]?.stringValue ?? "") })
         config["inbounds"] = nil
@@ -316,6 +324,12 @@ public enum ConfigBuilder {
         var config = config
         config["route"] = route
         return config
+    }
+
+    /// The Xray configuration the tunnel runs beside sing-box, when the subscription
+    /// has servers only Xray-core can run.
+    public static func xrayRuntime(subscription: Subscription, portBase: Int = XrayBacked.tunnelPortBase) -> JSONValue? {
+        XrayBacked.runtime(subscription.nodes, portBase: portBase)?.config
     }
 
     /// Tags the selector offers, in order (without the `auto` group).

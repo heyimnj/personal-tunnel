@@ -432,3 +432,4 @@
 "URL-тест «%@» ядром приложения: %@" = "URL test “%@” by the app's core: %@";
 "URL-тест «%@» через туннель: %@" = "URL test “%@” through the tunnel: %@";
 "Подписка «%@»: ещё %@ серверов есть только в обычном списке ссылок — добавлены." = "Subscription “%@”: %@ more servers are only in the plain list of links — added.";
+"Xray-core не запустился: %@" = "Xray-core did not start: %@";

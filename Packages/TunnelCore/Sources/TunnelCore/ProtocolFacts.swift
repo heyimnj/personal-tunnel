@@ -12,11 +12,13 @@ public struct ProtocolFacts: Hashable, Sendable {
     public var flow: String?
     /// Provider group whose members differ.
     public var isMixedGroup = false
+    /// Run by Xray-core instead of sing-box.
+    public var xray = false
 
     /// The line the Classic interface prints under a server.
     public var summary: String {
         if isMixedGroup { return CoreText.t("Группа · разные протоколы") }
-        return ([proto, security, transport] + (flow.map { [$0] } ?? [])).joined(separator: " · ")
+        return ([proto, security, transport] + (flow.map { [$0] } ?? []) + (xray ? ["Xray"] : [])).joined(separator: " · ")
     }
 
     /// Short tags for the Minimal interface, in display order.
@@ -31,6 +33,7 @@ public struct ProtocolFacts: Hashable, Sendable {
         }
         result.append(transport == "TCP/RAW" ? "TCP" : transport)
         if let flow { result.append(flow) }
+        if xray { result.append("Xray") }
         return result
     }
 
@@ -41,6 +44,19 @@ public struct ProtocolFacts: Hashable, Sendable {
 
     public init(object: JSONValue) {
         let type = object["type"]?.stringValue?.lowercased() ?? ""
+        if type == XrayBacked.type {
+            let facts = XrayBacked.facts(object)
+            proto = facts.proto
+            switch facts.security {
+            case "reality": security = "REALITY"
+            case "tls": security = "TLS"
+            default: security = facts.proto == "SHADOWSOCKS" ? CoreText.t("Шифрование протокола") : CoreText.t("Без транспортного TLS")
+            }
+            transport = ProtocolFacts.transportNames[facts.network] ?? facts.network
+            flow = facts.vision ? "Vision" : nil
+            xray = true
+            return
+        }
         let tls = object["tls"]
         let isQUIC = ["hysteria", "hysteria2", "tuic"].contains(type)
         proto = type.uppercased()

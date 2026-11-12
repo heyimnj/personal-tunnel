@@ -63,6 +63,7 @@ targets:
         GENERATE_INFOPLIST_FILE: NO
         CODE_SIGN_ENTITLEMENTS: PacketTunnel/PacketTunnel.entitlements
         APPLICATION_EXTENSION_API_ONLY: YES
+        SWIFT_ACTIVE_COMPILATION_CONDITIONS: $(inherited) $(TUNNEL_SWIFT_FLAGS_$(TUNNEL_CORE))
         FRAMEWORK_SEARCH_PATHS: $(inherited) $(PROJECT_DIR)
     dependencies:
       - package: TunnelCore

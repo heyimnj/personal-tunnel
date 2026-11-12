@@ -37,6 +37,9 @@ public struct SharedPaths: Sendable {
     public var library: URL { data.appendingPathComponent("library.json") }
     /// The configuration the tunnel runs; read when the system starts it on its own.
     public var activeConfig: URL { data.appendingPathComponent("tunnel.json") }
+    /// The Xray-core configuration the tunnel runs beside sing-box; absent when
+    /// the subscription has no server only Xray can run.
+    public var activeXrayConfig: URL { data.appendingPathComponent("tunnel-xray.json") }
     public var networkActivity: URL { data.appendingPathComponent("network-activity.json") }
 
     /// 1.x storage, read once by the migration and left untouched.
