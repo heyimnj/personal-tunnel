@@ -84,3 +84,22 @@ final class LogTextTests: XCTestCase {
         XCTAssertEqual(LogText.clean("[mem] занято 21.4 МиБ"), "[mem] занято 21.4 МиБ")
     }
 }
+
+final class ServerInspectionTests: XCTestCase {
+    func testSafeJSONMasksSecretsAndKeepsTheRest() throws {
+        let node = NodeAssembler.assemble([try ShareLink.parse("vless://11111111-2222-3333-4444-555555555555@h.example:443?security=reality&pbk=SbVKOEMjK0sIlbwg4akyBg5mL5KZwwB-ed4eEE7YnRc&sid=ab12&sni=h.example&fp=chrome&flow=xtls-rprx-vision&type=tcp#A"),
+                                           try ShareLink.parse("hysteria2://secretpass@hy.example:443?obfs=salamander&obfs-password=obfspass#B")])
+        let reality = ServerInspection.safeJSON(node[0])
+        XCTAssertFalse(reality.contains("11111111-2222"))
+        XCTAssertFalse(reality.contains("\"ab12\""))
+        XCTAssertTrue(reality.contains("h.example"))
+        XCTAssertTrue(reality.contains("xtls-rprx-vision"))
+        let hy = ServerInspection.safeJSON(node[1])
+        XCTAssertFalse(hy.contains("secretpass"))
+        XCTAssertFalse(hy.contains("obfspass"))
+        XCTAssertTrue(hy.contains("salamander"))
+        let details = Dictionary(uniqueKeysWithValues: ServerInspection.details(node[0]))
+        XCTAssertEqual(details["Flow"], "xtls-rprx-vision")
+        XCTAssertEqual(details["uTLS"], "chrome")
+    }
+}

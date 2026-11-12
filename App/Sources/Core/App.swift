@@ -258,6 +258,11 @@ final class App {
         ping(withServers)
     }
 
+    func ping(nodes: [(Subscription, ServerNode)]) {
+        guard !nodes.isEmpty else { return }
+        latency.test(nodes.map { (subscription: $0.0, node: $0.1) }, tunnelSubscription: tunnelSubscription, tunnelUp: tunnel.state.value != .disconnected)
+    }
+
     func ping(node: ServerNode, in subscription: Subscription) {
         latency.test([(subscription: subscription, node: node)], tunnelSubscription: tunnelSubscription, tunnelUp: tunnel.state.value != .disconnected)
     }

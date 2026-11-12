@@ -282,6 +282,8 @@ final class ServerRowView: SwipeRow {
     let ping = UILabel(font: Theme.font(13), color: .secondaryLabel)
     let spinner = UIActivityIndicatorView(style: .medium)
     let pingButton = TapControl()
+    /// «Выбрать несколько»: the selection circle in front of the row.
+    let mark = UIImageView()
     private(set) var key: (subscription: Int64, node: String) = (0, "")
     /// A single server shown on its own: the subscription surface is its card.
     var plain = false {
@@ -323,7 +325,10 @@ final class ServerRowView: SwipeRow {
         pingButton.widthAnchor.constraint(greaterThanOrEqualToConstant: 58).isActive = true
         pingButton.setContentHuggingPriority(.required, for: .horizontal)
         pingButton.setContentCompressionResistancePriority(.required, for: .horizontal)
-        let row = PassThroughStackView(.horizontal, spacing: 12, alignment: .center, [leading, text, pingButton])
+        mark.contentMode = .center
+        mark.isHidden = true
+        mark.setContentHuggingPriority(.required, for: .horizontal)
+        let row = PassThroughStackView(.horizontal, spacing: 12, alignment: .center, [mark, leading, text, pingButton])
         text.isUserInteractionEnabled = false
         leading.isUserInteractionEnabled = false
         card.addSubview(row)
@@ -332,6 +337,11 @@ final class ServerRowView: SwipeRow {
     }
 
     func bind(_ subscription: Int64, _ node: String) { key = (subscription, node) }
+
+    /// nil: not selecting; otherwise whether this row is selected.
+    func setMark(_ selected: Bool?) {
+        SelectionMark.apply(selected, to: mark)
+    }
 
     override func layoutSubviews() {
         super.layoutSubviews()
@@ -353,6 +363,7 @@ final class SubscriptionHeaderView: SwipeRow {
     let count = UILabel(font: Theme.font(13, .medium), color: .secondaryLabel)
     let chevron = UIImageView(image: UIImage(systemName: "chevron.down", withConfiguration: UIImage.SymbolConfiguration(pointSize: 13, weight: .semibold)))
     let spinner = UIActivityIndicatorView(style: .medium)
+    let mark = UIImageView()
     /// The count's pill, a plain layer behind it (no masking).
     private let countPill = UIView()
 
@@ -373,7 +384,10 @@ final class SubscriptionHeaderView: SwipeRow {
         title.lineBreakMode = .byTruncatingTail
         title.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
         spinner.hidesWhenStopped = true
-        let row = UIStackView(.horizontal, spacing: 8, alignment: .center, [title, pin, UIView(), spinner, count, chevron])
+        mark.contentMode = .center
+        mark.isHidden = true
+        mark.setContentHuggingPriority(.required, for: .horizontal)
+        let row = UIStackView(.horizontal, spacing: 8, alignment: .center, [mark, title, pin, UIView(), spinner, count, chevron])
         row.setCustomSpacing(12, after: count)
         row.isUserInteractionEnabled = false
         tap.addSubview(row)
@@ -392,11 +406,28 @@ final class SubscriptionHeaderView: SwipeRow {
         tap.frame = front.bounds
     }
 
+    func setMark(_ selected: Bool?) {
+        SelectionMark.apply(selected, to: mark)
+    }
+
     /// `progress`: how open the subscription is, 0…1, straight from the spring.
     func show(progress: CGFloat) {
         chevron.transform = CGAffineTransform(rotationAngle: .pi * progress)
         countPill.backgroundColor = SurfaceView.blend(UIColor.label.withAlphaComponent(0.06), Theme.accent.withAlphaComponent(0.14), progress, traits: traitCollection)
         count.textColor = SurfaceView.blend(.secondaryLabel, Theme.accent, progress, traits: traitCollection)
+    }
+}
+
+/// The circle «Выбрать несколько» puts in front of rows and subscriptions.
+enum SelectionMark {
+    static func apply(_ selected: Bool?, to view: UIImageView) {
+        guard let selected else {
+            view.isHidden = true
+            return
+        }
+        view.isHidden = false
+        view.image = UIImage(systemName: selected ? "checkmark.circle.fill" : "circle", withConfiguration: UIImage.SymbolConfiguration(textStyle: .title3))
+        view.tintColor = selected ? Theme.accent : .secondaryLabel
     }
 }
 
@@ -596,6 +627,13 @@ final class ServerListView: UIScrollView {
         }
     }
 
+    /// Swipe actions again (none while selecting), for every row and head.
+    func reloadActions() {
+        closeSwipe()
+        for row in rows.values { row.actions = actionsForRow?(row.key.subscription, row.key.node) ?? [] }
+        reconfigureHeaders()
+    }
+
     func reconfigureRows(_ match: (Int64, String) -> Bool = { _, _ in true }) {
         for row in rows.values where match(row.key.subscription, row.key.node) {
             configureRow?(row, row.key.subscription, row.key.node)
@@ -604,8 +642,15 @@ final class ServerListView: UIScrollView {
 
     func row(for subscription: Int64, node: String) -> ServerRowView? { rows[Self.key(subscription, node)] }
 
+    /// The press shade takes the card's own shape: all corners round when closed,
+    /// only the top ones when the subscription is open under it.
     func headerHeld(_ id: Int64, _ held: Bool) {
-        UIView.animate(withDuration: 0.18) { self.surfaces[id]?.header.front.backgroundColor = held ? UIColor.label.withAlphaComponent(0.07) : .clear }
+        guard let surface = surfaces[id] else { return }
+        let front = surface.header.front
+        front.layer.cornerRadius = surface.layer.cornerRadius
+        front.layer.cornerCurve = .continuous
+        front.layer.maskedCorners = isOpen(id) ? [.layerMinXMinYCorner, .layerMaxXMinYCorner] : [.layerMinXMinYCorner, .layerMaxXMinYCorner, .layerMinXMaxYCorner, .layerMaxXMaxYCorner]
+        UIView.animate(withDuration: 0.18) { front.backgroundColor = held ? UIColor.label.withAlphaComponent(0.07) : .clear }
     }
 
     private static func key(_ subscription: Int64, _ node: String) -> String { "\(subscription):\(node)" }
@@ -617,7 +662,23 @@ final class ServerListView: UIScrollView {
     /// the list's own scrolling also begins a drag; it used to end a closing at once.)
     @objc private func dragged(_ pan: UIPanGestureRecognizer) {
         guard pan.state == .began, link != nil else { return }
+        // At the top a downward drag closes the sheet: nothing may move the list under it.
+        if contentOffset.y <= -adjustedContentInset.top + 1, pan.velocity(in: self).y > 0 {
+            finishAll()
+            return
+        }
         finishOpenings()
+    }
+
+    private func finishAll() {
+        for (id, spring) in springs {
+            springs[id] = DisclosureSpring(spring.target)
+            travel[id] = nil
+            anchors[id] = nil
+        }
+        link?.invalidate()
+        link = nil
+        layoutList()
     }
 
     private func finishOpenings() {
