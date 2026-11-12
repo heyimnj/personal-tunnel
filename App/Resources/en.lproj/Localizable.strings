@@ -472,3 +472,12 @@
 "Укажите адрес интерфейса WireGuard." = "Enter the WireGuard interface address.";
 "Подробный журнал" = "Verbose log";
 "Каждый пакет: нагружает туннель" = "Every packet: loads the tunnel";
+
+/* 3.0, RC 2: subscription and server editors */
+"Название не может быть пустым." = "The name cannot be empty.";
+"Перетащите сервер за полоски справа. Закреплённые серверы остаются сверху. Новый порядок включает ручную сортировку." = "Drag a server by the handle on the right. Pinned servers stay on top. A new order turns on manual sorting.";
+"Серверы: %@" = "Servers: %@";
+"Случайный" = "Random";
+"Случайный (каждый раз)" = "Random (every time)";
+"Упорядочить по задержке" = "Order by latency";
+"Упорядочить по имени" = "Order by name";

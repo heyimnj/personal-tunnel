@@ -389,7 +389,7 @@ final class MinimalServersViewController: UIViewController {
         }
         list.actionsForHeader = { [weak self] id in
             if self?.selecting == true { return [] }
-            return [SwipeAction(symbol: "pencil", color: .systemOrange, title: L("Изменить")) { self?.rename(subscription: id) },
+            return [SwipeAction(symbol: "pencil", color: .systemOrange, title: L("Изменить")) { self?.editSubscription(id) },
              SwipeAction(symbol: "arrow.clockwise", color: .systemBlue, title: L("Обновить")) { App.shared.refresh(id) },
              SwipeAction(symbol: "trash", color: .systemRed, title: L("Удалить")) { self?.confirmDelete(subscription: id) }]
         }
@@ -416,9 +416,9 @@ final class MinimalServersViewController: UIViewController {
             Haptics.tap()
             App.shared.ping(node: node, in: subscription)
         }
-        list.onHold = { [weak self] id, tag, point, release in
+        list.onHold = { [weak self] id, tag, point, source, release in
             guard let self, !self.selecting else { release(); return }
-            self.hold(id, tag, at: point, release: release)
+            self.hold(id, tag, at: point, source: source, release: release)
         }
     }
 
@@ -560,7 +560,7 @@ final class MinimalServersViewController: UIViewController {
     // MARK: Row actions
 
     /// The items and their order are 1.5.0's.
-    private func hold(_ id: Int64, _ tag: String?, at point: CGPoint, release: @escaping () -> Void) {
+    private func hold(_ id: Int64, _ tag: String?, at point: CGPoint, source: ServerListView.HoldSource?, release: @escaping () -> Void) {
         guard let subscription = App.shared.library.subscription(id) else { return }
         let pinKey: String
         var items: [HoldMenuItem]
@@ -581,7 +581,7 @@ final class MinimalServersViewController: UIViewController {
             pinKey = Arrangement.subscription(id)
             items = [
                 HoldMenuItem(title: L("Проверить пинг"), symbol: "waveform.path.ecg") { App.shared.ping([subscription]) },
-                HoldMenuItem(title: L("Редактировать"), symbol: "pencil") { [weak self] in self?.rename(subscription: id) },
+                HoldMenuItem(title: L("Редактировать"), symbol: "pencil") { [weak self] in self?.editSubscription(id) },
             ]
             if subscription.isRemote {
                 items.append(HoldMenuItem(title: L("Обновить"), symbol: "arrow.clockwise") { App.shared.refresh(id) })
@@ -596,7 +596,7 @@ final class MinimalServersViewController: UIViewController {
         items.append(HoldMenuItem(title: L("Удалить"), symbol: "trash", destructive: true) { [weak self] in
             if let tag { self?.confirmDelete(node: tag, in: id) } else { self?.confirmDelete(subscription: id) }
         })
-        HoldMenuView.show(in: view, at: list.convert(point, to: view), title: title, items: items, onDismiss: release)
+        HoldMenuView.show(in: view, at: list.convert(point, to: view), title: title, items: items, source: source, onDismiss: release)
     }
 
     private func togglePin(_ key: String) {
@@ -626,9 +626,10 @@ final class MinimalServersViewController: UIViewController {
         present(alert, animated: true)
     }
 
-    private func rename(subscription id: Int64) {
+    /// «Редактировать» on a subscription: its name and the order of its servers.
+    private func editSubscription(_ id: Int64) {
         guard let subscription = App.shared.library.subscription(id) else { return }
-        prompt(L("Название подписки"), value: subscription.name) { App.shared.rename(subscription: id, to: $0) }
+        present(SubscriptionEditorViewController.wrapped(subscription) { [weak self] in self?.reload() }, animated: true)
     }
 
     /// «Редактировать»: the full form for servers it can describe; a name otherwise
@@ -639,7 +640,7 @@ final class MinimalServersViewController: UIViewController {
             rename(node: tag, in: id)
             return
         }
-        present(ServerEditorViewController.wrapped(draft, title: L("Редактировать")) { outbound, name in
+        present(ServerEditorViewController.wrapped(draft, original: node.outbound, title: L("Редактировать")) { outbound, name in
             App.shared.replace(node: tag, in: id, outbound: outbound, name: name)
         }, animated: true)
     }

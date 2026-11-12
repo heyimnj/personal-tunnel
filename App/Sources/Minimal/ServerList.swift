@@ -167,8 +167,10 @@ class SwipeRow: UIView, UIGestureRecognizerDelegate {
 
     private func rebuildRail() {
         pills.forEach { $0.removeFromSuperview() }
-        pills = actions.enumerated().map { index, action in
-            let pill = SwipePill(action, titled: index == actions.count - 1)
+        pills = actions.map { action in
+            // All the same round symbol buttons, «Удалить» included (the title stays
+            // for VoiceOver).
+            let pill = SwipePill(action, titled: false)
             pill.addAction(UIAction { [weak self] _ in
                 Haptics.tap()
                 self?.close(animated: true)
@@ -580,8 +582,11 @@ final class ServerListView: UIScrollView {
     var onFilter: ((Int64, String?) -> Void)?
     var onSelect: ((Int64, String) -> Void)?
     var onPing: ((Int64, String) -> Void)?
-    /// A long press: the subscription, the server (nil for the head) and how to undo the highlight.
-    var onHold: ((Int64, String?, CGPoint, @escaping () -> Void) -> Void)?
+    /// What a long press lifts above the dim under the menu: a view and its part.
+    typealias HoldSource = (view: UIView, rect: CGRect)
+    /// A long press: the subscription, the server (nil for the head), the pressed
+    /// row and how to undo the highlight.
+    var onHold: ((Int64, String?, CGPoint, HoldSource?, @escaping () -> Void) -> Void)?
 
     private(set) var sections: [Section] = []
     private var springs: [Int64: DisclosureSpring] = [:]
@@ -1000,15 +1005,16 @@ final class ServerListView: UIScrollView {
         for section in sections {
             guard let surface = surfaces[section.id], surface.frame.contains(point) else { continue }
             let local = convert(point, to: surface)
+            let head = CGRect(x: 0, y: 0, width: surface.bounds.width, height: Self.headerHeight)
             if section.standalone, let node = section.nodes.first, let row = rows[Self.key(section.id, node)] {
                 row.setHeld(true)
-                onHold?(section.id, node, point) { [weak row] in row?.setHeld(false) }
+                onHold?(section.id, node, point, (view: surface as UIView, rect: head)) { [weak row] in row?.setHeld(false) }
             } else if local.y < Self.headerHeight {
                 headerHeld(section.id, true)
-                onHold?(section.id, nil, point) { [weak self] in self?.headerHeld(section.id, false) }
+                onHold?(section.id, nil, point, (view: surface as UIView, rect: head)) { [weak self] in self?.headerHeld(section.id, false) }
             } else if let row = rows.values.first(where: { $0.superview === surface && $0.frame.contains(local) }) {
                 row.setHeld(true)
-                onHold?(section.id, row.key.node, point) { [weak row] in row?.setHeld(false) }
+                onHold?(section.id, row.key.node, point, (view: row.card as UIView, rect: row.card.bounds)) { [weak row] in row?.setHeld(false) }
             }
             return
         }

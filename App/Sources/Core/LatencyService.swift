@@ -341,10 +341,39 @@ final class LatencyService {
 
     func isTesting(_ subscription: Int64, _ tag: String) -> Bool { testing.contains(LatencyService.key(subscription, tag)) }
 
+    /// Servers tapped while a test runs: they are tested right after it, in one go.
+    private var pending: [(subscription: Subscription, node: ServerNode)] = []
+
     /// Starts a test of the given servers; an already running test is stopped first.
     /// `tunnelUp`: the VPN is on, so direct connects must go around it.
     func test(_ items: [(subscription: Subscription, node: ServerNode)], tunnelSubscription: Int64?, tunnelUp: Bool) {
         cancel()
+        run(items, tunnelSubscription: tunnelSubscription, tunnelUp: tunnelUp, continuing: false)
+    }
+
+    /// A server tapped (or swiped) for its ping. A running test is not stopped: the
+    /// server joins it and shows its spinner at once, so several can be tapped in a row.
+    func add(_ items: [(subscription: Subscription, node: ServerNode)], tunnelSubscription: Int64?, tunnelUp: Bool) {
+        guard task != nil else {
+            test(items, tunnelSubscription: tunnelSubscription, tunnelUp: tunnelUp)
+            return
+        }
+        var keys = Set<String>()
+        for item in items {
+            let key = LatencyService.key(item.subscription.id, item.node.id)
+            guard !testing.contains(key), !keys.contains(key) else { continue }
+            keys.insert(key)
+            pending.append(item)
+        }
+        guard !keys.isEmpty else { return }
+        testing.formUnion(keys)
+        var progress = self.progress.value
+        progress.total += keys.count
+        self.progress.value = progress
+        changed.value = keys
+    }
+
+    private func run(_ items: [(subscription: Subscription, node: ServerNode)], tunnelSubscription: Int64?, tunnelUp: Bool, continuing: Bool) {
         guard !items.isEmpty else { return }
         let mode = LatencyMode.named(Prefs.pingMode)
         let log: @Sendable (Int32, String) -> Void = { level, text in DispatchQueue.main.async { App.shared.core.note(text, level: level) } }
@@ -352,9 +381,14 @@ final class LatencyService {
         tally = [:]
         answered = 0
         let keys = Set(items.map { LatencyService.key($0.subscription.id, $0.node.id) })
-        testing = keys
-        progress.value = LatencyProgress(running: true, done: 0, total: items.count)
-        changed.value = keys
+        if continuing {
+            // Already counted and spinning since they were added.
+            testing.formUnion(keys)
+        } else {
+            testing = keys
+            progress.value = LatencyProgress(running: true, done: 0, total: items.count)
+            changed.value = keys
+        }
         // Servers of the subscription in the tunnel get the URL test; the rest a direct connect.
         var live: [LatencyRunner.Target] = []
         var direct: [LatencyRunner.Target] = []
@@ -433,6 +467,14 @@ final class LatencyService {
                 guard let self, !Task.isCancelled else { return }
                 let reasons = self.tally.sorted { $0.value > $1.value }.map { "\($0.key.title) ×\($0.value)" }
                 log(4, Lf("Проверка задержки завершена: ответили %@ из %@", "\(self.answered)", "\(total)") + (reasons.isEmpty ? "." : "; " + reasons.joined(separator: ", ")))
+                guard self.pending.isEmpty else {
+                    let next = self.pending
+                    self.pending = []
+                    self.run(next, tunnelSubscription: App.shared.tunnelSubscription,
+                             tunnelUp: App.shared.tunnel.state.value != .disconnected, continuing: true)
+                    return
+                }
+                self.task = nil
                 self.finish()
             }
         }
@@ -441,6 +483,7 @@ final class LatencyService {
     func cancel() {
         task?.cancel()
         task = nil
+        pending = []
         local?.close()
         local = nil
         if progress.value.running { finish() }

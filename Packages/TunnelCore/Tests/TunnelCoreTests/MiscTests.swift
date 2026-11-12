@@ -203,4 +203,48 @@ final class ServerDraftTests: XCTestCase {
         XCTAssertThrowsError(try draft.outbound())
         XCTAssertNil(ServerDraft(outbound: ["type": "urltest"], name: "G"))
     }
+
+    /// Editing keeps what the form does not show and drops what it turned off.
+    func testEditKeepsFieldsTheFormDoesNotShow() throws {
+        let original: JSONValue = [
+            "type": "vless", "tag": "a", "server": "x.example.net", "server_port": 443,
+            "uuid": "11111111-2222-3333-4444-555555555555", "flow": "xtls-rprx-vision", "packet_encoding": "packetaddr",
+            "multiplex": ["enabled": true, "protocol": "h2mux"],
+            "tls": ["enabled": true, "server_name": "x.example.net", "min_version": "1.3",
+                    "utls": ["enabled": true, "fingerprint": "firefox"],
+                    "ech": ["enabled": true]],
+        ]
+        var draft = try XCTUnwrap(ServerDraft(outbound: original, name: "A"))
+        draft.host = "y.example.net"
+        draft.port = "8443"
+        let edited = try draft.outbound(updating: original)
+        XCTAssertEqual(edited["server"], "y.example.net")
+        XCTAssertEqual(edited["server_port"], 8443)
+        XCTAssertEqual(edited["flow"], "xtls-rprx-vision")
+        XCTAssertEqual(edited["packet_encoding"], "packetaddr")
+        XCTAssertEqual(edited.at("multiplex", "protocol"), "h2mux")
+        XCTAssertEqual(edited.at("tls", "min_version"), "1.3")
+        XCTAssertEqual(edited.at("tls", "ech", "enabled"), true)
+        XCTAssertEqual(edited.at("tls", "utls", "fingerprint"), "firefox")
+
+        draft.vision = false
+        draft.security = .none
+        let plain = try draft.outbound(updating: original)
+        XCTAssertNil(plain["flow"])
+        XCTAssertNil(plain["tls"])
+        XCTAssertEqual(plain.at("multiplex", "enabled"), true)
+
+        let xhttp: JSONValue = [
+            "type": "vless", "server": "x.example.net", "server_port": 443, "uuid": "11111111-2222-3333-4444-555555555555",
+            "transport": ["type": "xhttp", "path": "/a", "mode": "packet-up", "x_padding_bytes": "100-1000"],
+        ]
+        var other = try XCTUnwrap(ServerDraft(outbound: xhttp, name: "X"))
+        other.path = "/b"
+        let moved = try other.outbound(updating: xhttp)
+        XCTAssertEqual(moved.at("transport", "path"), "/b")
+        XCTAssertEqual(moved.at("transport", "mode"), "packet-up")
+        XCTAssertEqual(moved.at("transport", "x_padding_bytes"), "100-1000")
+        other.transport = .tcp
+        XCTAssertNil(try other.outbound(updating: xhttp)["transport"])
+    }
 }

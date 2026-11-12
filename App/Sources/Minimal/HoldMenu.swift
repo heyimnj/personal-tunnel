@@ -1,4 +1,3 @@
-import SwiftUI
 import UIKit
 
 struct HoldMenuItem {
@@ -54,7 +53,7 @@ enum HoldMenuMetrics {
         return Placement(frame: CGRect(x: x, y: y, width: size.width, height: size.height), arrowUp: arrowUp, arrowX: arrowX)
     }
 
-    /// Body and arrow as one contour, so the glass, the blur mask and the shadow
+    /// Body and arrow as one contour, so the surface, its edge and the shadow
     /// share it without a seam.
     static func outline(size: CGSize, arrowUp: Bool, arrowX: CGFloat) -> UIBezierPath {
         let h = arrowHeight, half = arrowWidth / 2
@@ -88,21 +87,6 @@ enum HoldMenuMetrics {
         path.close()
         return path
     }
-}
-
-/// The menu outline for SwiftUI's glass, which takes any shape.
-private struct HoldMenuOutline: Shape {
-    var arrowUp: Bool
-    var arrowX: CGFloat
-    func path(in rect: CGRect) -> Path {
-        Path(HoldMenuMetrics.outline(size: rect.size, arrowUp: arrowUp, arrowX: arrowX).cgPath)
-    }
-}
-
-@available(iOS 26.0, *)
-private struct HoldMenuGlass: View {
-    let outline: HoldMenuOutline
-    var body: some View { Color.clear.glassEffect(Glass.regular, in: outline) }
 }
 
 /// One action: icon in a fixed column, the title, a rounded press shade that comes
@@ -149,62 +133,65 @@ private final class HoldMenuRow: UIControl {
     }
 }
 
-/// The menu a long press opens, as in 1.5.0: a glass card with an arrow at the
-/// finger that pours out of the pressed row (down first, then sideways, the items
-/// settling a beat later) and drains back into it. A touch outside closes it.
+/// The menu a long press opens, as in 1.5.0: a card with an arrow at the finger
+/// that pours out of the pressed row (down first, then sideways, the items settling
+/// a beat later) and drains back into it. A touch outside closes it.
+///
+/// The card is one even surface in the cards' own tone (glass took its colour from
+/// whatever lay under each part of it, so the menu looked patchy and sat on a layer
+/// of its own). The rest of the sheet dims, and the pressed row is lifted above the
+/// dim together with the menu: the two read as one piece.
 final class HoldMenuView: UIView {
     /// Horizontal half of the pour (scale X), anchored at the arrow tip.
     private let card = UIView()
     /// Vertical half of the pour (scale Y); carries the shadow and the surface.
     private let stretch = UIView()
     private let items = UIStackView(.vertical, spacing: 0, alignment: .fill, [])
-    private lazy var blur = UIVisualEffectView(effect: UIBlurEffect(style: .systemUltraThinMaterial))
-    private let silhouette = CAShapeLayer()
-    private var glass: UIView?
-    private var glassHost: UIHostingController<AnyView>?
+    private let surface = CAShapeLayer()
+    private let backdrop = UIControl()
+    /// A picture of the pressed row, above the dim.
+    private var lifted: UIView?
     private var animators: [UIViewPropertyAnimator] = []
     private var direction: CGFloat = 1
     private var leaving = false
     private var onDismiss: (() -> Void)?
 
-    static func show(in host: UIView, at point: CGPoint, title: String, items: [HoldMenuItem], onDismiss: (() -> Void)? = nil) {
+    /// The menu's surface: the cards' colour, a step lighter in dark mode so it
+    /// stands off the cards it covers.
+    static let fill = UIColor { traits in
+        traits.userInterfaceStyle == .dark ? UIColor(red: 0.173, green: 0.173, blue: 0.180, alpha: 1) : .white
+    }
+
+    /// `source`: the pressed row and the part of it to lift above the dim.
+    static func show(in host: UIView, at point: CGPoint, title: String, items: [HoldMenuItem], source: (view: UIView, rect: CGRect)? = nil, onDismiss: (() -> Void)? = nil) {
         let menu = HoldMenuView(frame: host.bounds)
         menu.autoresizingMask = [.flexibleWidth, .flexibleHeight]
         menu.onDismiss = onDismiss
         menu.accessibilityLabel = title
         menu.build(items)
         host.addSubview(menu)
+        if let source { menu.lift(source.view, source.rect) }
         menu.place(at: point)
         menu.animateIn()
         Haptics.soft()
     }
 
     private func build(_ list: [HoldMenuItem]) {
-        let backdrop = UIControl()
         backdrop.addTarget(self, action: #selector(backdropTouched), for: .touchDown)
+        backdrop.backgroundColor = UIColor.black.withAlphaComponent(traitCollection.userInterfaceStyle == .dark ? 0.4 : 0.16)
+        backdrop.alpha = 0
         addSubview(backdrop)
         backdrop.pin(to: self)
 
-        stretch.layer.shadowColor = UIColor.black.cgColor
-        stretch.layer.shadowOffset = CGSize(width: 0, height: 8)
-        stretch.layer.shadowRadius = 24
         let dark = traitCollection.userInterfaceStyle == .dark
-        if #available(iOS 26.0, *) {
-            let host = UIHostingController(rootView: AnyView(EmptyView()))
-            host.view.backgroundColor = .clear
-            host.view.isUserInteractionEnabled = false
-            if #available(iOS 16.4, *) { host.safeAreaRegions = [] }
-            stretch.addSubview(host.view)
-            glass = host.view
-            glassHost = host
-            // Glass draws its own depth: only a faint lift under it.
-            stretch.layer.shadowOpacity = dark ? 0.22 : 0.08
-        } else {
-            silhouette.fillColor = UIColor.black.cgColor
-            blur.layer.mask = silhouette
-            stretch.addSubview(blur)
-            stretch.layer.shadowOpacity = dark ? 0.35 : 0.12
-        }
+        surface.fillColor = Self.fill.resolvedColor(with: traitCollection).cgColor
+        surface.strokeColor = UIColor.label.withAlphaComponent(dark ? 0.1 : 0.05).resolvedColor(with: traitCollection).cgColor
+        surface.lineWidth = 0.5
+        stretch.layer.addSublayer(surface)
+        stretch.layer.shadowColor = UIColor.black.cgColor
+        stretch.layer.shadowOffset = CGSize(width: 0, height: 10)
+        stretch.layer.shadowRadius = 28
+        stretch.layer.shadowOpacity = dark ? 0.45 : 0.14
         card.addSubview(stretch)
         card.accessibilityViewIsModal = true
         addSubview(card)
@@ -219,6 +206,16 @@ final class HoldMenuView: UIView {
         items.directionalLayoutMargins = NSDirectionalEdgeInsets(top: HoldMenuMetrics.padding, leading: HoldMenuMetrics.padding,
                                                                  bottom: HoldMenuMetrics.padding, trailing: HoldMenuMetrics.padding)
         stretch.addSubview(items)
+    }
+
+    /// The pressed row stays bright above the dim, where it is.
+    private func lift(_ view: UIView, _ rect: CGRect) {
+        guard rect.width > 1, rect.height > 1,
+              let picture = view.resizableSnapshotView(from: rect, afterScreenUpdates: false, withCapInsets: .zero) else { return }
+        picture.frame = view.convert(rect, to: self)
+        picture.isUserInteractionEnabled = false
+        insertSubview(picture, aboveSubview: backdrop)
+        lifted = picture
     }
 
     /// A thin inset rule before the destructive action, as in system menus.
@@ -253,14 +250,8 @@ final class HoldMenuView: UIView {
         stretch.layer.position = tip
         let outline = HoldMenuMetrics.outline(size: frame.size, arrowUp: place.arrowUp, arrowX: place.arrowX)
         stretch.layer.shadowPath = outline.cgPath
-        if let glass, #available(iOS 26.0, *) {
-            glassHost?.rootView = AnyView(HoldMenuGlass(outline: HoldMenuOutline(arrowUp: place.arrowUp, arrowX: place.arrowX)))
-            glass.frame = stretch.bounds
-        } else {
-            blur.frame = stretch.bounds
-            silhouette.frame = blur.bounds
-            silhouette.path = outline.cgPath
-        }
+        surface.frame = stretch.bounds
+        surface.path = outline.cgPath
         items.frame = CGRect(x: 0, y: place.arrowUp ? HoldMenuMetrics.arrowHeight : 0, width: frame.width, height: content.height)
         direction = place.arrowUp ? 1 : -1
     }
@@ -273,6 +264,7 @@ final class HoldMenuView: UIView {
 
     private func animateIn() {
         card.alpha = 0
+        run(UIViewPropertyAnimator(duration: 0.22, curve: .easeOut) { self.backdrop.alpha = 1 })
         guard !UIAccessibility.isReduceMotionEnabled else {
             run(UIViewPropertyAnimator(duration: 0.18, curve: .easeOut) { self.card.alpha = 1 })
             return
@@ -306,6 +298,8 @@ final class HoldMenuView: UIView {
         let reduce = UIAccessibility.isReduceMotionEnabled
         let shrink = UIViewPropertyAnimator(duration: 0.24, controlPoint1: CGPoint(x: 0.4, y: 0), controlPoint2: CGPoint(x: 0.2, y: 1)) {
             self.card.alpha = 0
+            self.backdrop.alpha = 0
+            self.lifted?.alpha = 0
             guard !reduce else { return }
             self.items.alpha = 0
             self.card.transform = CGAffineTransform(scaleX: 0.4, y: 1)

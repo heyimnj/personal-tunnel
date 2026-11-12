@@ -33,6 +33,11 @@ final class App {
             } else if state == .disconnected {
                 self.core.stop()
                 self.latency.cancel()
+                if self.reconnecting {
+                    self.reconnecting = false
+                    // A beat for the system to release the old session.
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) { [weak self] in self?.connect() }
+                }
             }
         }
         tunnel.loaded.observe(self, fireNow: false) { [weak self] loaded in
@@ -58,9 +63,23 @@ final class App {
         case .disconnected:
             connect()
         default:
+            reconnecting = false
             latency.cancel()
             tunnel.stop()
         }
+    }
+
+    /// Set while the tunnel is stopped to come straight back with another server.
+    private var reconnecting = false
+
+    /// Stops the running tunnel and starts it again with the stored configuration:
+    /// every connection, the core and Xray begin anew on the chosen server.
+    func reconnect() {
+        let state = tunnel.state.value
+        guard state.isOn || state == .connecting else { return }
+        reconnecting = true
+        latency.cancel()
+        tunnel.stop()
     }
 
     func connect() {
@@ -72,10 +91,12 @@ final class App {
         }
     }
 
-    /// Picks a server. In the running tunnel the selector switches it at once;
-    /// a server of another subscription reloads the service with its configuration.
+    /// Picks a server. With the VPN on (or coming up) the tunnel reconnects at once
+    /// on the new server, so nothing keeps running on the previous one.
     func select(node: String, in subscription: Int64) {
-        let previous = library.activeSubscription?.id
+        let current = library.activeSubscription
+        let previousNode: String? = current.flatMap { library.selectedNodeID(in: $0) }
+        let changed = current?.id != subscription || previousNode != node || Prefs.autoSelect
         latency.cancel()
         store.update { $0.select(node: node, in: subscription) }
         Prefs.autoSelect = false
@@ -93,13 +114,7 @@ final class App {
             notice.value = error.localizedDescription
             return
         }
-        if previous == subscription {
-            CoreClient.select(tag: node) { [weak self] ok in
-                if !ok { self?.reloadTunnel() }
-            }
-        } else {
-            reloadTunnel()
-        }
+        if changed { reconnect() }
     }
 
     func reloadTunnel() {
@@ -177,7 +192,10 @@ final class App {
             subscription.nodes[index].link = nil
             library.replace(subscription)
         }
-        if library.activeSubscription?.id == id { reloadTunnel() }
+        // The server in use changed: the tunnel comes back on its new settings.
+        if let active = library.activeSubscription, active.id == id {
+            if library.selectedNodeID(in: active) == tag { reconnect() } else { reloadTunnel() }
+        }
     }
 
     func refresh(_ id: Int64) {
@@ -293,8 +311,9 @@ final class App {
         latency.test(nodes.map { (subscription: $0.0, node: $0.1) }, tunnelSubscription: tunnelSubscription, tunnelUp: tunnel.state.value != .disconnected)
     }
 
+    /// One server's ping: joins a running test instead of stopping it.
     func ping(node: ServerNode, in subscription: Subscription) {
-        latency.test([(subscription: subscription, node: node)], tunnelSubscription: tunnelSubscription, tunnelUp: tunnel.state.value != .disconnected)
+        latency.add([(subscription: subscription, node: node)], tunnelSubscription: tunnelSubscription, tunnelUp: tunnel.state.value != .disconnected)
     }
 }
 

@@ -12,6 +12,60 @@ enum FormRow {
     case check(title: String, selected: () -> Bool, action: () -> Void)
     /// A text field: title on the left, the value typed on the right.
     case field(title: String, placeholder: String, get: () -> String, set: (String) -> Void, keyboard: UIKeyboardType)
+    /// A long value (key, UUID, address) typed under its title and wrapping, so it is
+    /// seen whole.
+    case text(title: String, placeholder: String, get: () -> String, set: (String) -> Void, keyboard: UIKeyboardType)
+    /// Any row with a symbol in front of it, in the settings' icon style.
+    indirect case symbol(String, FormRow)
+
+    /// The row without its symbol.
+    var bare: FormRow {
+        if case let .symbol(_, row) = self { return row.bare }
+        return self
+    }
+}
+
+/// The long text of `FormRow.text`: grows with what is typed.
+private final class FormTextView: UITextView, UITextViewDelegate {
+    var onChange: ((String) -> Void)?
+    var onResize: (() -> Void)?
+    private let hint = UILabel()
+    private var lastHeight: CGFloat = 0
+
+    init(placeholder text: String) {
+        super.init(frame: .zero, textContainer: nil)
+        delegate = self
+        isScrollEnabled = false
+        backgroundColor = .clear
+        textContainerInset = .zero
+        textContainer.lineFragmentPadding = 0
+        hint.text = text
+        hint.font = Theme.font(15)
+        hint.textColor = .tertiaryLabel
+        addSubview(hint)
+        hint.translatesAutoresizingMaskIntoConstraints = false
+        NSLayoutConstraint.activate([hint.leadingAnchor.constraint(equalTo: leadingAnchor), hint.topAnchor.constraint(equalTo: topAnchor)])
+    }
+
+    @available(*, unavailable)
+    required init?(coder _: NSCoder) { fatalError() }
+
+    func showPlaceholder() { hint.isHidden = !text.isEmpty }
+
+    func textViewDidChange(_ textView: UITextView) {
+        showPlaceholder()
+        // No line breaks in a key: Return ends the editing.
+        if text.contains("\n") {
+            text = text.replacingOccurrences(of: "\n", with: "")
+            resignFirstResponder()
+        }
+        onChange?(text)
+        let height = sizeThatFits(CGSize(width: bounds.width, height: .greatestFiniteMagnitude)).height
+        if abs(height - lastHeight) > 0.5 {
+            lastHeight = height
+            onResize?()
+        }
+    }
 }
 
 struct FormSection {
@@ -92,16 +146,32 @@ class FormViewController: UITableViewController, UIColorPickerViewControllerDele
     }
 
     override func tableView(_ tableView: UITableView, cellForRowAt indexPath: IndexPath) -> UITableViewCell {
+        makeCell(sections[indexPath.section].rows[indexPath.row], symbol: nil)
+    }
+
+    /// The symbol in front of a hand-built row (fields), as `content.image` is for the rest.
+    private static func iconView(_ symbol: String?) -> UIView? {
+        guard let symbol else { return nil }
+        let view = UIImageView(image: icon(symbol))
+        view.setContentHuggingPriority(.required, for: .horizontal)
+        view.setContentCompressionResistancePriority(.required, for: .horizontal)
+        return view
+    }
+
+    private func makeCell(_ row: FormRow, symbol: String?) -> UITableViewCell {
+        if case let .symbol(name, inner) = row { return makeCell(inner, symbol: name) }
         let cell = UITableViewCell(style: .value1, reuseIdentifier: nil)
         cell.backgroundColor = FormViewController.cellColor
         cell.selectionStyle = .none
         var content = cell.defaultContentConfiguration()
         content.textProperties.font = Theme.font(17)
         content.textProperties.color = Theme.text
-        switch sections[indexPath.section].rows[indexPath.row] {
-        case let .link(symbol, title, _):
+        if let symbol { content.image = FormViewController.icon(symbol) }
+        switch row {
+        case .symbol: break
+        case let .link(own, title, _):
             content.text = title
-            if let symbol { content.image = FormViewController.icon(symbol) }
+            if let own { content.image = FormViewController.icon(own) }
             cell.accessoryType = .disclosureIndicator
             cell.selectionStyle = .default
         case let .toggle(title, get, set):
@@ -188,10 +258,37 @@ class FormViewController: UITableViewController, UIColorPickerViewControllerDele
             field.spellCheckingType = .no
             field.clearButtonMode = .whileEditing
             field.addAction(UIAction { [weak field] _ in set(field?.text ?? "") }, for: .editingChanged)
-            let stack = UIStackView(.horizontal, spacing: 12, alignment: .center, [label, field])
+            let stack = UIStackView(.horizontal, spacing: 12, alignment: .center, [Self.iconView(symbol), label, field].compactMap { $0 })
             cell.contentView.addSubview(stack)
             stack.pin(to: cell.contentView, insets: UIEdgeInsets(top: 11, left: 20, bottom: 11, right: 16))
             stack.heightAnchor.constraint(greaterThanOrEqualToConstant: 30).isActive = true
+            return cell
+        case let .text(title, placeholder, get, set, keyboard):
+            let label = UILabel(title, font: Theme.font(17), color: Theme.text)
+            let head = UIStackView(.horizontal, spacing: 12, alignment: .center, [Self.iconView(symbol), label].compactMap { $0 })
+            let field = FormTextView(placeholder: placeholder)
+            field.text = get()
+            field.showPlaceholder()
+            field.font = Theme.font(15)
+            field.textColor = .secondaryLabel
+            field.keyboardType = keyboard
+            field.returnKeyType = .done
+            field.autocapitalizationType = .none
+            field.autocorrectionType = .no
+            field.spellCheckingType = .no
+            field.smartDashesType = .no
+            field.smartQuotesType = .no
+            field.onChange = set
+            field.onResize = { [weak self] in
+                UIView.performWithoutAnimation { self?.tableView.performBatchUpdates(nil) }
+            }
+            // The value lines up with the title, past the symbol.
+            let value = UIView()
+            value.addSubview(field)
+            field.pin(to: value, insets: UIEdgeInsets(top: 0, left: symbol == nil ? 0 : 41, bottom: 0, right: 0))
+            let stack = UIStackView(.vertical, spacing: 6, alignment: .fill, [head, value])
+            cell.contentView.addSubview(stack)
+            stack.pin(to: cell.contentView, insets: UIEdgeInsets(top: 11, left: 20, bottom: 11, right: 16))
             return cell
         }
         cell.contentConfiguration = content
@@ -200,7 +297,7 @@ class FormViewController: UITableViewController, UIColorPickerViewControllerDele
 
     override func tableView(_ tableView: UITableView, didSelectRowAt indexPath: IndexPath) {
         tableView.deselectRow(at: indexPath, animated: true)
-        switch sections[indexPath.section].rows[indexPath.row] {
+        switch sections[indexPath.section].rows[indexPath.row].bare {
         case let .link(_, _, action), let .button(_, _, action):
             action()
         case let .check(_, _, action):

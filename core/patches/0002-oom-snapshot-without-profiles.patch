@@ -1,0 +1,51 @@
+diff --git a/experimental/libbox/oom_report.go b/experimental/libbox/oom_report.go
+index b5cfdc2d8..2386a2c94 100644
+--- a/experimental/libbox/oom_report.go
++++ b/experimental/libbox/oom_report.go
+@@ -5,6 +5,7 @@ package libbox
+ import (
+ 	"bytes"
+ 	"encoding/json"
++	"os"
+ 	"path/filepath"
+ 	"sort"
+ 	"time"
+@@ -77,6 +78,13 @@ func OOMRecorderOptions(startedService *daemon.StartedService) oomkiller.Recorde
+ 			return formatLogEntries(startedService.SavedLog())
+ 		},
+ 		SnapshotCallback: func(directory string, prefix string) {
++			// lx:begin oom-snapshot-safe
++			// Runs from the memory pressure callback; anything failing in here must not
++			// take the tunnel down with it.
++			defer func() {
++				_ = recover()
++			}()
++			// lx:end
+ 			for _, name := range oomReportProfiles {
+ 				writeOOMProfile(filepath.Join(directory, prefix+"."+name+".pb"), name)
+ 			}
+@@ -251,7 +259,24 @@ func writeWithoutColors(buffer *bytes.Buffer, message string) {
+ 	buffer.WriteString(message[start:])
+ }
+ 
++// lx:begin oom-snapshot-safe
++// The pprof writers reach into runtime internals through linkname. Inside the iOS
++// Network Extension (50 MiB limit) the heap writer crashed with a nil dereference in
++// writeHeapProto the moment memory pressure fired, turning a warning into a dead VPN.
++// Profiles are not written; the rest of the report (log, runtime info, connections)
++// still is.
++var oomProfilesDisabled = true
++
+ func writeOOMProfile(filePath string, name string) {
++	if oomProfilesDisabled {
++		return
++	}
++	defer func() {
++		if recover() != nil {
++			_ = os.Remove(filePath)
++		}
++	}()
++	// lx:end
+ 	err := oomprofile.WriteFile(filePath, name)
+ 	if err != nil {
+ 		return

@@ -29,7 +29,7 @@ public struct ServerDraft: Equatable, Sendable {
 
     public static let shadowsocksMethods = ["2022-blake3-aes-128-gcm", "2022-blake3-aes-256-gcm", "2022-blake3-chacha20-poly1305",
                                            "aes-128-gcm", "aes-256-gcm", "chacha20-ietf-poly1305"]
-    public static let fingerprints = ["chrome", "firefox", "safari", "ios", "edge", "random", "randomized"]
+    public static let fingerprints = ["chrome", "firefox", "safari", "ios", "android", "edge", "360", "qq", "random", "randomized"]
 
     public var name = ""
     public var proto = Proto.vless
@@ -157,6 +157,62 @@ public struct ServerDraft: Equatable, Sendable {
         if !preSharedKey.isEmpty { peer["pre_shared_key"] = .string(preSharedKey) }
         return ["type": "wireguard", "address": JSONValue(addresses), "private_key": .string(privateKey),
                 "mtu": .int(Int64(Int(mtu) ?? 1280)), "peers": [.object(peer)]]
+    }
+
+    // MARK: Editing an existing server
+
+    /// The outbound for an edited server: the form's fields over the server as it
+    /// was. What the form does not show (multiplex, XHTTP mode and extras, ECH,
+    /// other headers, packet encoding, VMess cipher…) is kept, so saving a renamed
+    /// or re-pointed server does not quietly break it. What the form turns off
+    /// (Vision, TLS, a transport, obfuscation, port hopping) is removed.
+    public func outbound(updating original: JSONValue) throws -> JSONValue {
+        let made = try outbound()
+        guard case let .object(new) = made, case let .object(old) = original,
+              old["type"]?.stringValue?.lowercased() == new["type"]?.stringValue?.lowercased() else { return made }
+        if proto == .wireguard {
+            // Peers are one list: keep the old peer's extra fields (reserved, allowed IPs…).
+            var result = Self.overlay(old, new, managed: ["type", "address", "private_key", "mtu", "peers", "tag"])
+            if let oldPeer = old["peers"]?.arrayValue?.first?.objectValue, let newPeer = new["peers"]?.arrayValue?.first?.objectValue {
+                result["peers"] = .array([.object(Self.overlay(oldPeer, newPeer, managed: ["address", "port", "public_key", "pre_shared_key"]))])
+            }
+            return .object(result)
+        }
+        var managed: Set<String> = ["type", "server", "server_port", "uuid", "password", "method", "flow", "tls", "transport",
+                                    "obfs", "server_ports", "congestion_control", "tag"]
+        // The form sets these only as defaults: the server's own value wins.
+        for key in ["packet_encoding", "security"] where old[key] != nil { managed.insert(key) }
+        var result = Self.overlay(old, new, managed: managed)
+        for key in ["packet_encoding", "security"] where old[key] != nil && new[key] != nil { result[key] = old[key] }
+        if case let .object(newTLS)? = new["tls"], case let .object(oldTLS)? = old["tls"] {
+            var tls = Self.overlay(oldTLS, newTLS, managed: ["enabled", "server_name", "alpn", "insecure", "utls", "reality"])
+            if case let .object(newReality)? = newTLS["reality"], case let .object(oldReality)? = oldTLS["reality"] {
+                tls["reality"] = .object(Self.overlay(oldReality, newReality, managed: ["enabled", "public_key", "short_id"]))
+            }
+            if case let .object(newUTLS)? = newTLS["utls"], case let .object(oldUTLS)? = oldTLS["utls"] {
+                tls["utls"] = .object(Self.overlay(oldUTLS, newUTLS, managed: ["enabled", "fingerprint"]))
+            }
+            result["tls"] = .object(tls)
+        }
+        if case let .object(newTransport)? = new["transport"], case let .object(oldTransport)? = old["transport"],
+           newTransport["type"] == oldTransport["type"] {
+            var transport = Self.overlay(oldTransport, newTransport, managed: ["type", "path", "headers", "host", "service_name", "mode"])
+            if oldTransport["mode"] != nil { transport["mode"] = oldTransport["mode"] }
+            // Other headers stay; Host is the form's.
+            var headers = oldTransport["headers"]?.objectValue ?? [:]
+            headers.removeValue(forKey: "Host")
+            if let host = newTransport["headers"]?.at("Host") { headers["Host"] = host }
+            if headers.isEmpty { transport.removeValue(forKey: "headers") } else { transport["headers"] = .object(headers) }
+            result["transport"] = .object(transport)
+        }
+        return .object(result)
+    }
+
+    /// The old object's keys the form does not manage, then everything the form made.
+    private static func overlay(_ old: [String: JSONValue], _ new: [String: JSONValue], managed: Set<String>) -> [String: JSONValue] {
+        var result = old.filter { !managed.contains($0.key) }
+        for (key, value) in new { result[key] = value }
+        return result
     }
 
     // MARK: Outbound → draft
