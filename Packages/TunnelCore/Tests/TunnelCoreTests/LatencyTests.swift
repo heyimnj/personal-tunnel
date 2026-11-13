@@ -78,13 +78,40 @@ final class LatencyTests: XCTestCase {
         XCTAssertEqual(probes.count("a"), 2)
     }
 
-    func testRefusedURLTestIsNotRetried() async {
+    func testSlowRefusalIsNotRetried() async {
         let probes = ColdProbes(coldFor: 1, failure: .refused)
+        let sink = Sink()
+        var mode = LatencyMode.localCore(link: "https://x")
+        mode.quickFailure = 0 // every failure counts as slow
+        await LatencyRunner(probes: probes).run([.init(tag: "a", host: "h", port: 1, udp: false)],
+                                                mode: mode, tunnel: true) { await sink.add($0) }
+        let all = await sink.all
+        XCTAssertEqual(all["a"], .failed(.refused))
+        XCTAssertEqual(probes.count("a"), 1)
+    }
+
+    /// 3.0.5: a failure that comes back at once (a dead pooled connection) is
+    /// tried again after a short pause, and the second answer counts.
+    func testQuickFailureIsRetriedAfterAPause() async {
+        let probes = ColdProbes(coldFor: 1, failure: .refused)
+        let sink = Sink()
+        let start = Date()
+        await LatencyRunner(probes: probes).run([.init(tag: "a", host: "h", port: 1, udp: false)],
+                                                mode: .localCore(link: "https://x"), tunnel: true) { await sink.add($0) }
+        let all = await sink.all
+        XCTAssertEqual(all["a"], .delay(120))
+        XCTAssertEqual(probes.count("a"), 2)
+        XCTAssertGreaterThanOrEqual(Date().timeIntervalSince(start), 0.25)
+    }
+
+    /// A certificate that is not accepted stays so: no second attempt.
+    func testCertificateFailureIsNotRetried() async {
+        let probes = ColdProbes(coldFor: 1, failure: .certificate)
         let sink = Sink()
         await LatencyRunner(probes: probes).run([.init(tag: "a", host: "h", port: 1, udp: false)],
                                                 mode: .localCore(link: "https://x"), tunnel: true) { await sink.add($0) }
         let all = await sink.all
-        XCTAssertEqual(all["a"], .failed(.refused))
+        XCTAssertEqual(all["a"], .failed(.certificate))
         XCTAssertEqual(probes.count("a"), 1)
     }
 
@@ -150,5 +177,8 @@ final class LatencyTests: XCTestCase {
         XCTAssertEqual(ProbeFailure.classify("dial tcp: lookup x: no such host"), .dns)
         XCTAssertEqual(ProbeFailure.classify("context deadline exceeded"), .timeout)
         XCTAssertEqual(ProbeFailure.classify("reality verification failed"), .tls)
+        XCTAssertEqual(ProbeFailure.classify("tls: failed to verify certificate: x509: \u{201C}a.internal\u{201D} certificate is not standards compliant"), .certificate)
+        XCTAssertEqual(ProbeFailure.classify("certificate pin: unrecognized server certificate 00ff"), .certificate)
+        XCTAssertEqual(ProbeFailure.classify("timeout: no recent network activity"), .timeout)
     }
 }

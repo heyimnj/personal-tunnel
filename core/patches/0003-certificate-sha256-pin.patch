@@ -1,0 +1,255 @@
+diff --git a/common/tls/certificate_pin_lx.go b/common/tls/certificate_pin_lx.go
+new file mode 100644
+index 0000000..d1639c5
+--- /dev/null
++++ b/common/tls/certificate_pin_lx.go
+@@ -0,0 +1,52 @@
++package tls
++
++// lx:begin certificate-sha256
++// A server's own certificate pinned by its SHA-256 (Hysteria2 `pinSHA256`, Xray
++// `pinnedPeerCertSha256` / share-link `pcs`). Providers without a domain run
++// self-signed certificates and give clients this hash instead of `insecure`;
++// on iOS the system verifier rejects such a certificate outright ("not standards
++// compliant"), so without the pin the server could not be used at all. Any
++// certificate of the presented chain may match, as in Hysteria and Xray.
++
++import (
++	"bytes"
++	"crypto/sha256"
++	"encoding/hex"
++	"strings"
++
++	E "github.com/sagernet/sing/common/exceptions"
++)
++
++// ParseCertificateSHA256 reads hex hashes; colons and spaces are ignored.
++func ParseCertificateSHA256(values []string) ([][]byte, error) {
++	hashes := make([][]byte, 0, len(values))
++	for _, value := range values {
++		clean := strings.NewReplacer(":", "", " ", "", "-", "").Replace(strings.TrimSpace(value))
++		decoded, err := hex.DecodeString(clean)
++		if err != nil || len(decoded) != sha256.Size {
++			return nil, E.New("invalid certificate_sha256: ", value)
++		}
++		hashes = append(hashes, decoded)
++	}
++	return hashes, nil
++}
++
++// VerifyCertificateSHA256 accepts the connection when one of the presented
++// certificates has one of the known hashes.
++func VerifyCertificateSHA256(known [][]byte, rawCerts [][]byte) error {
++	for _, raw := range rawCerts {
++		hash := sha256.Sum256(raw)
++		for _, value := range known {
++			if bytes.Equal(value, hash[:]) {
++				return nil
++			}
++		}
++	}
++	if len(rawCerts) == 0 {
++		return E.New("certificate pin: the server sent no certificate")
++	}
++	leaf := sha256.Sum256(rawCerts[0])
++	return E.New("certificate pin: unrecognized server certificate ", hex.EncodeToString(leaf[:]))
++}
++
++// lx:end
+diff --git a/common/tls/certificate_pin_lx_test.go b/common/tls/certificate_pin_lx_test.go
+new file mode 100644
+index 0000000..74f1372
+--- /dev/null
++++ b/common/tls/certificate_pin_lx_test.go
+@@ -0,0 +1,106 @@
++package tls
++
++import (
++	"context"
++	"crypto/sha256"
++	"encoding/hex"
++	"net"
++	"net/http"
++	"net/http/httptest"
++	"strings"
++	"testing"
++
++	"github.com/sagernet/sing-box/log"
++	"github.com/sagernet/sing-box/option"
++)
++
++func TestCertificateSHA256Pin(t *testing.T) {
++	leaf := []byte("leaf certificate bytes")
++	issuer := []byte("issuer certificate bytes")
++	leafHash := sha256.Sum256(leaf)
++	issuerHash := sha256.Sum256(issuer)
++
++	colons := ""
++	for i, b := range leafHash {
++		if i > 0 {
++			colons += ":"
++		}
++		colons += hex.EncodeToString([]byte{b})
++	}
++	known, err := ParseCertificateSHA256([]string{colons})
++	if err != nil {
++		t.Fatal(err)
++	}
++	if err := VerifyCertificateSHA256(known, [][]byte{leaf, issuer}); err != nil {
++		t.Fatal("leaf pin rejected:", err)
++	}
++	known, err = ParseCertificateSHA256([]string{hex.EncodeToString(issuerHash[:])})
++	if err != nil {
++		t.Fatal(err)
++	}
++	if err := VerifyCertificateSHA256(known, [][]byte{leaf, issuer}); err != nil {
++		t.Fatal("chain pin rejected:", err)
++	}
++	if err := VerifyCertificateSHA256(known, [][]byte{leaf}); err == nil {
++		t.Fatal("wrong certificate accepted")
++	}
++	if err := VerifyCertificateSHA256(known, nil); err == nil {
++		t.Fatal("empty chain accepted")
++	}
++	if _, err := ParseCertificateSHA256([]string{"abcd"}); err == nil {
++		t.Fatal("short hash accepted")
++	}
++	if _, err := ParseCertificateSHA256([]string{"zz"}); err == nil {
++		t.Fatal("non-hex hash accepted")
++	}
++}
++
++// A real handshake with a self-signed server: the pinned hash lets it through
++// (standard and uTLS engines), a wrong hash does not, and without a pin the
++// ordinary verification still refuses it.
++func TestCertificateSHA256PinHandshake(t *testing.T) {
++	server := httptest.NewUnstartedServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}))
++	server.StartTLS()
++	defer server.Close()
++	raw := server.Certificate().Raw
++	hash := sha256.Sum256(raw)
++	good := hex.EncodeToString(hash[:])
++	bad := strings.Repeat("00", 32)
++	address := server.Listener.Addr().String()
++
++	handshake := func(options option.OutboundTLSOptions) error {
++		config, err := NewClient(context.Background(), log.NewNOPFactory().Logger(), "example.internal", options)
++		if err != nil {
++			return err
++		}
++		conn, err := net.Dial("tcp", address)
++		if err != nil {
++			t.Fatal(err)
++		}
++		defer conn.Close()
++		tlsConn, err := ClientHandshake(context.Background(), conn, config)
++		if err != nil {
++			return err
++		}
++		return tlsConn.Close()
++	}
++	for _, fingerprint := range []string{"", "chrome"} {
++		base := option.OutboundTLSOptions{Enabled: true, ServerName: "example.internal"}
++		if fingerprint != "" {
++			base.UTLS = &option.OutboundUTLSOptions{Enabled: true, Fingerprint: fingerprint}
++		}
++		pinned := base
++		pinned.CertificateSHA256 = []string{good}
++		if err := handshake(pinned); err != nil {
++			t.Fatalf("pinned handshake (%q) failed: %v", fingerprint, err)
++		}
++		wrong := base
++		wrong.CertificateSHA256 = []string{bad}
++		if err := handshake(wrong); err == nil {
++			t.Fatalf("wrong pin (%q) accepted", fingerprint)
++		}
++		if err := handshake(base); err == nil {
++			t.Fatalf("unpinned self-signed server (%q) accepted", fingerprint)
++		}
++	}
++}
+diff --git a/common/tls/std_client.go b/common/tls/std_client.go
+index 80fa6cb..21edf67 100644
+--- a/common/tls/std_client.go
++++ b/common/tls/std_client.go
+@@ -143,6 +143,21 @@ func newSTDClient(ctx context.Context, logger logger.ContextLogger, serverAddres
+ 			return VerifyPublicKeySHA256(options.CertificatePublicKeySHA256, rawCerts)
+ 		}
+ 	}
++	// lx:begin certificate-sha256
++	if len(options.CertificateSHA256) > 0 {
++		if len(options.CertificatePublicKeySHA256) > 0 || len(options.Certificate) > 0 || options.CertificatePath != "" {
++			return nil, E.New("certificate_sha256 is conflict with certificate_public_key_sha256, certificate or certificate_path")
++		}
++		pins, err := ParseCertificateSHA256(options.CertificateSHA256)
++		if err != nil {
++			return nil, err
++		}
++		tlsConfig.InsecureSkipVerify = true
++		tlsConfig.VerifyPeerCertificate = func(rawCerts [][]byte, verifiedChains [][]*x509.Certificate) error {
++			return VerifyCertificateSHA256(pins, rawCerts)
++		}
++	}
++	// lx:end
+ 	if len(options.ALPN) > 0 {
+ 		tlsConfig.NextProtos = options.ALPN
+ 	}
+@@ -236,7 +251,7 @@ func newSTDClient(ctx context.Context, logger logger.ContextLogger, serverAddres
+ 		config:                &tlsConfig,
+ 		serverName:            serverName,
+ 		disableSNI:            options.DisableSNI,
+-		verifyServerName:      options.DisableSNI && !options.Insecure,
++		verifyServerName:      options.DisableSNI && !options.Insecure && len(options.CertificateSHA256) == 0, // lx: certificate-sha256
+ 		handshakeTimeout:      handshakeTimeout,
+ 		fragment:              options.Fragment,
+ 		fragmentFallbackDelay: time.Duration(options.FragmentFallbackDelay),
+diff --git a/common/tls/utls_client.go b/common/tls/utls_client.go
+index 16d0352..87d5d37 100644
+--- a/common/tls/utls_client.go
++++ b/common/tls/utls_client.go
+@@ -218,6 +218,21 @@ func newUTLSClient(ctx context.Context, logger logger.ContextLogger, serverAddre
+ 			return VerifyPublicKeySHA256(options.CertificatePublicKeySHA256, rawCerts)
+ 		}
+ 	}
++	// lx:begin certificate-sha256
++	if len(options.CertificateSHA256) > 0 {
++		if len(options.CertificatePublicKeySHA256) > 0 || len(options.Certificate) > 0 || options.CertificatePath != "" {
++			return nil, E.New("certificate_sha256 is conflict with certificate_public_key_sha256, certificate or certificate_path")
++		}
++		pins, err := ParseCertificateSHA256(options.CertificateSHA256)
++		if err != nil {
++			return nil, err
++		}
++		tlsConfig.InsecureSkipVerify = true
++		tlsConfig.VerifyPeerCertificate = func(rawCerts [][]byte, verifiedChains [][]*x509.Certificate) error {
++			return VerifyCertificateSHA256(pins, rawCerts)
++		}
++	}
++	// lx:end
+ 	if len(options.ALPN) > 0 {
+ 		tlsConfig.NextProtos = options.ALPN
+ 	}
+@@ -312,7 +327,7 @@ func newUTLSClient(ctx context.Context, logger logger.ContextLogger, serverAddre
+ 		config:                &tlsConfig,
+ 		serverName:            serverName,
+ 		disableSNI:            options.DisableSNI,
+-		verifyServerName:      options.DisableSNI && !options.Insecure,
++		verifyServerName:      options.DisableSNI && !options.Insecure && len(options.CertificateSHA256) == 0, // lx: certificate-sha256
+ 		handshakeTimeout:      handshakeTimeout,
+ 		id:                    id,
+ 		fragment:              options.Fragment,
+diff --git a/option/tls.go b/option/tls.go
+index 5c807d6..cad8757 100644
+--- a/option/tls.go
++++ b/option/tls.go
+@@ -133,6 +133,10 @@ type OutboundTLSOptions struct {
+ 	ECH                        *OutboundECHOptions                 `json:"ech,omitempty"`
+ 	UTLS                       *OutboundUTLSOptions                `json:"utls,omitempty"`
+ 	Reality                    *OutboundRealityOptions             `json:"reality,omitempty"`
++
++	// lx:begin certificate-sha256
++	CertificateSHA256 badoption.Listable[string] `json:"certificate_sha256,omitempty"`
++	// lx:end
+ }
+ 
+ type OutboundTLSOptionsContainer struct {

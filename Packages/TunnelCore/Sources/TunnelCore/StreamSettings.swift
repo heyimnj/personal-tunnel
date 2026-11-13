@@ -32,6 +32,12 @@ public struct StreamSpec: Equatable {
     public var earlyDataHeader: String?
     /// Split the TLS ClientHello (Xray finalmask `fragment`); client side only.
     public var tlsFragment = false
+    /// The server's own certificate pinned by SHA-256 (hex): Xray `pcs` /
+    /// `pinnedPeerCertSha256`, Hysteria `pinSHA256`. Self-signed servers are
+    /// given out with it instead of `insecure` (3.0.5).
+    public var pinnedCertificates: [String] = []
+    /// Xray `pinnedPeerCertificatePublicKeySha256`: the key's SHA-256, base64.
+    public var pinnedPublicKeys: [String] = []
 
     public init() {}
 
@@ -56,6 +62,7 @@ public struct StreamSpec: Equatable {
         if let name, !name.isEmpty { tls["server_name"] = .string(name) }
         if tlsFragment { tls["fragment"] = true }
         if allowInsecure, !isReality { tls["insecure"] = true }
+        if !isReality { CertificatePins.apply(certificates: pinnedCertificates, publicKeys: pinnedPublicKeys, to: &tls) }
         let protocols = alpn.filter { !$0.isEmpty }
         if !protocols.isEmpty, !isReality { tls["alpn"] = JSONValue(protocols) }
         if isReality {
@@ -208,5 +215,64 @@ enum XHTTPOptions {
             }
         }
         return result
+    }
+}
+
+/// Certificate pins of a server, in the form the core reads (3.0.5). The core
+/// checks `certificate_sha256` against every certificate the server presents,
+/// so a self-signed server works with its pin and nothing else does.
+public enum CertificatePins {
+    /// Hex SHA-256 hashes from a link or a file: separated by commas, semicolons
+    /// or spaces; colons inside a hash are allowed. Anything that is not a
+    /// whole hash is left out, so a broken value never stops the core.
+    public static func hex(_ values: [String]) -> [String] {
+        var result: [String] = []
+        for value in values {
+            for piece in value.split(whereSeparator: { $0 == "," || $0 == ";" || $0 == " " || $0 == "\n" }) {
+                let clean = piece.filter { $0 != ":" && $0 != "-" }.lowercased()
+                guard clean.count == 64, clean.allSatisfy(\.isHexDigit), !result.contains(clean) else { continue }
+                result.append(clean)
+            }
+        }
+        return result
+    }
+
+    public static func hex(_ value: String?) -> [String] {
+        value.map { hex([TextCoding.percentDecode($0)]) } ?? []
+    }
+
+    /// Base64 SHA-256 of public keys (32 bytes each).
+    public static func publicKeys(_ values: [String]) -> [String] {
+        values.compactMap { value in
+            let text = value.trimmingCharacters(in: .whitespaces)
+            guard let data = TextCoding.decodeBase64(text), data.count == 32 else { return nil }
+            return data.base64EncodedString()
+        }
+    }
+
+    /// Servers saved before 3.0.5 lost the pin of their link on import. Their
+    /// link is kept, so the pin is put back when the configuration is built:
+    /// no refresh or new import is needed (servers added by a single link have
+    /// nothing to refresh from).
+    public static func carry(link: String?, into outbound: JSONValue) -> JSONValue {
+        guard let link, link.contains("://"), let parts = LinkParts(link),
+              var tls = outbound["tls"]?.objectValue, tls["enabled"]?.boolValue == true,
+              tls["reality"]?["enabled"]?.boolValue != true,
+              tls["certificate_sha256"] == nil, tls["certificate_public_key_sha256"] == nil else { return outbound }
+        let pins = hex(parts.value("pcs", "pinnedPeerCertSha256", "pinSHA256"))
+        guard !pins.isEmpty else { return outbound }
+        tls["certificate_sha256"] = JSONValue(pins)
+        var outbound = outbound
+        outbound["tls"] = .object(tls)
+        return outbound
+    }
+
+    /// The certificate pin wins over a public key pin: the core takes one kind.
+    static func apply(certificates: [String], publicKeys: [String], to tls: inout [String: JSONValue]) {
+        if !certificates.isEmpty {
+            tls["certificate_sha256"] = JSONValue(certificates)
+        } else if !publicKeys.isEmpty {
+            tls["certificate_public_key_sha256"] = JSONValue(publicKeys)
+        }
     }
 }

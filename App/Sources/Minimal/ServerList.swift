@@ -127,21 +127,42 @@ private final class SwipePill: UIControl {
     }
 }
 
-/// A view whose `front` slides left to uncover its actions. A full swipe only
+/// A row whose content slides left to uncover its actions. A full swipe only
 /// opens them: nothing is ever deleted by a swipe alone.
 ///
 /// 3.0.4: the motion is one spring stepped every frame (`SpringDriver`), so a
 /// row caught mid-way continues from where it is, with the finger's speed both
 /// ways. The buttons come out one after another from the edge, each growing from
 /// a dot (scale and fade), instead of widening from a sliver.
+///
+/// 3.0.5: the card stays where it is and only its content moves (`sliding`),
+/// clipped at the card's edges; the buttons come out inside the card, over it.
+/// 3.0.4 moved the whole server card off to the left (and the subscription's
+/// title ran out past its card, off the screen).
 class SwipeRow: UIView, UIGestureRecognizerDelegate {
+    /// What stays in place: it holds `host` (the card, or the head's tap area).
+    /// The list scales it while a card is being uncovered.
     let front = UIView()
+    /// The card or tap area that fills `front`; the content slides inside it.
+    var host: UIView? {
+        didSet {
+            guard host !== oldValue else { return }
+            clip.removeFromSuperview()
+            host?.addSubview(clip)
+            setNeedsLayout()
+        }
+    }
+    /// The content a swipe moves; subclasses put their content here.
+    let sliding = PassThroughView()
+    /// Clips `sliding` at the host's edges (a plain rectangle: cheap per frame).
+    private let clip = PassThroughView()
     /// Height of the content; the view itself may be shorter while it is uncovered.
     var contentHeight: CGFloat = 63
     var onOpen: ((SwipeRow) -> Void)?
     /// Every placement of the front (the swipe offset), on every frame.
     var onSlide: ((CGFloat) -> Void)?
-    private let rail = UIView()
+    /// The buttons, over the card; touches between them reach the card.
+    private let rail = PassThroughView()
     private var pills: [SwipePill] = []
     /// The actions are fully out (a light tap of the haptics when they get there).
     private var fullyOut = false
@@ -173,8 +194,10 @@ class SwipeRow: UIView, UIGestureRecognizerDelegate {
 
     override init(frame: CGRect) {
         super.init(frame: frame)
-        addSubview(rail)
         addSubview(front)
+        addSubview(rail)
+        clip.clipsToBounds = true
+        clip.addSubview(sliding)
         let pan = UIPanGestureRecognizer(target: self, action: #selector(panned(_:)))
         pan.delegate = self
         addGestureRecognizer(pan)
@@ -202,19 +225,25 @@ class SwipeRow: UIView, UIGestureRecognizerDelegate {
 
     override func layoutSubviews() {
         super.layoutSubviews()
-        rail.frame = CGRect(x: 0, y: 0, width: bounds.width, height: contentHeight)
+        let rect = CGRect(x: 0, y: 0, width: bounds.width, height: contentHeight)
+        if rail.frame != rect { rail.frame = rect }
+        // bounds and center, never frame: the list scales the front of a card being
+        // uncovered, and a frame set under a transform moves it.
+        if front.bounds.size != rect.size { front.bounds = rect }
+        let center = CGPoint(x: rect.midX, y: rect.midY)
+        if front.center != center { front.center = center }
+        if let host, host.frame != rect { host.frame = rect }
+        if clip.frame != rect { clip.frame = rect }
+        if sliding.bounds.size != rect.size { sliding.bounds = rect }
+        if sliding.center != center { sliding.center = center }
         placeFront()
     }
 
-    /// The front at the offset and the buttons by how far it has gone. Called on
-    /// every frame of a swipe, so only frames and transforms change here.
+    /// The content at the offset and the buttons by how far it has gone. Called on
+    /// every frame of a swipe, so only a transform and the buttons change here.
     private func placeFront() {
-        // bounds and center, never frame: the list scales the front of a card being
-        // uncovered, and a frame set under a transform moves it.
-        let size = CGSize(width: bounds.width, height: contentHeight)
-        if front.bounds.size != size { front.bounds = CGRect(origin: .zero, size: size) }
-        let center = CGPoint(x: offset + size.width / 2, y: size.height / 2)
-        if front.center != center { front.center = center }
+        let slide = offset == 0 ? CGAffineTransform.identity : CGAffineTransform(translationX: offset, y: 0)
+        if sliding.transform != slide { sliding.transform = slide }
         onSlide?(offset)
         guard !pills.isEmpty else { return }
         let full = railWidth
@@ -262,11 +291,12 @@ class SwipeRow: UIView, UIGestureRecognizerDelegate {
 
     override func gestureRecognizerShouldBegin(_ gesture: UIGestureRecognizer) -> Bool {
         guard let pan = gesture as? UIPanGestureRecognizer, !actions.isEmpty else { return false }
-        // A swipe from the very edge of the screen belongs to the sheet («Назад»),
-        // while that gesture is on.
+        // A swipe from the very edge of the screen belongs to the sheet (it closes
+        // it), while that gesture is on.
         if MinimalServersViewController.edgeCloseEnabled, let window {
+            let edge = MinimalServersViewController.edgeWidth
             let start = pan.location(in: window).x - pan.translation(in: window).x
-            if start < 24 || start > window.bounds.width - 24 { return false }
+            if start < edge || start > window.bounds.width - edge { return false }
         }
         let velocity = pan.velocity(in: self)
         return abs(velocity.x) > abs(velocity.y) * 1.2 && (velocity.x < 0 || isOpen)
@@ -309,6 +339,15 @@ class SwipeRow: UIView, UIGestureRecognizerDelegate {
 
 // MARK: - Rows
 
+/// Holds other views without taking touches itself: those between its
+/// subviews reach the view behind (the row's card).
+final class PassThroughView: UIView {
+    override func hitTest(_ point: CGPoint, with event: UIEvent?) -> UIView? {
+        let hit = super.hitTest(point, with: event)
+        return hit === self ? nil : hit
+    }
+}
+
 /// Lets touches between its controls through to the view behind (the row's card).
 final class PassThroughStackView: UIStackView {
     override func hitTest(_ point: CGPoint, with event: UIEvent?) -> UIView? {
@@ -349,6 +388,7 @@ final class ServerRowView: SwipeRow {
         card.layer.cornerRadius = 14
         card.layer.cornerCurve = .continuous
         front.addSubview(card)
+        host = card
         globe.tintColor = .label
         check.tintColor = Theme.accent
         check.setContentHuggingPriority(.required, for: .horizontal)
@@ -378,8 +418,8 @@ final class ServerRowView: SwipeRow {
         let row = PassThroughStackView(.horizontal, spacing: 12, alignment: .center, [mark, leading, text, pingButton])
         text.isUserInteractionEnabled = false
         leading.isUserInteractionEnabled = false
-        card.addSubview(row)
-        row.pin(to: card, insets: UIEdgeInsets(top: 0, left: 14, bottom: 0, right: 16))
+        sliding.addSubview(row)
+        row.pin(to: sliding, insets: UIEdgeInsets(top: 0, left: 14, bottom: 0, right: 16))
         NSLayoutConstraint.activate([pingButton.heightAnchor.constraint(equalTo: row.heightAnchor)])
     }
 
@@ -388,11 +428,6 @@ final class ServerRowView: SwipeRow {
     /// nil: not selecting; otherwise whether this row is selected.
     func setMark(_ selected: Bool?) {
         SelectionMark.apply(selected, to: mark)
-    }
-
-    override func layoutSubviews() {
-        super.layoutSubviews()
-        card.frame = front.bounds
     }
 
     func setHeld(_ held: Bool) {
@@ -419,6 +454,7 @@ final class SubscriptionHeaderView: SwipeRow {
         contentHeight = ServerListView.headerHeight
         tap.pressScale = 1
         front.addSubview(tap)
+        host = tap
         pin.tintColor = Theme.accent
         pin.setContentHuggingPriority(.required, for: .horizontal)
         chevron.tintColor = .secondaryLabel
@@ -435,20 +471,16 @@ final class SubscriptionHeaderView: SwipeRow {
         let row = UIStackView(.horizontal, spacing: 8, alignment: .center, [mark, title, pin, UIView(), spinner, count, chevron])
         row.setCustomSpacing(12, after: count)
         row.isUserInteractionEnabled = false
-        tap.addSubview(row)
-        row.pin(to: tap, insets: UIEdgeInsets(top: 0, left: 20, bottom: 0, right: 20))
+        sliding.addSubview(row)
+        row.pin(to: sliding, insets: UIEdgeInsets(top: 0, left: 20, bottom: 0, right: 20))
         NSLayoutConstraint.activate([count.heightAnchor.constraint(equalToConstant: 24), count.widthAnchor.constraint(greaterThanOrEqualToConstant: 34)])
-        tap.insertSubview(countPill, at: 0)
+        // With the count it belongs to: both move with the swipe.
+        sliding.insertSubview(countPill, at: 0)
         countPill.translatesAutoresizingMaskIntoConstraints = false
         NSLayoutConstraint.activate([
             countPill.leadingAnchor.constraint(equalTo: count.leadingAnchor), countPill.trailingAnchor.constraint(equalTo: count.trailingAnchor),
             countPill.topAnchor.constraint(equalTo: count.topAnchor), countPill.bottomAnchor.constraint(equalTo: count.bottomAnchor),
         ])
-    }
-
-    override func layoutSubviews() {
-        super.layoutSubviews()
-        tap.frame = front.bounds
     }
 
     func setMark(_ selected: Bool?) {

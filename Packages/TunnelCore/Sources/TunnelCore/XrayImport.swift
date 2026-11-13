@@ -176,6 +176,13 @@ public enum XrayImport {
         return .object(outbound)
     }
 
+    /// `pinnedPeerCertSha256`: hex hashes, one string with commas or a list.
+    static func certificatePins(_ tlsSettings: JSONValue) -> [String] {
+        guard let value = tlsSettings["pinnedPeerCertSha256"] else { return [] }
+        if let list = value.arrayValue { return CertificatePins.hex(list.compactMap(\.text)) }
+        return CertificatePins.hex(value.text.map { [$0] } ?? [])
+    }
+
     static func streamSpec(_ stream: JSONValue) throws -> StreamSpec {
         var spec = StreamSpec()
         spec.network = stream["network"]?.stringValue?.lowercased() ?? "tcp"
@@ -183,6 +190,8 @@ public enum XrayImport {
         if let tls = stream["tlsSettings"] {
             spec.sni = tls["serverName"]?.stringValue
             spec.allowInsecure = tls["allowInsecure"]?.looseBool ?? false
+            spec.pinnedCertificates = Self.certificatePins(tls)
+            spec.pinnedPublicKeys = CertificatePins.publicKeys(tls["pinnedPeerCertificatePublicKeySha256"]?.stringList ?? [])
             spec.alpn = tls["alpn"]?.stringList ?? []
             spec.fingerprint = tls["fingerprint"]?.stringValue
         }
@@ -372,6 +381,8 @@ public enum XrayImport {
             tls["server_name"] = .string(host)
         }
         if tlsSettings["allowInsecure"]?.looseBool == true { tls["insecure"] = true }
+        CertificatePins.apply(certificates: certificatePins(tlsSettings),
+                              publicKeys: CertificatePins.publicKeys(tlsSettings["pinnedPeerCertificatePublicKeySha256"]?.stringList ?? []), to: &tls)
         let alpn = tlsSettings["alpn"]?.stringList ?? []
         if !alpn.isEmpty { tls["alpn"] = JSONValue(alpn) }
 

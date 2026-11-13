@@ -29,6 +29,27 @@ final class ConfigBuilderTests: XCTestCase {
         XCTAssertEqual(try JSONValue.parse(config.serialized(pretty: true)), config)
     }
 
+    /// 3.0.5: a server saved before pins were read gets the pin of its link
+    /// back when the configuration is built.
+    func testPinOfTheLinkReachesSavedServers() throws {
+        let hash = String(repeating: "ab", count: 32)
+        let link = "vless://uuid@1.2.3.4:443?security=tls&sni=a.internal&type=tcp&pcs=\(hash)#Old"
+        var parsed = try ShareLink.parse(link)
+        // As 3.0.4 stored it: the link, but no pin in the server.
+        if var tls = parsed.outbound["tls"]?.objectValue {
+            tls["certificate_sha256"] = nil
+            parsed.outbound["tls"] = .object(tls)
+        }
+        XCTAssertNil(parsed.outbound.at("tls", "certificate_sha256"))
+        let subscription = Subscription(id: 3, name: "Старая", nodes: NodeAssembler.assemble([parsed]))
+        let config = try ConfigBuilder.build(subscription: subscription, selected: nil, options: TunnelOptions())
+        let server = config["outbounds"]?.arrayValue?.first { $0["tag"] == "Old" }
+        XCTAssertEqual(server?.at("tls", "certificate_sha256"), [.string(hash)])
+        // The probe configuration is built the same way.
+        let probe = try ConfigBuilder.probe(subscription: subscription, options: TunnelOptions())
+        XCTAssertEqual(probe["outbounds"]?.arrayValue?.first { $0["tag"] == "Old" }?.at("tls", "certificate_sha256"), [.string(hash)])
+    }
+
     func testAdBlockLevelsAndDNSAnswers() throws {
         let subscription = try subscription()
         var options = TunnelOptions()
@@ -103,8 +124,17 @@ final class ConfigBuilderTests: XCTestCase {
         XCTAssertEqual(rules[4]["outbound"], "direct")
         XCTAssertEqual(full.at("route", "rule_set")?.arrayValue?.count, 5)
         XCTAssertEqual(full.at("dns", "final"), "dns-remote")
-        XCTAssertEqual(full.at("dns", "servers")?[0]?["detour"], "proxy")
-        XCTAssertNil(full.at("dns", "servers")?[1]?["detour"])
+        // 3.0.5: the resolver through the VPN is a group: HTTPS, and plain TCP
+        // through the same server when HTTPS fails.
+        XCTAssertEqual(full.at("dns", "servers")?[0]?["type"], "group")
+        XCTAssertEqual(full.at("dns", "servers")?[0]?["tag"], "dns-remote")
+        XCTAssertEqual(full.at("dns", "servers")?[0]?["servers"], ["dns-remote-https", "dns-remote-tcp"])
+        XCTAssertEqual(full.at("dns", "servers")?[1]?["type"], "https")
+        XCTAssertEqual(full.at("dns", "servers")?[1]?["detour"], "proxy")
+        XCTAssertEqual(full.at("dns", "servers")?[2]?["type"], "tcp")
+        XCTAssertEqual(full.at("dns", "servers")?[2]?["detour"], "proxy")
+        XCTAssertEqual(full.at("dns", "servers")?[3]?["tag"], "dns-direct")
+        XCTAssertNil(full.at("dns", "servers")?[3]?["detour"])
         XCTAssertEqual(full.at("route", "default_domain_resolver", "server"), "dns-direct")
 
         options.adBlocking = false

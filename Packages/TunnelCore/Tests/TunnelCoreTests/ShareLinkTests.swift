@@ -118,6 +118,39 @@ final class ShareLinkTests: XCTestCase {
         XCTAssertNil(short.outbound["server_ports"])
     }
 
+    /// 3.0.5: self-signed servers come with their certificate's SHA-256 instead
+    /// of `insecure`; the pin reaches the core, broken values are left out.
+    func testCertificatePins() throws {
+        let hash = String(repeating: "ab", count: 32)
+        let colons = stride(from: 0, to: 64, by: 2).map { i -> String in
+            let start = hash.index(hash.startIndex, offsetBy: i)
+            return String(hash[start ..< hash.index(start, offsetBy: 2)]).uppercased()
+        }.joined(separator: ":")
+
+        let hy2 = try ShareLink.parse("hysteria2://pass@1.2.3.4:443?sni=a.internal&pinSHA256=\(colons)#H")
+        XCTAssertEqual(hy2.outbound.at("tls", "certificate_sha256"), [.string(hash)])
+        XCTAssertNil(hy2.outbound.at("tls", "insecure"))
+
+        let vless = try ShareLink.parse("vless://uuid@1.2.3.4:443?security=tls&sni=a.internal&type=tcp&flow=xtls-rprx-vision&fp=chrome&pcs=\(hash)%2C\(String(repeating: "cd", count: 32))#V")
+        XCTAssertEqual(vless.outbound.at("tls", "certificate_sha256"), [.string(hash), .string(String(repeating: "cd", count: 32))])
+        XCTAssertEqual(vless.outbound.at("tls", "utls", "fingerprint"), "chrome")
+
+        let trojan = try ShareLink.parse("trojan://pw@1.2.3.4:443?sni=a.internal&pcs=\(hash)#T")
+        XCTAssertEqual(trojan.outbound.at("tls", "certificate_sha256"), [.string(hash)])
+
+        let tuic = try ShareLink.parse("tuic://uuid-1:secret@1.2.3.4:443?sni=a.internal&pinSHA256=\(hash)#U")
+        XCTAssertEqual(tuic.outbound.at("tls", "certificate_sha256"), [.string(hash)])
+
+        // Not a whole hash: no pin (the core would refuse to start on it).
+        let broken = try ShareLink.parse("hysteria2://pass@1.2.3.4:443?sni=a.internal&pinSHA256=abcd&insecure=1#H")
+        XCTAssertNil(broken.outbound.at("tls", "certificate_sha256"))
+        XCTAssertEqual(broken.outbound.at("tls", "insecure"), true)
+
+        // REALITY never takes a pin.
+        let reality = try ShareLink.parse("vless://uuid@1.2.3.4:443?security=reality&sni=a.b&pbk=\(realityKey)&sid=ab&type=tcp&pcs=\(hash)#R")
+        XCTAssertNil(reality.outbound.at("tls", "certificate_sha256"))
+    }
+
     func testTUIC() throws {
         let node = try ShareLink.parse("tuic://uuid-1:secret@tuic.example.com:443?congestion_control=bbr&udp_relay_mode=native&alpn=h3&sni=tuic.example.com#TUIC")
         XCTAssertEqual(node.outbound["uuid"], "uuid-1")

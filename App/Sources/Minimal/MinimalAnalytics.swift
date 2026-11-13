@@ -207,11 +207,6 @@ final class MinimalAnalyticsViewController: UIViewController {
         set { scroll.onPullEnd = newValue }
     }
 
-    var onHandOff: ((CGFloat) -> Void)? {
-        get { scroll.onHandOff }
-        set { scroll.onHandOff = newValue }
-    }
-
     /// The screen's insets (status bar, tab bar), set by Home.
     var pageInsets: UIEdgeInsets = .zero {
         didSet {

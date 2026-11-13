@@ -52,7 +52,10 @@ final class ClassicServersViewController: UIViewController, UITableViewDataSourc
         ])
         pingButton.onTap = { [weak self] in
             Haptics.tap()
-            if App.shared.latency.progress.value.running { App.shared.latency.cancel() } else if let subscription = self?.subscription { App.shared.ping([subscription]) }
+            // 3.0.5: the servers the list shows (search and filter applied), not the whole subscription.
+            if App.shared.latency.progress.value.running { App.shared.latency.cancel() } else if let self, let subscription = self.subscription {
+                App.shared.ping(nodes: self.rows.map { (subscription, $0) })
+            }
         }
         search.attributedPlaceholder = NSAttributedString(string: L("Страна или город"), attributes: [.foregroundColor: Theme.text.withAlphaComponent(0.7)])
         search.font = Theme.fixed(13, .medium)

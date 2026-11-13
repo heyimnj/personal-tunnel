@@ -2,7 +2,10 @@ import Foundation
 
 /// Why a server did not answer. Stored with the result and shown in its row and the log.
 public enum ProbeFailure: String, Codable, Sendable, Equatable {
-    case dns, timeout, refused, tls, unreachable, noAddress, unsupported, other
+    /// `certificate` (3.0.5): the server's certificate was not accepted — a
+    /// self-signed server without its pin, or one that does not match. Shown
+    /// apart from `tls`, which is a TLS/REALITY handshake that broke.
+    case dns, timeout, refused, tls, certificate, unreachable, noAddress, unsupported, other
 
     public var title: String {
         switch self {
@@ -10,6 +13,7 @@ public enum ProbeFailure: String, Codable, Sendable, Equatable {
         case .timeout: return CoreText.t("таймаут")
         case .refused: return CoreText.t("отказ")
         case .tls: return "TLS/Reality"
+        case .certificate: return CoreText.t("сертификат")
         case .unreachable: return CoreText.t("нет маршрута")
         case .noAddress: return CoreText.t("нет адреса")
         case .unsupported: return CoreText.t("только с VPN")
@@ -21,6 +25,7 @@ public enum ProbeFailure: String, Codable, Sendable, Equatable {
     public static func classify(_ text: String) -> ProbeFailure {
         let t = text.lowercased()
         if t.contains("timeout") || t.contains("timed out") || t.contains("deadline") { return .timeout }
+        if t.contains("x509") || t.contains("certificate") { return .certificate }
         if t.contains("no such host") || t.contains("lookup") || t.contains("dns") || t.contains("nxdomain") { return .dns }
         if t.contains("refused") || t.contains("reset") { return .refused }
         if t.contains("tls") || t.contains("reality") || t.contains("certificate") || t.contains("handshake") { return .tls }
@@ -46,6 +51,10 @@ public struct LatencyMode: Equatable, Sendable {
     public var urlTimeoutMs: Int
     public var urlConcurrency: Int
     public var link: String
+    /// A URL test that failed sooner than this (seconds) most likely met a
+    /// connection that was already gone (a pooled QUIC, gRPC or XHTTP one): it is
+    /// tried again after a short pause, whatever the reason (3.0.5).
+    public var quickFailure: TimeInterval = 1
 
     /// The app's own core without the VPN (3.0): a URL test of every server,
     /// 4 s each (3.0.3, was 3: a cold first test spends most of it finding the
@@ -188,14 +197,34 @@ public actor LatencyRunner {
         return false
     }
 
+    /// Failures that a second attempt cannot change: the certificate stays the
+    /// same, and a server without an address or a protocol the probe cannot run
+    /// stays that way.
+    static func isFinal(_ reason: ProbeFailure) -> Bool {
+        reason == .certificate || reason == .noAddress || reason == .unsupported
+    }
+
+    /// One URL test, tried a second time when the first one ran out of time,
+    /// tripped on the lookup, or came back at once with any other error (3.0.5:
+    /// a pooled connection that was already dead answers «timeout» or «reset»
+    /// immediately, and the very next test opened a fresh one and answered).
+    /// After such a quick failure the second try waits a moment, so the server's
+    /// connection is renewed before it.
     static func urlTest(_ target: Target, probes: LatencyProbes, mode: LatencyMode) async -> ProbeResult {
         let once: () async -> ProbeResult = {
             await deadline(seconds: Double(mode.urlTimeoutMs) / 1000 + 1) {
                 await probes.url(tag: target.tag, link: mode.link, timeoutMs: mode.urlTimeoutMs)
             }
         }
+        let start = Date()
         let first = await once()
-        guard worthRetry(first), !Task.isCancelled else { return first }
+        guard case let .failed(reason) = first, !isFinal(reason), !Task.isCancelled else { return first }
+        let quick = Date().timeIntervalSince(start) < mode.quickFailure
+        guard quick || worthRetry(first) else { return first }
+        if quick {
+            try? await Task.sleep(nanoseconds: 300_000_000)
+            guard !Task.isCancelled else { return first }
+        }
         return await once()
     }
 

@@ -87,6 +87,32 @@ final class ImportTests: XCTestCase {
         XCTAssertEqual(hysteria["down_mbps"], 200)
     }
 
+    /// 3.0.5: Xray's certificate pins in `tlsSettings` reach sing-box.
+    func testXrayCertificatePins() throws {
+        let hash = String(repeating: "0f", count: 32)
+        let key = Data(repeating: 7, count: 32).base64EncodedString()
+        let vless = try XrayImport.outbound(from: try JSONValue.parse("""
+        {"protocol": "vless", "settings": {"vnext": [{"address": "1.2.3.4", "port": 443, "users": [{"id": "u", "flow": "xtls-rprx-vision"}]}]},
+         "streamSettings": {"network": "tcp", "security": "tls", "tlsSettings": {"serverName": "a.internal", "pinnedPeerCertSha256": "\(hash.uppercased())"}}}
+        """))
+        XCTAssertEqual(vless.at("tls", "certificate_sha256"), [.string(hash)])
+        XCTAssertNil(vless.at("tls", "certificate_public_key_sha256"))
+
+        let byKey = try XrayImport.outbound(from: try JSONValue.parse("""
+        {"protocol": "trojan", "settings": {"servers": [{"address": "1.2.3.4", "port": 443, "password": "p"}]},
+         "streamSettings": {"network": "tcp", "security": "tls", "tlsSettings": {"serverName": "a.internal", "pinnedPeerCertificatePublicKeySha256": ["\(key)"]}}}
+        """))
+        XCTAssertEqual(byKey.at("tls", "certificate_public_key_sha256"), [.string(key)])
+
+        let hysteria = try XrayImport.outbound(from: try JSONValue.parse("""
+        {"protocol": "hysteria", "settings": {"version": 2, "address": "1.2.3.4", "port": 443},
+         "streamSettings": {"network": "hysteria", "security": "tls", "tlsSettings": {"serverName": "a.internal", "pinnedPeerCertSha256": ["\(hash)"]},
+                            "hysteriaSettings": {"version": 2, "auth": "secret"}}}
+        """))
+        XCTAssertEqual(hysteria["type"], "hysteria2")
+        XCTAssertEqual(hysteria.at("tls", "certificate_sha256"), [.string(hash)])
+    }
+
     func testAssemblerMakesUniqueTagsAndRelinksGroups() throws {
         let result = try ContentImporter.parse(Self.xraySubscription)
         let nodes = NodeAssembler.assemble(result.nodes + [result.nodes[0]])

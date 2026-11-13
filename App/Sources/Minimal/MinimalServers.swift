@@ -79,9 +79,14 @@ final class MinimalServersViewController: UIViewController, UIScrollViewDelegate
     /// counted the search as out only once the list had come to rest there, so a
     /// quick second pull did not close the sheet).
     private var headingToSearch = false
-    /// The swipe from the screen's edge that closes the sheet (3.0.2). Off since
-    /// 3.0.3 at the owner's word; the code stays for a later decision.
-    static let edgeCloseEnabled = false
+    /// The swipe from the left or right edge of the screen that closes the sheet.
+    /// 3.0.5: on again at the owner's word, with the sheet's own closing (it goes
+    /// down as from a pull) instead of 3.0.2's sideways slide. Rows do not start
+    /// their swipe within `edgeWidth` of either edge.
+    static let edgeCloseEnabled = true
+    static let edgeWidth: CGFloat = 24
+    /// The sheet is already on its way down (from an edge or a pull).
+    private var closing = false
     private var expanded = Prefs.expandedSubscriptions
     private var ordered: [Subscription] = []
     private let subtitle = UILabel(font: Theme.font(12), color: .secondaryLabel)
@@ -332,6 +337,19 @@ final class MinimalServersViewController: UIViewController, UIScrollViewDelegate
     /// A pull that stops half way settles with the field either out or tucked away.
     func scrollViewWillEndDragging(_ scrollView: UIScrollView, withVelocity velocity: CGPoint, targetContentOffset: UnsafeMutablePointer<CGPoint>) {
         guard scrollView === list else { return }
+        // 3.0.5: the second pull, when it lands while the first one's motion is
+        // still settling, stays with the list (iOS gives the sheet only a pull that
+        // starts on a list at rest), and the list just stretched past its top. Such
+        // a pull, begun with the search out, closes the sheet when let go far
+        // enough or fast enough downwards, with the sheet's own closing.
+        let stretched = searchShown - list.contentOffset.y
+        if searchOutAtTouch || touchStart.y <= Self.barHeight, stretched > 0,
+           stretched >= Self.pullToClose || velocity.y <= -Self.pullToCloseSpeed {
+            targetContentOffset.pointee.y = searchShown
+            headingToSearch = true
+            close()
+            return
+        }
         let target = targetContentOffset.pointee.y
         defer { headingToSearch = targetContentOffset.pointee.y <= searchShown + 0.5 }
         guard target > searchShown + 0.5, target < searchHidden - 0.5 else { return }
@@ -353,10 +371,28 @@ final class MinimalServersViewController: UIViewController, UIScrollViewDelegate
         touchStart.y <= Self.barHeight || searchOutAtTouch
     }
 
+    /// How far past its top (points) a pull that began with the search out must
+    /// stretch the list to close the sheet, or how fast (points per millisecond) it
+    /// must be let go downwards.
+    private static let pullToClose: CGFloat = 44
+    private static let pullToCloseSpeed: CGFloat = 0.5
+
+    /// Closes the sheet the way a pull down does (iOS's own sheet closing).
+    private func close() {
+        guard !closing, presentedViewController == nil else { return }
+        closing = true
+        search.resignFirstResponder()
+        list.closeSwipe()
+        Haptics.soft(0.4)
+        dismiss(animated: true)
+    }
+
     // MARK: Closing from the edge
 
-    /// A swipe from the very left or right edge of the screen takes the sheet away
-    /// sideways under the finger («Назад»); from anywhere else it is the rows' swipe.
+    /// A swipe from the very left or right edge of the screen closes the sheet,
+    /// let go far or fast enough: it goes down exactly as from a pull (the sheet
+    /// itself is not moved before: iOS's closing animates it from where it
+    /// stands). From anywhere else a horizontal swipe is the rows' own.
     private func buildEdgeClose() {
         guard Self.edgeCloseEnabled else { return }
         for edge in [UIRectEdge.left, .right] {
@@ -367,32 +403,16 @@ final class MinimalServersViewController: UIViewController, UIScrollViewDelegate
     }
 
     @objc private func edgePanned(_ pan: UIScreenEdgePanGestureRecognizer) {
-        guard let sheet = presentationController?.presentedView ?? view.superview else { return }
-        let width = max(1, view.bounds.width)
+        guard !closing else { return }
         let sign: CGFloat = pan.edges == .left ? 1 : -1
         let moved = max(0, pan.translation(in: view).x * sign)
         switch pan.state {
         case .began:
             search.resignFirstResponder()
             list.closeSwipe()
-        case .changed:
-            sheet.transform = CGAffineTransform(translationX: moved * sign, y: 0)
-        case .ended, .cancelled, .failed:
+        case .ended:
             let speed = pan.velocity(in: view).x * sign
-            let leave = pan.state == .ended && (moved > width * 0.3 || speed > 600)
-            let reduce = UIAccessibility.isReduceMotionEnabled
-            if leave {
-                Haptics.soft(0.4)
-                UIView.animate(withDuration: reduce ? 0 : 0.22, delay: 0, options: [.curveEaseOut]) {
-                    sheet.transform = CGAffineTransform(translationX: width * 1.1 * sign, y: 0)
-                } completion: { _ in
-                    self.dismiss(animated: true)
-                }
-            } else {
-                UIView.animate(withDuration: reduce ? 0 : 0.35, delay: 0, usingSpringWithDamping: 0.9, initialSpringVelocity: 0, options: [.allowUserInteraction]) {
-                    sheet.transform = .identity
-                }
-            }
+            if moved > 48 || (moved > 12 && speed > 350) { close() }
         default:
             break
         }
@@ -411,10 +431,25 @@ final class MinimalServersViewController: UIViewController, UIScrollViewDelegate
         if App.shared.latency.progress.value.running {
             App.shared.latency.cancel()
         } else {
-            // Open subscriptions and single servers are what the user is looking at.
-            let visible = ordered.filter { $0.isStandalone || expanded.contains($0.id) }
-            App.shared.ping(visible.isEmpty ? ordered : visible)
+            App.shared.ping(nodes: shownServers())
         }
+    }
+
+    /// The servers the list shows, in its order (3.0.5): open subscriptions (the
+    /// search opens those it found) and single servers, each narrowed by the
+    /// search and by its filters. 3.0.4 took every server of an open
+    /// subscription, so a search for «США» still tested all of them. With nothing
+    /// open, every server left by the search and the filters.
+    private func shownServers() -> [(Subscription, ServerNode)] {
+        let library = App.shared.library
+        func servers(_ sections: [ServerListView.Section]) -> [(Subscription, ServerNode)] {
+            sections.flatMap { section -> [(Subscription, ServerNode)] in
+                guard let subscription = library.subscription(section.id) else { return [] }
+                return section.nodes.compactMap { tag in subscription.node(tag).map { (subscription, $0) } }
+            }
+        }
+        let open = servers(list.sections.filter { $0.standalone || list.isOpen($0.id) })
+        return open.isEmpty ? servers(list.sections) : open
     }
 
     @objc private func addTapped() {

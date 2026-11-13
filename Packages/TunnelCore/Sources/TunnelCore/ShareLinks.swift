@@ -94,6 +94,7 @@ public enum ShareLink {
         if let alpn = parts.value("alpn") { spec.alpn = alpn.split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) } }
         spec.fingerprint = parts.value("fp", "fingerprint")
         spec.allowInsecure = parts.flag("allowInsecure", "allowinsecure", "insecure", "allow_insecure")
+        spec.pinnedCertificates = CertificatePins.hex(parts.value("pcs", "pinnedPeerCertSha256", "pinSHA256"))
         spec.realityPublicKey = parts.value("pbk", "publicKey")
         spec.realityShortID = parts.value("sid", "shortId")
         if let extra = parts.value("extra"), let value = try? JSONValue.parse(extra) { spec.xhttpExtra = value }
@@ -167,6 +168,7 @@ public enum ShareLink {
         if let alpn = json["alpn"]?.text, !alpn.isEmpty { spec.alpn = alpn.split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) } }
         spec.fingerprint = json["fp"]?.text
         spec.allowInsecure = json["allowInsecure"]?.looseBool ?? json["skip-cert-verify"]?.looseBool ?? false
+        spec.pinnedCertificates = CertificatePins.hex(json["pcs"]?.text ?? json["pinnedPeerCertSha256"]?.text)
         var outbound: [String: JSONValue] = [
             "type": "vmess", "server": .string(host), "server_port": .int(Int64(port)), "uuid": .string(uuid),
             "security": .string((json["scy"]?.text).flatMap { $0.isEmpty ? nil : $0 } ?? "auto"),
@@ -275,6 +277,7 @@ public enum ShareLink {
         var tls: [String: JSONValue] = ["enabled": true]
         if let sni = parts.value("sni", "peer") { tls["server_name"] = .string(sni) } else if !TextCoding.isIPAddress(host) { tls["server_name"] = .string(host) }
         if parts.flag("insecure", "allowInsecure") { tls["insecure"] = true }
+        CertificatePins.apply(certificates: CertificatePins.hex(parts.value("pinSHA256", "pcs")), publicKeys: [], to: &tls)
         if let alpn = parts.value("alpn") { tls["alpn"] = JSONValue(alpn.split(separator: ",").map(String.init)) }
         var outbound: [String: JSONValue] = [
             "type": "hysteria2", "server": .string(host), "server_port": .int(Int64(port)), "tls": .object(tls),
@@ -299,6 +302,7 @@ public enum ShareLink {
         var tls: [String: JSONValue] = ["enabled": true]
         if let sni = parts.value("peer", "sni") { tls["server_name"] = .string(sni) } else if !TextCoding.isIPAddress(host) { tls["server_name"] = .string(host) }
         if parts.flag("insecure", "allowInsecure") { tls["insecure"] = true }
+        CertificatePins.apply(certificates: CertificatePins.hex(parts.value("pinSHA256", "pcs")), publicKeys: [], to: &tls)
         if let alpn = parts.value("alpn") { tls["alpn"] = JSONValue(alpn.split(separator: ",").map(String.init)) }
         var outbound: [String: JSONValue] = [
             "type": "hysteria", "server": .string(host), "server_port": .int(Int64(port)), "tls": .object(tls),
@@ -322,6 +326,7 @@ public enum ShareLink {
         if let sni = parts.value("sni", "peer") { tls["server_name"] = .string(sni) } else if !TextCoding.isIPAddress(host) { tls["server_name"] = .string(host) }
         if parts.flag("allow_insecure", "allowInsecure", "insecure") { tls["insecure"] = true }
         if parts.flag("disable_sni") { tls["disable_sni"] = true }
+        CertificatePins.apply(certificates: CertificatePins.hex(parts.value("pinSHA256", "pcs")), publicKeys: [], to: &tls)
         tls["alpn"] = JSONValue((parts.value("alpn") ?? "h3").split(separator: ",").map(String.init))
         var outbound: [String: JSONValue] = [
             "type": "tuic", "server": .string(host), "server_port": .int(Int64(port)), "uuid": .string(uuid), "tls": .object(tls),

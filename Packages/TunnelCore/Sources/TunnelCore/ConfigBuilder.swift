@@ -127,7 +127,7 @@ public enum ConfigBuilder {
         }
 
         for node in nodes {
-            var main = Carried.adapt(node.outbound, known: known)
+            var main = CertificatePins.carry(link: node.link, into: Carried.adapt(node.outbound, known: known))
             var members = node.members
             if node.type == XrayBacked.type {
                 guard let port = xrayPorts[node.id] else { continue }
@@ -218,7 +218,14 @@ public enum ConfigBuilder {
         var dns: [String: JSONValue] = [
             "servers": [
                 // Everything apps ask is resolved through the VPN: nothing leaks to the local network.
-                ["type": "https", "tag": "dns-remote", "server": .string(options.dnsServer), "detour": .string(selectorTag)],
+                // 3.0.5: a group of two ways through the server (the core's `group`,
+                // mode «stable»: one is used while it answers, a failed query is asked
+                // again through the other at once). Some servers break DNS over HTTPS
+                // to the resolver (they answer it with their own certificate, which
+                // the system refuses), and with HTTPS alone no name resolved at all.
+                ["type": "group", "tag": "dns-remote", "servers": ["dns-remote-https", "dns-remote-tcp"], "mode": "stable"],
+                ["type": "https", "tag": "dns-remote-https", "server": .string(options.dnsServer), "detour": .string(selectorTag)],
+                ["type": "tcp", "tag": "dns-remote-tcp", "server": .string(options.dnsServer), "detour": .string(selectorTag)],
                 ["type": "udp", "tag": "dns-direct", "server": .string(options.dnsServer)],
             ],
             "final": "dns-remote",

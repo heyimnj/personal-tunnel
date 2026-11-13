@@ -35,6 +35,10 @@ let samples: [(String, [String])] = [
                      "ss://2022-blake3-aes-128-gcm:MTIzNDU2Nzg5MDEyMzQ1Ng%3D%3D@ss2.example.com:8443#SS2022"]),
     ("hysteria2", ["hysteria2://pass@hy.example.com:443,20000-30000?sni=hy.example.com&insecure=1&obfs=salamander&obfs-password=obfs#Hy2",
                    "hy2://pass@hy2.example.com:8443#Hy2 plain"]),
+    // 3.0.5: self-signed servers pinned by their certificate's SHA-256 (the core's certificate_sha256).
+    ("certificate-pins", ["hysteria2://pass@1.2.3.4:443?sni=a.internal&pinSHA256=\(String(repeating: "AB:", count: 31))AB#Hy2 pinned",
+                          "vless://11111111-2222-3333-4444-555555555555@1.2.3.4:443?security=tls&sni=a.internal&type=tcp&flow=xtls-rprx-vision&fp=chrome&pcs=\(String(repeating: "cd", count: 32))#VLESS pinned",
+                          "trojan://password@1.2.3.4:443?sni=a.internal&pcs=\(String(repeating: "ef", count: 32))#Trojan pinned"]),
     ("tuic", ["tuic://11111111-2222-3333-4444-555555555555:secret@tuic.example.com:443?congestion_control=bbr&udp_relay_mode=native&alpn=h3&sni=tuic.example.com#TUIC"]),
     ("wireguard", ["wireguard://\(TextCoding.percentEncode(wgPrivate))@wg.example.com:51820?publickey=\(TextCoding.percentEncode(wgPublic))&address=10.7.0.2,fd00::2&mtu=1280&reserved=1,2,3&keepalive=25#WG"]),
     ("amneziawg", ["awg://\(TextCoding.percentEncode(wgPrivate))@awg.example.com:51820?publickey=\(TextCoding.percentEncode(wgPublic))&address=10.8.0.2&jc=4&jmin=40&jmax=70&s1=15&s2=25&h1=1234567&h2=2345678&h3=3456789&h4=4567890#AWG"]),
