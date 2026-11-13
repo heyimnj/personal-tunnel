@@ -74,6 +74,11 @@ final class MinimalServersViewController: UIViewController, UIScrollViewDelegate
     /// a pull closes the sheet from the bar, or from anywhere once the search is out.
     private var touchStart: CGPoint = .zero
     private var searchOutAtTouch = false
+    /// Where the list was last let go towards: the search's out position or not.
+    /// A second pull comes while the first one's motion is still settling (3.0.3
+    /// counted the search as out only once the list had come to rest there, so a
+    /// quick second pull did not close the sheet).
+    private var headingToSearch = false
     /// The swipe from the screen's edge that closes the sheet (3.0.2). Off since
     /// 3.0.3 at the owner's word; the code stays for a later decision.
     static let edgeCloseEnabled = false
@@ -292,9 +297,24 @@ final class MinimalServersViewController: UIViewController, UIScrollViewDelegate
         let recorder = TouchRecorder { [weak self] point in
             guard let self else { return }
             self.touchStart = point
-            self.searchOutAtTouch = self.placedSearch && self.list.contentOffset.y <= self.searchShown + 1
+            self.searchOutAtTouch = self.searchIsOut(atTouch: true)
         }
         view.addGestureRecognizer(recorder)
+    }
+
+    /// The search is out, or on its way out from the last pull. `atTouch`: a new
+    /// touch has landed; a list still settling towards the search is put there at
+    /// once (a few points at most), so the sheet's own pull can take over from the
+    /// first point of the gesture.
+    private func searchIsOut(atTouch: Bool) -> Bool {
+        guard placedSearch else { return false }
+        let offset = list.contentOffset.y
+        if offset <= searchShown + 1 { return true }
+        guard headingToSearch, !list.isDragging, offset < searchHidden - 0.5 else { return false }
+        if atTouch {
+            list.setContentOffset(CGPoint(x: list.contentOffset.x, y: searchShown), animated: false)
+        }
+        return true
     }
 
     @objc private func searchChanged() {
@@ -313,10 +333,17 @@ final class MinimalServersViewController: UIViewController, UIScrollViewDelegate
     func scrollViewWillEndDragging(_ scrollView: UIScrollView, withVelocity velocity: CGPoint, targetContentOffset: UnsafeMutablePointer<CGPoint>) {
         guard scrollView === list else { return }
         let target = targetContentOffset.pointee.y
+        defer { headingToSearch = targetContentOffset.pointee.y <= searchShown + 0.5 }
         guard target > searchShown + 0.5, target < searchHidden - 0.5 else { return }
         let keep = !query.isEmpty || search.isFirstResponder
         let out = keep || (velocity.y < 0 || (velocity.y == 0 && target < (searchShown + searchHidden) / 2))
         targetContentOffset.pointee.y = out ? searchShown : searchHidden
+    }
+
+    /// Where the list actually came to rest decides from now on.
+    func scrollViewDidEndDecelerating(_ scrollView: UIScrollView) {
+        guard scrollView === list else { return }
+        headingToSearch = list.contentOffset.y <= searchShown + 0.5
     }
 
     /// The sheet closes from a pull that starts on the bar (the close button, the

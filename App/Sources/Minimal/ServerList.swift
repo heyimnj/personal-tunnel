@@ -48,7 +48,7 @@ struct DisclosureSpring {
 
 // MARK: - Swipe
 
-/// An action behind a row: a capsule with its title and symbol.
+/// An action behind a row: a round button with its symbol (the title is for VoiceOver).
 struct SwipeAction {
     var symbol: String
     var color: UIColor
@@ -56,80 +56,90 @@ struct SwipeAction {
     var handler: () -> Void
 }
 
-/// One capsule of the actions. It is clipped to its current width and its content
-/// sits at its right end, so as it widens the symbol shows first and the title
-/// flows out after it (as in the Music app's queue).
+/// One button of the actions: a circle of the action's colour with a white symbol.
+/// Its size never changes while it appears (3.0.4): it grows from a small dot with
+/// a scale transform, so the circle stays a circle and only one layer moves. Past
+/// the full swipe the button at the edge stretches into a capsule.
 private final class SwipePill: UIControl {
     let action: SwipeAction
-    private let clip = UIView()
-    private let content = UIStackView()
+    private let disc = UIView()
     private let icon = UIImageView()
-    private let label = UILabel()
-    let naturalWidth: CGFloat
+    static let side: CGFloat = 46
+    let naturalWidth = SwipePill.side
 
-    /// `titled`: the capsule at the edge carries its title; the others only a symbol
-    /// (three titles do not fit beside a row).
-    init(_ action: SwipeAction, titled: Bool) {
+    init(_ action: SwipeAction) {
         self.action = action
-        label.text = action.title
-        label.font = Theme.font(15, .semibold)
-        label.isHidden = !titled
-        icon.image = UIImage(systemName: action.symbol, withConfiguration: UIImage.SymbolConfiguration(pointSize: 15, weight: .semibold))
+        icon.image = UIImage(systemName: action.symbol, withConfiguration: UIImage.SymbolConfiguration(pointSize: 16, weight: .semibold))
         icon.contentMode = .center
-        naturalWidth = titled ? 16 + ceil(label.intrinsicContentSize.width) + 7 + 20 + 14 : 46
+        icon.tintColor = .white
         super.init(frame: .zero)
-        clip.isUserInteractionEnabled = false
-        clip.clipsToBounds = true
-        clip.layer.cornerCurve = .continuous
-        addSubview(clip)
-        content.axis = .horizontal
-        content.spacing = 7
-        content.alignment = .center
-        content.addArrangedSubview(label)
-        content.addArrangedSubview(icon)
-        content.isUserInteractionEnabled = false
-        clip.addSubview(content)
+        disc.isUserInteractionEnabled = false
+        disc.backgroundColor = action.color
+        disc.layer.cornerCurve = .continuous
+        icon.isUserInteractionEnabled = false
+        addSubview(disc)
+        addSubview(icon)
         accessibilityLabel = action.title
         isAccessibilityElement = true
         accessibilityTraits = .button
-        paint()
     }
 
     @available(*, unavailable)
     required init?(coder _: NSCoder) { fatalError() }
 
-    /// The action's colour from the first point of the swipe; the symbol and the
-    /// title are white.
-    private func paint() {
-        clip.backgroundColor = action.color
-        let ink: UIColor = .white
-        label.textColor = ink
-        icon.tintColor = ink
-    }
-
-    override func layoutSubviews() {
-        super.layoutSubviews()
-        clip.frame = bounds
-        clip.layer.cornerRadius = min(bounds.width, bounds.height) / 2
-        // Content keeps its size at the right end; a narrow capsule shows its symbol first.
-        let inset: CGFloat = label.isHidden ? 13 : 14
-        let width = label.isHidden ? 20 : naturalWidth - 30
-        content.frame = CGRect(x: bounds.width - inset - width, y: 0, width: width, height: bounds.height)
+    /// `appear`: 0…1, how far this button has come out; `stretch`: extra width
+    /// past the full swipe (the edge button only).
+    func place(right: CGFloat, centerY: CGFloat, appear: CGFloat, stretch: CGFloat) {
+        let side = Self.side
+        let width = side + stretch
+        let bounds = CGRect(x: 0, y: 0, width: width, height: side)
+        if self.bounds != bounds { self.bounds = bounds }
+        let center = CGPoint(x: right - width / 2, y: centerY)
+        if self.center != center { self.center = center }
+        let radius = side / 2
+        if disc.layer.cornerRadius != radius { disc.layer.cornerRadius = radius }
+        if disc.frame != bounds { disc.frame = bounds }
+        // The symbol stays at the right end of a stretched capsule.
+        let iconFrame = CGRect(x: width - side, y: 0, width: side, height: side)
+        if icon.frame != iconFrame { icon.frame = iconFrame }
+        // Scale from 0.35 with a soft ease-out; the symbol comes in a little later
+        // than its circle and turns from a slight tilt, so it does not pop.
+        let t = max(0, min(1, appear))
+        let eased = 1 - pow(1 - t, 3)
+        let scale = 0.35 + 0.65 * eased
+        transform = CGAffineTransform(scaleX: scale, y: scale)
+        alpha = min(1, t * 1.8)
+        let late = max(0, min(1, (t - 0.25) / 0.75))
+        let iconEase = 1 - pow(1 - late, 2)
+        icon.alpha = iconEase
+        icon.transform = CGAffineTransform(rotationAngle: -0.35 * (1 - iconEase)).scaledBy(x: 0.7 + 0.3 * iconEase, y: 0.7 + 0.3 * iconEase)
+        isHidden = t <= 0.001
     }
 
     override var isHighlighted: Bool {
-        didSet { UIView.animate(withDuration: 0.12) { self.clip.alpha = self.isHighlighted ? 0.75 : 1 } }
+        didSet {
+            guard isHighlighted != oldValue else { return }
+            UIView.animate(withDuration: isHighlighted ? 0.08 : 0.22, delay: 0, options: [.beginFromCurrentState, .allowUserInteraction, .curveEaseOut]) {
+                self.disc.alpha = self.isHighlighted ? 0.72 : 1
+                self.icon.alpha = self.isHighlighted ? 0.85 : 1
+            }
+        }
     }
 }
 
 /// A view whose `front` slides left to uncover its actions. A full swipe only
 /// opens them: nothing is ever deleted by a swipe alone.
+///
+/// 3.0.4: the motion is one spring stepped every frame (`SpringDriver`), so a
+/// row caught mid-way continues from where it is, with the finger's speed both
+/// ways. The buttons come out one after another from the edge, each growing from
+/// a dot (scale and fade), instead of widening from a sliver.
 class SwipeRow: UIView, UIGestureRecognizerDelegate {
     let front = UIView()
     /// Height of the content; the view itself may be shorter while it is uncovered.
     var contentHeight: CGFloat = 63
     var onOpen: ((SwipeRow) -> Void)?
-    /// Every placement of the front (the swipe offset), inside the same animation.
+    /// Every placement of the front (the swipe offset), on every frame.
     var onSlide: ((CGFloat) -> Void)?
     private let rail = UIView()
     private var pills: [SwipePill] = []
@@ -137,11 +147,15 @@ class SwipeRow: UIView, UIGestureRecognizerDelegate {
     private var fullyOut = false
     private(set) var offset: CGFloat = 0
     private var panStart: CGFloat = 0
-    private var animator: UIViewPropertyAnimator?
-    private static let gap: CGFloat = 6
+    private lazy var spring = SpringDriver { [weak self] value in
+        guard let self else { return }
+        self.offset = value
+        self.placeFront()
+    }
+    private static let gap: CGFloat = 8
     private static let margin: CGFloat = 8
 
-    /// The capsules are built when a swipe first needs them, not with the row:
+    /// The buttons are built when a swipe first needs them, not with the row:
     /// rows appear by the dozen as a subscription opens, and building three
     /// symbol buttons for each of them cost the first frames of the motion.
     var actions: [SwipeAction] = [] {
@@ -152,9 +166,9 @@ class SwipeRow: UIView, UIGestureRecognizerDelegate {
     }
     private var railStale = false
 
-    /// How far the row moves to show every action at full width.
+    /// How far the row moves to show every action.
     private var railWidth: CGFloat {
-        pills.isEmpty ? 0 : pills.reduce(0) { $0 + $1.naturalWidth } + CGFloat(pills.count - 1) * Self.gap + 2 * Self.margin
+        pills.isEmpty ? 0 : CGFloat(pills.count) * SwipePill.side + CGFloat(pills.count - 1) * Self.gap + 2 * Self.margin
     }
 
     override init(frame: CGRect) {
@@ -173,9 +187,8 @@ class SwipeRow: UIView, UIGestureRecognizerDelegate {
         railStale = false
         pills.forEach { $0.removeFromSuperview() }
         pills = actions.map { action in
-            // All the same round symbol buttons, «Удалить» included (the title stays
-            // for VoiceOver).
-            let pill = SwipePill(action, titled: false)
+            let pill = SwipePill(action)
+            pill.isHidden = true
             pill.addAction(UIAction { [weak self] _ in
                 Haptics.tap()
                 self?.close(animated: true)
@@ -189,24 +202,39 @@ class SwipeRow: UIView, UIGestureRecognizerDelegate {
 
     override func layoutSubviews() {
         super.layoutSubviews()
-        front.frame = CGRect(x: offset, y: 0, width: bounds.width, height: contentHeight)
         rail.frame = CGRect(x: 0, y: 0, width: bounds.width, height: contentHeight)
+        placeFront()
+    }
+
+    /// The front at the offset and the buttons by how far it has gone. Called on
+    /// every frame of a swipe, so only frames and transforms change here.
+    private func placeFront() {
+        // bounds and center, never frame: the list scales the front of a card being
+        // uncovered, and a frame set under a transform moves it.
+        let size = CGSize(width: bounds.width, height: contentHeight)
+        if front.bounds.size != size { front.bounds = CGRect(origin: .zero, size: size) }
+        let center = CGPoint(x: offset + size.width / 2, y: size.height / 2)
+        if front.center != center { front.center = center }
         onSlide?(offset)
         guard !pills.isEmpty else { return }
         let full = railWidth
         let pulled = max(0, -offset)
         let progress = full > 0 ? min(1, pulled / full) : 0
-        // Past full width the last capsule (the one at the edge) stretches with the finger.
+        // Past full width the button at the edge stretches with the finger.
         let extra = max(0, pulled - full)
-        let height = min(46, contentHeight - 16)
+        let centerY = contentHeight / 2
+        let count = pills.count
+        // Each button has its slot in the uncovered space; while it is narrower
+        // than all of them, the slots are packed towards the edge proportionally.
+        // Button k (0 at the edge) begins later: 0, 0.18, 0.36 of the way.
+        let stagger: CGFloat = count > 1 ? min(0.18, 0.5 / CGFloat(count - 1)) : 0
+        let span = 1 - stagger * CGFloat(count - 1)
         var right = bounds.width - Self.margin * progress
-        for (index, pill) in pills.enumerated().reversed() {
-            var width = pill.naturalWidth * progress
-            if index == pills.count - 1 { width += extra }
-            let frame = CGRect(x: right - width, y: (contentHeight - height) / 2, width: width, height: height)
-            if pill.frame != frame { pill.frame = frame }
-            pill.isHidden = width < 1
-            right -= width + Self.gap * progress
+        for (k, pill) in pills.reversed().enumerated() {
+            let appear = (progress - stagger * CGFloat(k)) / span
+            let stretch = k == 0 ? extra : 0
+            pill.place(right: right, centerY: centerY, appear: appear, stretch: stretch)
+            right -= (SwipePill.side + stretch + Self.gap) * progress
         }
         let out = progress > 0.97
         if out != fullyOut {
@@ -215,28 +243,21 @@ class SwipeRow: UIView, UIGestureRecognizerDelegate {
         }
     }
 
-    var isOpen: Bool { offset < -1 }
+    var isOpen: Bool { offset < -1 || (spring.isRunning && spring.target < -1) }
 
     func close(animated: Bool) { set(offset: 0, animated: animated, velocity: 0) }
 
     private var panning = false
 
     private func set(offset target: CGFloat, animated: Bool, velocity: CGFloat) {
-        animator?.stopAnimation(true)
-        guard animated, !UIAccessibility.isReduceMotionEnabled else {
+        guard animated, window != nil else {
+            spring.stop()
             offset = target
-            setNeedsLayout()
-            layoutIfNeeded()
+            placeFront()
             return
         }
-        let distance = target - offset
-        let relative = abs(distance) > 1 ? max(-30, min(30, velocity / distance)) : 0
-        let timing = UISpringTimingParameters(dampingRatio: 0.88, initialVelocity: CGVector(dx: relative, dy: 0))
-        let animator = UIViewPropertyAnimator(duration: 0.44, timingParameters: timing)
-        offset = target
-        animator.addAnimations { self.setNeedsLayout(); self.layoutIfNeeded() }
-        animator.startAnimation()
-        self.animator = animator
+        // Opening lands with a hint of give; closing glides home without it.
+        spring.run(from: offset, to: target, velocity: velocity, feel: target < 0 ? .snappy : .smooth)
     }
 
     override func gestureRecognizerShouldBegin(_ gesture: UIGestureRecognizer) -> Bool {
@@ -256,24 +277,33 @@ class SwipeRow: UIView, UIGestureRecognizerDelegate {
         switch pan.state {
         case .began:
             if railStale { rebuildRail() }
-            animator?.stopAnimation(true)
+            // Caught mid-way: the finger takes the row where it shows.
+            spring.stop()
             panStart = offset
             panning = true
             onOpen?(self)
         case .changed:
             var next = panStart + pan.translation(in: self).x
-            // Past the actions and past the resting place the row resists.
-            if next < -width { next = -width - pow(-width - next, 0.8) }
-            if next > 0 { next = pow(next, 0.7) }
+            // Past the actions and past the resting place the row resists, softly.
+            if next < -width { next = -width - rubber(-width - next, limit: 90) }
+            if next > 0 { next = rubber(next, limit: 30) }
             offset = next
-            setNeedsLayout()
+            placeFront()
         case .ended, .cancelled:
             panning = false
             let velocity = pan.velocity(in: self).x
-            let open = velocity < -350 || (velocity < 350 && offset < -width / 2)
+            // Where a free flick would come to rest decides, as the system's lists do.
+            let projected = offset + velocity * 0.1
+            let open = pan.state == .ended && (velocity < -500 || (velocity < 500 && projected < -width / 2))
             set(offset: open ? -width : 0, animated: true, velocity: velocity)
         default: break
         }
+    }
+
+    /// iOS's rubber band: the further past, the less it follows, never beyond `limit`.
+    private func rubber(_ distance: CGFloat, limit: CGFloat) -> CGFloat {
+        guard distance > 0 else { return 0 }
+        return limit * (1 - 1 / (distance * 0.55 / limit + 1))
     }
 }
 
@@ -514,7 +544,12 @@ final class SubscriptionInfoStrip: UIView {
 
     /// The head's swipe offset (≤ 0): the text moves with the title.
     var slide: CGFloat = 0 {
-        didSet { if slide != oldValue { setNeedsLayout() } }
+        didSet { if slide != oldValue { placeLabel() } }
+    }
+
+    /// Vertical offset while the subscription opens or closes (≤ 0: tucked under the title).
+    var lift: CGFloat = 0 {
+        didSet { if lift != oldValue { placeLabel() } }
     }
 
     override init(frame: CGRect) {
@@ -557,8 +592,20 @@ final class SubscriptionInfoStrip: UIView {
 
     override func layoutSubviews() {
         super.layoutSubviews()
+        placeLabel()
+    }
+
+    /// Only the label moves (a transform), so following the spring and the swipe
+    /// costs no text layout per frame.
+    private func placeLabel() {
         let inset: CGFloat = 20
-        label.frame = CGRect(x: inset + slide, y: 0, width: max(0, bounds.width - 2 * inset), height: ServerListView.infoHeight)
+        let frame = CGRect(x: inset, y: 0, width: max(0, bounds.width - 2 * inset), height: ServerListView.infoHeight)
+        if label.bounds.size != frame.size || label.center != CGPoint(x: frame.midX, y: frame.midY) {
+            label.bounds = CGRect(origin: .zero, size: frame.size)
+            label.center = CGPoint(x: frame.midX, y: frame.midY)
+        }
+        let transform = CGAffineTransform(translationX: slide, y: lift)
+        if label.transform != transform { label.transform = transform }
     }
 }
 
@@ -640,6 +687,9 @@ final class ServerListView: UIScrollView {
     /// The provider's line rises into the head's lower padding, so it sits close
     /// under the title (the head is 66 pt with its 17 pt title centred: about 5 pt between them).
     static let infoRise: CGFloat = 21
+    /// Over how much of the opening body the provider's line fades in (about the
+    /// first server card, so the two come and go together).
+    static let infoFade: CGFloat = 54
 
     /// Height of the strip under the open head: the provider's line, then the filters.
     private func stripHeight(_ section: Section) -> CGFloat {
@@ -959,7 +1009,15 @@ final class ServerListView: UIScrollView {
                 surface.info.show(traffic: section.traffic, expiry: section.expiry)
                 let infoFrame = CGRect(x: 0, y: stripTop - Self.infoRise, width: width, height: Self.infoHeight)
                 if surface.info.frame != infoFrame { surface.info.frame = infoFrame }
-                surface.info.alpha = min(1, shown / (Self.infoHeight - Self.infoRise))
+                // 3.0.4: the line takes only 1 pt of the body (it rises into the
+                // head), so it used to stay fully drawn until that last point and
+                // vanish after the servers had gone. Now it follows the first
+                // server card: it fades and settles in over the same distance the
+                // card is uncovered in, and leaves with it when closing.
+                let reveal = max(0, min(1, shown / Self.infoFade))
+                let eased = reveal * reveal * (3 - 2 * reveal)
+                if surface.info.alpha != eased { surface.info.alpha = eased }
+                surface.info.lift = -4 * (1 - eased)
             }
             if section.hasInfo { stripTop += Self.infoHeight - Self.infoRise }
             let filtersShown = shown - (stripTop - Self.headerHeight)
