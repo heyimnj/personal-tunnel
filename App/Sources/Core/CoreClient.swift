@@ -133,10 +133,19 @@ final class CoreClient {
     }
 
     /// While a screen lists the open connections, they are copied out with every update.
+    /// Turned on, the list is built at once from what the core has already sent: the
+    /// core sends events only when a connection opens, closes or moves bytes, so in
+    /// a quiet moment the screen would otherwise stay empty.
     var listsConnections = false {
         didSet {
             let value = listsConnections
-            parse.async { self.parseListsConnections = value }
+            let token = generation
+            parse.async {
+                self.parseListsConnections = value
+                guard value, self.store != nil else { return }
+                let result = self.prepare(nil)
+                self.receive(token) { $0.connections.set(result) }
+            }
         }
     }
 
@@ -198,12 +207,12 @@ final class CoreClient {
         logsChanged.fire()
     }
 
-    /// On `parse`: applies the events and counts what is open.
-    fileprivate func prepare(_ events: LibboxConnectionEvents) -> CoreConnections {
+    /// On `parse`: applies the events (none: only reads the store) and counts what is open.
+    fileprivate func prepare(_ events: LibboxConnectionEvents?) -> CoreConnections {
         if store == nil { store = LibboxNewConnections() }
         var result = CoreConnections()
         guard let store else { return result }
-        store.apply(events)
+        if let events { store.apply(events) }
         let list = parseListsConnections
         if let iterator = store.iterator() {
             while iterator.hasNext() {

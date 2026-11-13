@@ -526,13 +526,14 @@ final class AddSheetViewController: UIViewController {
 
     override func viewDidLoad() {
         super.viewDidLoad()
-        view.backgroundColor = Theme.background
+        // The colours of the servers sheet: its grouped grey, cards like the subscriptions'.
+        view.backgroundColor = .systemGroupedBackground
         let title = UILabel(heading, font: Theme.font(.headline), lines: 0)
         title.textAlignment = .center
         content.addArrangedSubview(title)
 
         let card = UIView()
-        card.backgroundColor = Theme.card
+        card.backgroundColor = SurfaceView.card
         card.layer.cornerRadius = 22
         card.layer.cornerCurve = .continuous
         card.clipsToBounds = true
@@ -573,8 +574,6 @@ final class AddSheetViewController: UIViewController {
 
     private func row(_ option: Option) -> UIView {
         let control = TapControl()
-        control.ripple = true
-        control.rippleCornerRadius = 0
         control.pressScale = 1
         let icon = UIImageView(image: UIImage(systemName: option.symbol, withConfiguration: UIImage.SymbolConfiguration(font: Theme.font(.body, .medium))))
         icon.tintColor = Theme.accent

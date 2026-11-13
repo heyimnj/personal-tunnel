@@ -227,7 +227,7 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
         do {
             try commandServer?.closeService()
         } catch {
-            log("закрытие службы: \(error.localizedDescription)")
+            log("закрытие службы: \(error.localizedDescription)", level: .error)
         }
         platform.reset()
     }
@@ -279,9 +279,17 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
         event(sample.line)
     }
 
-    func log(_ message: String) {
-        // Level 2 is "warn" in the core's numbering; visible at the default log level.
-        commandServer?.writeMessage(2, message: "(tunnel) " + Redactor.redact(message))
+    /// The core's numbering (sing-box `log.Level`): 0 panic, 1 fatal, 2 error,
+    /// 3 warn, 4 info, 5 debug, 6 trace. The extension's own notes are info; only
+    /// a real failure is an error (these lines used level 2 and so read as ERROR).
+    enum LogLevel: Int32 {
+        case error = 2
+        case warn = 3
+        case info = 4
+    }
+
+    func log(_ message: String, level: LogLevel = .info) {
+        commandServer?.writeMessage(level.rawValue, message: "(tunnel) " + Redactor.redact(message))
     }
 
     // MARK: Configuration

@@ -29,24 +29,25 @@ final class AnalyticsCard: UIView {
 }
 
 /// Small stat card: title, big value, grey caption. With `onTap` it opens a
-/// page (a chevron by the title says so) and answers the finger like a button.
+/// sheet (a chevron by the title says so) and dims while pressed.
 final class StatCard: UIView {
     private let card = AnalyticsCard()
     let value = UILabel(font: UIFont.monospacedDigitSystemFont(ofSize: Theme.font(.title3).pointSize, weight: .semibold))
     let caption = UILabel(font: Theme.font(.caption1), color: .secondaryLabel, lines: 2)
     private let titleRow: UIStackView
+    /// Holds the card; enabled only with `onTap`.
     private let press = TapControl()
 
     var onTap: (() -> Void)? {
         didSet {
             press.onTap = onTap
-            press.isHidden = onTap == nil
+            press.isEnabled = onTap != nil
+            press.isAccessibilityElement = onTap != nil
             guard onTap != nil, titleRow.arrangedSubviews.count == 2 else { return }
             let chevron = UIImageView(image: UIImage(systemName: "chevron.right", withConfiguration: UIImage.SymbolConfiguration(font: Theme.font(.caption2, .semibold))))
             chevron.tintColor = .tertiaryLabel
             chevron.setContentHuggingPriority(.required, for: .horizontal)
             titleRow.addArrangedSubview(chevron)
-            isAccessibilityElement = false
             press.accessibilityTraits = .button
         }
     }
@@ -54,21 +55,18 @@ final class StatCard: UIView {
     init(symbol: String, title: String, tint: UIColor) {
         titleRow = AnalyticsCard.title(symbol, title, tint: tint)
         super.init(frame: .zero)
-        addSubview(card)
-        card.pin(to: self)
+        press.pressScale = 1
+        press.isEnabled = false
+        press.accessibilityLabel = title
+        addSubview(press)
+        press.pin(to: self)
+        card.isUserInteractionEnabled = false
+        press.addSubview(card)
+        card.pin(to: press)
         card.stack.spacing = 14
         card.stack.addArrangedSubview(titleRow)
         card.stack.addArrangedSubview(value)
         card.stack.addArrangedSubview(caption)
-        // Over the whole card: the ripple spreads across it from the finger.
-        press.ripple = true
-        press.pressScale = 1
-        press.rippleCornerRadius = 28
-        press.isHidden = true
-        press.isAccessibilityElement = true
-        press.accessibilityLabel = title
-        addSubview(press)
-        press.pin(to: self)
         value.adjustsFontSizeToFitWidth = true
         value.minimumScaleFactor = 0.7
         heightAnchor.constraint(greaterThanOrEqualToConstant: 136).isActive = true

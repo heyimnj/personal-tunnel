@@ -311,8 +311,9 @@ extension UIStackView {
 
 /// A plain control that dims while pressed and calls a closure. With `ripple`
 /// it gives 1.5.0's `ModernTouchFeedback` instead: the control grows by 1.2 %
-/// and a shade appears under the finger and spreads to the edges; it stays while
-/// the finger holds the control and fades once it lets go.
+/// and a soft shade spreads from under the finger over the whole control; it
+/// stays while the finger holds it and fades once it lets go. Only the server
+/// capsule and the connect button of Home use it.
 class TapControl: UIControl {
     var onTap: (() -> Void)?
     var pressScale: CGFloat = 0.97
@@ -377,8 +378,9 @@ class TapControl: UIControl {
         bringSubviewToFront(rippleClip)
     }
 
-    /// The shade: a radial gradient twice the diagonal under the finger. It grows
-    /// from 1.5 % to full size in 0.6 s and holds there until the press ends.
+    /// The shade: a soft, nearly even radial wash twice the diagonal, centred under
+    /// the finger. It covers the whole control in 0.25 s and holds there until the
+    /// press ends.
     private func spread(from point: CGPoint) {
         let clip: UIView
         if let rippleClip { clip = rippleClip } else {
@@ -395,10 +397,9 @@ class TapControl: UIControl {
         let reach = hypot(bounds.width, bounds.height) * 2
         let shade = CAGradientLayer()
         shade.type = .radial
-        shade.colors = [UIColor.label.resolvedColor(with: traitCollection).withAlphaComponent(0.2).cgColor,
-                        UIColor.label.resolvedColor(with: traitCollection).withAlphaComponent(0.08).cgColor,
-                        UIColor.clear.cgColor]
-        shade.locations = [0, 0.55, 1]
+        let ink = UIColor.label.resolvedColor(with: traitCollection)
+        shade.colors = [ink.withAlphaComponent(0.08).cgColor, ink.withAlphaComponent(0.06).cgColor, ink.withAlphaComponent(0).cgColor]
+        shade.locations = [0, 0.75, 1]
         shade.startPoint = CGPoint(x: 0.5, y: 0.5)
         shade.endPoint = CGPoint(x: 1, y: 1)
         CATransaction.begin()
@@ -410,10 +411,10 @@ class TapControl: UIControl {
         clip.layer.addSublayer(shade)
         CATransaction.commit()
         let grow = CABasicAnimation(keyPath: "transform.scale")
-        grow.fromValue = 0.015
+        grow.fromValue = 0.02
         grow.toValue = 1
-        grow.duration = 0.6
-        grow.timingFunction = CAMediaTimingFunction(controlPoints: 0.2, 0.7, 0.3, 1)
+        grow.duration = 0.25
+        grow.timingFunction = CAMediaTimingFunction(name: .easeOut)
         shade.add(grow, forKey: "spread")
         let appear = CABasicAnimation(keyPath: "opacity")
         appear.fromValue = 0
@@ -423,7 +424,7 @@ class TapControl: UIControl {
         self.shade = shade
     }
 
-    /// The press ended: the shade keeps spreading and fades over 0.45 s.
+    /// The press ended: the shade keeps spreading and fades over 0.35 s.
     private func fadeShade() {
         guard let shade else { return }
         self.shade = nil
@@ -433,7 +434,7 @@ class TapControl: UIControl {
         let fade = CABasicAnimation(keyPath: "opacity")
         fade.fromValue = current
         fade.toValue = 0
-        fade.duration = 0.45
+        fade.duration = 0.35
         fade.timingFunction = CAMediaTimingFunction(name: .easeOut)
         shade.opacity = 0
         shade.add(fade, forKey: "fade")

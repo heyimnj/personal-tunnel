@@ -139,9 +139,16 @@ class SwipeRow: UIView, UIGestureRecognizerDelegate {
     private static let gap: CGFloat = 6
     private static let margin: CGFloat = 8
 
+    /// The capsules are built when a swipe first needs them, not with the row:
+    /// rows appear by the dozen as a subscription opens, and building three
+    /// symbol buttons for each of them cost the first frames of the motion.
     var actions: [SwipeAction] = [] {
-        didSet { rebuildRail() }
+        didSet {
+            railStale = true
+            if !pills.isEmpty || offset != 0 { rebuildRail() }
+        }
     }
+    private var railStale = false
 
     /// How far the row moves to show every action at full width.
     private var railWidth: CGFloat {
@@ -161,6 +168,7 @@ class SwipeRow: UIView, UIGestureRecognizerDelegate {
     required init?(coder _: NSCoder) { fatalError() }
 
     private func rebuildRail() {
+        railStale = false
         pills.forEach { $0.removeFromSuperview() }
         pills = actions.map { action in
             // All the same round symbol buttons, «Удалить» included (the title stays
@@ -238,6 +246,7 @@ class SwipeRow: UIView, UIGestureRecognizerDelegate {
         let width = railWidth
         switch pan.state {
         case .began:
+            if railStale { rebuildRail() }
             animator?.stopAnimation(true)
             panStart = offset
             panning = true
@@ -294,8 +303,9 @@ final class ServerRowView: SwipeRow {
         // offscreen group pass (each layer fades on its own).
         clipsToBounds = true
         layer.allowsGroupOpacity = false
-        card.ripple = true
-        card.rippleCornerRadius = 14
+        // A plain dim when pressed: the spreading shade is kept for the two big
+        // buttons of Home (it cost frames as the list moved under it).
+        card.pressScale = 1
         card.backgroundColor = .secondarySystemGroupedBackground
         card.layer.cornerRadius = 14
         card.layer.cornerCurve = .continuous
@@ -368,8 +378,6 @@ final class SubscriptionHeaderView: SwipeRow {
     override init(frame: CGRect) {
         super.init(frame: frame)
         contentHeight = ServerListView.headerHeight
-        tap.ripple = true
-        tap.rippleCornerRadius = 24
         tap.pressScale = 1
         front.addSubview(tap)
         pin.tintColor = Theme.accent
@@ -633,11 +641,14 @@ final class ServerListView: UIScrollView {
     }
 
     static let filterHeight: CGFloat = 44
-    static let infoHeight: CGFloat = 26
+    static let infoHeight: CGFloat = 22
+    /// The provider's line rises into the head's lower padding, so it sits close
+    /// under the title (the head is 66 pt with its title centred).
+    static let infoRise: CGFloat = 18
 
     /// Height of the strip under the open head: the provider's line, then the filters.
     private func stripHeight(_ section: Section) -> CGFloat {
-        (section.hasInfo ? Self.infoHeight : 0) + (section.tags.isEmpty ? 0 : Self.filterHeight)
+        (section.hasInfo ? Self.infoHeight - Self.infoRise : 0) + (section.tags.isEmpty ? 0 : Self.filterHeight)
     }
 
     /// Where the open subscription's server rows begin, under the head, its line and its filters.
@@ -939,11 +950,11 @@ final class ServerListView: UIScrollView {
             var stripTop = Self.headerHeight
             if hasInfo {
                 surface.info.show(traffic: section.traffic, expiry: section.expiry)
-                let infoFrame = CGRect(x: 0, y: stripTop, width: width, height: min(Self.infoHeight, shown))
+                let infoFrame = CGRect(x: 0, y: stripTop - Self.infoRise, width: width, height: Self.infoHeight)
                 if surface.info.frame != infoFrame { surface.info.frame = infoFrame }
-                surface.info.alpha = min(1, shown / Self.infoHeight)
+                surface.info.alpha = min(1, shown / (Self.infoHeight - Self.infoRise))
             }
-            if section.hasInfo { stripTop += Self.infoHeight }
+            if section.hasInfo { stripTop += Self.infoHeight - Self.infoRise }
             let filtersShown = shown - (stripTop - Self.headerHeight)
             let hasFilters = !section.standalone && !section.tags.isEmpty && filtersShown > 0.5
             surface.filters.isHidden = !hasFilters
