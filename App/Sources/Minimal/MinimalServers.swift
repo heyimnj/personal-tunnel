@@ -1,5 +1,6 @@
 import TunnelCore
 import UIKit
+import UIKit.UIGestureRecognizerSubclass
 
 /// Coloured protocol tags under a server name. Each pill is a plain rounded layer
 /// behind its text: no masking, so moving rows cost no offscreen passes.
@@ -60,8 +61,17 @@ final class BadgeRow: UIView {
 }
 
 /// The «Серверы» sheet: subscriptions as cards that open into their servers.
-final class MinimalServersViewController: UIViewController {
+final class MinimalServersViewController: UIViewController, UIScrollViewDelegate, UIAdaptivePresentationControllerDelegate, UISearchTextFieldDelegate {
     private let list = ServerListView()
+    /// «Поиск», above the subscriptions: hidden under the bar, a pull down in the
+    /// list brings it out (as in Telegram's chat list).
+    private let search = UISearchTextField()
+    private var query = ""
+    private var placedSearch = false
+    private static let searchHeight: CGFloat = 52
+    private static let barHeight: CGFloat = 70
+    /// Where the last touch began: only a pull that starts on the bar closes the sheet.
+    private var touchStart: CGPoint = .zero
     private var expanded = Prefs.expandedSubscriptions
     private var ordered: [Subscription] = []
     private let subtitle = UILabel(font: Theme.font(12), color: .secondaryLabel)
@@ -92,6 +102,8 @@ final class MinimalServersViewController: UIViewController {
         view.tintColor = Theme.accent
         buildList()
         buildHeader()
+        buildSearch()
+        buildEdgeClose()
         App.shared.store.library.observe(self) { [weak self] _ in self?.reload() }
         App.shared.latency.changed.observe(self, fireNow: false) { [weak self] keys in self?.refresh(keys) }
         App.shared.latency.progress.observe(self) { [weak self] in self?.show($0) }
@@ -231,6 +243,121 @@ final class MinimalServersViewController: UIViewController {
             items.append(UIAction(title: L("Ссылка, QR и JSON")) { [weak self] _ in self?.inspect(only.1, in: only.0) })
         }
         return items
+    }
+
+    override func viewWillAppear(_ animated: Bool) {
+        super.viewWillAppear(animated)
+        presentationController?.delegate = self
+    }
+
+    override func viewDidLayoutSubviews() {
+        super.viewDidLayoutSubviews()
+        search.frame = CGRect(x: ServerListView.margin, y: 4, width: max(0, list.bounds.width - 2 * ServerListView.margin), height: 40)
+        if !placedSearch, list.bounds.height > 0 {
+            placedSearch = true
+            list.layoutIfNeeded()
+            list.contentOffset.y = searchHidden
+        }
+    }
+
+    // MARK: Search
+
+    /// The list's offsets with the search field out and tucked under the bar.
+    private var searchShown: CGFloat { -list.adjustedContentInset.top }
+    private var searchHidden: CGFloat { searchShown + Self.searchHeight }
+
+    private func buildSearch() {
+        search.placeholder = L("Поиск")
+        search.font = Theme.font(.body)
+        search.returnKeyType = .search
+        search.autocorrectionType = .no
+        search.autocapitalizationType = .none
+        search.clearButtonMode = .whileEditing
+        search.backgroundColor = SurfaceView.card
+        search.layer.cornerRadius = 12
+        search.layer.cornerCurve = .continuous
+        search.clipsToBounds = true
+        search.delegate = self
+        search.addTarget(self, action: #selector(searchChanged), for: .editingChanged)
+        list.addSubview(search)
+        list.leading = Self.searchHeight
+        list.delegate = self
+        list.keyboardDismissMode = .onDrag
+        // Touches are noted (never taken) to tell a pull on the bar from one in the list.
+        let recorder = TouchRecorder { [weak self] point in self?.touchStart = point }
+        view.addGestureRecognizer(recorder)
+    }
+
+    @objc private func searchChanged() {
+        let next = (search.text ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        guard next != query else { return }
+        query = next
+        reload()
+    }
+
+    func textFieldShouldReturn(_ textField: UITextField) -> Bool {
+        textField.resignFirstResponder()
+        return true
+    }
+
+    /// A pull that stops half way settles with the field either out or tucked away.
+    func scrollViewWillEndDragging(_ scrollView: UIScrollView, withVelocity velocity: CGPoint, targetContentOffset: UnsafeMutablePointer<CGPoint>) {
+        guard scrollView === list else { return }
+        let target = targetContentOffset.pointee.y
+        guard target > searchShown + 0.5, target < searchHidden - 0.5 else { return }
+        let keep = !query.isEmpty || search.isFirstResponder
+        let out = keep || (velocity.y < 0 || (velocity.y == 0 && target < (searchShown + searchHidden) / 2))
+        targetContentOffset.pointee.y = out ? searchShown : searchHidden
+    }
+
+    /// The sheet closes from a pull only when it starts on the bar (the close
+    /// button, the title, the buttons); in the list a pull brings out the search.
+    func presentationControllerShouldDismiss(_: UIPresentationController) -> Bool {
+        touchStart.y <= Self.barHeight
+    }
+
+    // MARK: Closing from the edge
+
+    /// A swipe from the very left or right edge of the screen takes the sheet away
+    /// sideways under the finger («Назад»); from anywhere else it is the rows' swipe.
+    private func buildEdgeClose() {
+        for edge in [UIRectEdge.left, .right] {
+            let pan = UIScreenEdgePanGestureRecognizer(target: self, action: #selector(edgePanned(_:)))
+            pan.edges = edge
+            view.addGestureRecognizer(pan)
+        }
+    }
+
+    @objc private func edgePanned(_ pan: UIScreenEdgePanGestureRecognizer) {
+        guard let sheet = presentationController?.presentedView ?? view.superview else { return }
+        let width = max(1, view.bounds.width)
+        let sign: CGFloat = pan.edges == .left ? 1 : -1
+        let moved = max(0, pan.translation(in: view).x * sign)
+        switch pan.state {
+        case .began:
+            search.resignFirstResponder()
+            list.closeSwipe()
+        case .changed:
+            sheet.transform = CGAffineTransform(translationX: moved * sign, y: 0)
+        case .ended, .cancelled, .failed:
+            let speed = pan.velocity(in: view).x * sign
+            let leave = pan.state == .ended && (moved > width * 0.3 || speed > 600)
+            let reduce = UIAccessibility.isReduceMotionEnabled
+            if leave {
+                Haptics.soft(0.4)
+                UIView.animate(withDuration: reduce ? 0 : 0.22, delay: 0, options: [.curveEaseOut]) {
+                    sheet.transform = CGAffineTransform(translationX: width * 1.1 * sign, y: 0)
+                } completion: { _ in
+                    self.dismiss(animated: true)
+                }
+            } else {
+                UIView.animate(withDuration: reduce ? 0 : 0.35, delay: 0, usingSpringWithDamping: 0.9, initialSpringVelocity: 0, options: [.allowUserInteraction]) {
+                    sheet.transform = .identity
+                }
+            }
+        default:
+            break
+        }
     }
 
     @objc private func closeTapped() {
@@ -498,16 +625,28 @@ final class MinimalServersViewController: UIViewController {
         let library = App.shared.library
         ordered = Prefs.arrangement.sorted(library.subscriptions.filter { !$0.nodes.isEmpty }, key: { Arrangement.subscription($0.id) }, name: { $0.name })
         let filters = Prefs.serverFilters
-        let sections = ordered.map { subscription -> ServerListView.Section in
+        let needle = query.lowercased()
+        var found = Set<Int64>()
+        let sections = ordered.compactMap { subscription -> ServerListView.Section? in
             let nodes = sortedNodes(subscription)
             let tags = Self.filterTags(subscription)
             let selected = Set(filters[String(subscription.id)] ?? []).intersection(tags)
-            let shown = selected.isEmpty ? nodes : nodes.filter { selected.isSubset(of: Set($0.facts.badges)) }
+            var shown = selected.isEmpty ? nodes : nodes.filter { selected.isSubset(of: Set($0.facts.badges)) }
+            // Searching: a subscription whose name matches shows as it is; otherwise
+            // only its servers whose names match, and none at all hides it.
+            if !needle.isEmpty, !subscription.name.lowercased().contains(needle) {
+                let store = App.shared.store
+                shown = shown.filter { store.label(of: $0, in: subscription).text.lowercased().contains(needle) || $0.name.lowercased().contains(needle) }
+                guard !shown.isEmpty else { return nil }
+                found.insert(subscription.id)
+            }
             return ServerListView.Section(id: subscription.id, standalone: subscription.isStandalone, nodes: shown.map(\.id),
                                           tags: tags, selected: selected,
                                           traffic: Self.trafficText(subscription.info), expiry: Self.expiryText(subscription.info))
         }
-        list.set(sections, open: expanded)
+        // Subscriptions found by their servers open to show them; the user's own
+        // open/closed choice is kept for when the search is cleared.
+        list.set(sections, open: needle.isEmpty ? expanded : expanded.union(found))
     }
 
     /// «65 GB из 500 GB»; without a limit «65 GB из ∞». Nothing when the provider
@@ -700,4 +839,26 @@ final class MinimalServersViewController: UIViewController {
         guard let node = App.shared.library.subscription(id)?.node(tag) else { return }
         confirm(Lf("Удалить сервер «%@»?", "\(node.name)")) { App.shared.delete(node: tag, in: id) }
     }
+}
+
+/// Notes where each touch begins and never recognizes, so it takes nothing from
+/// the views and gestures under it.
+final class TouchRecorder: UIGestureRecognizer {
+    private let began: (CGPoint) -> Void
+
+    init(_ began: @escaping (CGPoint) -> Void) {
+        self.began = began
+        super.init(target: nil, action: nil)
+        cancelsTouchesInView = false
+        delaysTouchesBegan = false
+        delaysTouchesEnded = false
+    }
+
+    override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent) {
+        if let touch = touches.first, let view { began(touch.location(in: view)) }
+        state = .failed
+    }
+
+    override func canPrevent(_: UIGestureRecognizer) -> Bool { false }
+    override func canBePrevented(by _: UIGestureRecognizer) -> Bool { false }
 }

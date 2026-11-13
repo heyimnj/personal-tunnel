@@ -129,8 +129,9 @@ final class DiagnosticsViewController: UIViewController {
 }
 
 /// «Журнал службы»: the core's log, streamed while the screen is open.
-final class ServiceLogViewController: UIViewController, UITableViewDataSource, UISearchBarDelegate {
+final class ServiceLogViewController: UIViewController, UITableViewDataSource, UITableViewDelegate, UISearchBarDelegate {
     private let table = UITableView(frame: .zero, style: .plain)
+    private lazy var scrubber = ScrollScrubber(scrollView: table)
     private let live = UILabel("LIVE", font: Theme.font(12, .bold), color: .systemRed)
     private let state = UILabel("STREAMING", font: Theme.font(12, .semibold), color: .secondaryLabel)
     private let search = UISearchBar()
@@ -198,6 +199,9 @@ final class ServiceLogViewController: UIViewController, UITableViewDataSource, U
         search.delegate = self
         search.isHidden = true
         table.dataSource = self
+        table.delegate = self
+        // Our own indicator, which can be taken and dragged (ScrollScrubber).
+        table.showsVerticalScrollIndicator = false
         table.backgroundColor = FormViewController.cellColor
         table.layer.cornerRadius = 20
         table.layer.cornerCurve = .continuous
@@ -213,6 +217,12 @@ final class ServiceLogViewController: UIViewController, UITableViewDataSource, U
             stack.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 16), stack.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -16),
             // Above the tab bar, so the card's rounded bottom is seen whole.
             stack.bottomAnchor.constraint(equalTo: view.safeAreaLayoutGuide.bottomAnchor, constant: -12),
+        ])
+        view.addSubview(scrubber)
+        scrubber.translatesAutoresizingMaskIntoConstraints = false
+        NSLayoutConstraint.activate([
+            scrubber.topAnchor.constraint(equalTo: table.topAnchor, constant: 10), scrubber.bottomAnchor.constraint(equalTo: table.bottomAnchor, constant: -10),
+            scrubber.trailingAnchor.constraint(equalTo: table.trailingAnchor), scrubber.widthAnchor.constraint(equalToConstant: 30),
         ])
         stack.setCustomSpacing(6, after: caption)
         caption.isLayoutMarginsRelativeArrangement = true
@@ -311,6 +321,8 @@ final class ServiceLogViewController: UIViewController, UITableViewDataSource, U
     }
 
     func tableView(_: UITableView, numberOfRowsInSection _: Int) -> Int { lines.count }
+
+    func scrollViewDidScroll(_: UIScrollView) { scrubber.update() }
 
     func tableView(_: UITableView, cellForRowAt indexPath: IndexPath) -> UITableViewCell {
         let cell = table.dequeueReusableCell(withIdentifier: "line") ?? UITableViewCell(style: .subtitle, reuseIdentifier: "line")
@@ -512,6 +524,13 @@ final class AddSheetViewController: UIViewController {
 
     private let heading: String
     private let options: [Option]
+    /// The servers sheet's page and card tones (dark: #1C1C1E and #2C2C2E).
+    static let sheetColor = UIColor { traits in
+        traits.userInterfaceStyle == .dark ? UIColor(red: 0.110, green: 0.110, blue: 0.118, alpha: 1) : UIColor(red: 0.949, green: 0.949, blue: 0.969, alpha: 1)
+    }
+    static let cardColor = UIColor { traits in
+        traits.userInterfaceStyle == .dark ? UIColor(red: 0.173, green: 0.173, blue: 0.180, alpha: 1) : .white
+    }
     private let content = UIStackView(.vertical, spacing: 14, alignment: .fill, [])
 
     init(title: String, options: [Option]) {
@@ -526,14 +545,26 @@ final class AddSheetViewController: UIViewController {
 
     override func viewDidLoad() {
         super.viewDidLoad()
-        // The colours of the servers sheet: its grouped grey, cards like the subscriptions'.
-        view.backgroundColor = .systemGroupedBackground
+        // The colours of the servers sheet as it shows them, given outright: a sheet
+        // of partial height is drawn on a raised (lighter) level in dark mode, and
+        // on iOS 26 over glass, which turned the dynamic greys light grey.
+        overrideUserInterfaceStyle = Theme.userInterfaceStyle
+        let backdrop = UIView()
+        backdrop.backgroundColor = Self.sheetColor
+        backdrop.isUserInteractionEnabled = false
+        view.addSubview(backdrop)
+        backdrop.translatesAutoresizingMaskIntoConstraints = false
+        NSLayoutConstraint.activate([
+            backdrop.topAnchor.constraint(equalTo: view.topAnchor), backdrop.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+            backdrop.trailingAnchor.constraint(equalTo: view.trailingAnchor), backdrop.bottomAnchor.constraint(equalTo: view.bottomAnchor, constant: 200),
+        ])
+        view.backgroundColor = Self.sheetColor
         let title = UILabel(heading, font: Theme.font(.headline), lines: 0)
         title.textAlignment = .center
         content.addArrangedSubview(title)
 
         let card = UIView()
-        card.backgroundColor = SurfaceView.card
+        card.backgroundColor = Self.cardColor
         card.layer.cornerRadius = 22
         card.layer.cornerCurve = .continuous
         card.clipsToBounds = true
@@ -593,6 +624,118 @@ final class AddSheetViewController: UIViewController {
             self?.dismiss(animated: true) { action() }
         }
         return control
+    }
+}
+
+/// A scroll indicator that can be taken and dragged, as long lists have it in
+/// other apps: a thin grey capsule on the right that shows while the list
+/// moves; held, it widens and the list follows it across its whole length.
+final class ScrollScrubber: UIView {
+    private weak var scrollView: UIScrollView?
+    private let thumb = UIView()
+    private var dragging = false
+    private var grab: CGFloat = 0
+    private var hideWork: DispatchWorkItem?
+    private static let thin: CGFloat = 4
+    private static let wide: CGFloat = 8
+
+    init(scrollView: UIScrollView) {
+        self.scrollView = scrollView
+        super.init(frame: .zero)
+        thumb.backgroundColor = .systemGray
+        thumb.alpha = 0
+        thumb.layer.cornerCurve = .continuous
+        addSubview(thumb)
+        addGestureRecognizer(UIPanGestureRecognizer(target: self, action: #selector(panned(_:))))
+        isAccessibilityElement = false
+    }
+
+    @available(*, unavailable)
+    required init?(coder _: NSCoder) { fatalError() }
+
+    /// Touches reach the scrubber only on its visible capsule (and a margin round
+    /// it); everywhere else they go to the list.
+    override func point(inside point: CGPoint, with _: UIEvent?) -> Bool {
+        guard thumb.alpha > 0.05 else { return false }
+        return thumb.frame.insetBy(dx: -16, dy: -14).contains(point)
+    }
+
+    private var range: (min: CGFloat, max: CGFloat, page: CGFloat)? {
+        guard let scrollView else { return nil }
+        let inset = scrollView.adjustedContentInset
+        let page = scrollView.bounds.height
+        let min = -inset.top
+        let max = scrollView.contentSize.height + inset.bottom - page
+        guard max - min > page * 0.5 else { return nil }
+        return (min, max, page)
+    }
+
+    private var thumbHeight: CGFloat {
+        guard let range else { return 0 }
+        let total = range.max - range.min + range.page
+        return Swift.max(40, bounds.height * range.page / total)
+    }
+
+    /// Places the capsule for the list's offset and shows it for a moment.
+    func update() {
+        guard !dragging else { return }
+        layoutThumb()
+        guard range != nil else { return }
+        show()
+        scheduleHide()
+    }
+
+    override func layoutSubviews() {
+        super.layoutSubviews()
+        layoutThumb()
+    }
+
+    private func layoutThumb() {
+        guard let scrollView, let range else { thumb.alpha = 0; return }
+        let height = thumbHeight
+        let fraction = Swift.min(1, Swift.max(0, (scrollView.contentOffset.y - range.min) / (range.max - range.min)))
+        let width = dragging ? Self.wide : Self.thin
+        thumb.frame = CGRect(x: bounds.width - width - 4, y: (bounds.height - height) * fraction, width: width, height: height)
+        thumb.layer.cornerRadius = width / 2
+    }
+
+    private func show() {
+        hideWork?.cancel()
+        guard thumb.alpha < 1 else { return }
+        UIView.animate(withDuration: 0.15, delay: 0, options: [.beginFromCurrentState, .allowUserInteraction]) { self.thumb.alpha = 1 }
+    }
+
+    private func scheduleHide() {
+        hideWork?.cancel()
+        let work = DispatchWorkItem { [weak self] in
+            guard let self, !self.dragging else { return }
+            UIView.animate(withDuration: 0.3, delay: 0, options: [.beginFromCurrentState, .allowUserInteraction]) { self.thumb.alpha = 0 }
+        }
+        hideWork = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.4, execute: work)
+    }
+
+    @objc private func panned(_ pan: UIPanGestureRecognizer) {
+        guard let scrollView, let range else { return }
+        let point = pan.location(in: self)
+        switch pan.state {
+        case .began:
+            dragging = true
+            hideWork?.cancel()
+            grab = point.y - thumb.frame.minY
+            scrollView.setContentOffset(scrollView.contentOffset, animated: false)
+            Haptics.selection()
+            UIView.animate(withDuration: 0.15, delay: 0, options: [.beginFromCurrentState]) { self.layoutThumb() }
+        case .changed:
+            let travel = Swift.max(1, bounds.height - thumbHeight)
+            let fraction = Swift.min(1, Swift.max(0, (point.y - grab) / travel))
+            scrollView.contentOffset.y = range.min + fraction * (range.max - range.min)
+            layoutThumb()
+        default:
+            dragging = false
+            UIView.animate(withDuration: 0.2, delay: 0, options: [.beginFromCurrentState]) { self.layoutThumb() }
+            scheduleHide()
+        }
     }
 }
 

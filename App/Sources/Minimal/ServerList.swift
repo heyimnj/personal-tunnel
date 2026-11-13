@@ -129,6 +129,8 @@ class SwipeRow: UIView, UIGestureRecognizerDelegate {
     /// Height of the content; the view itself may be shorter while it is uncovered.
     var contentHeight: CGFloat = 63
     var onOpen: ((SwipeRow) -> Void)?
+    /// Every placement of the front (the swipe offset), inside the same animation.
+    var onSlide: ((CGFloat) -> Void)?
     private let rail = UIView()
     private var pills: [SwipePill] = []
     /// The actions are fully out (a light tap of the haptics when they get there).
@@ -189,6 +191,7 @@ class SwipeRow: UIView, UIGestureRecognizerDelegate {
         super.layoutSubviews()
         front.frame = CGRect(x: offset, y: 0, width: bounds.width, height: contentHeight)
         rail.frame = CGRect(x: 0, y: 0, width: bounds.width, height: contentHeight)
+        onSlide?(offset)
         guard !pills.isEmpty else { return }
         let full = railWidth
         let pulled = max(0, -offset)
@@ -238,6 +241,11 @@ class SwipeRow: UIView, UIGestureRecognizerDelegate {
 
     override func gestureRecognizerShouldBegin(_ gesture: UIGestureRecognizer) -> Bool {
         guard let pan = gesture as? UIPanGestureRecognizer, !actions.isEmpty else { return false }
+        // A swipe from the very edge of the screen belongs to the sheet («Назад»).
+        if let window {
+            let start = pan.location(in: window).x - pan.translation(in: window).x
+            if start < 24 || start > window.bounds.width - 24 { return false }
+        }
         let velocity = pan.velocity(in: self)
         return abs(velocity.x) > abs(velocity.y) * 1.2 && (velocity.x < 0 || isOpen)
     }
@@ -496,30 +504,26 @@ enum SelectionMark {
     }
 }
 
-/// The provider's line under an open subscription's head: traffic used of the
-/// limit on the left, until when it is active on the right.
+/// The provider's line under an open subscription's head, one line from the
+/// left: «⇅ 84.1 GB из ∞ | 📅 Активна до 28.11.2026 (16 дней)». It slides with
+/// the head when the head is swiped (`slide`), clipped at the card's edge.
 final class SubscriptionInfoStrip: UIView {
-    private let traffic = UILabel(font: Theme.font(.footnote), color: .secondaryLabel)
-    private let expiry = UILabel(font: Theme.font(.footnote), color: .secondaryLabel)
-    private let trafficIcon = UIImageView(image: UIImage(systemName: "arrow.up.arrow.down", withConfiguration: UIImage.SymbolConfiguration(font: Theme.font(.caption1, .medium))))
-    private let expiryIcon = UIImageView(image: UIImage(systemName: "calendar", withConfiguration: UIImage.SymbolConfiguration(font: Theme.font(.caption1, .medium))))
+    private let label = UILabel()
     private var shown: (String?, String?) = (nil, nil)
+
+    /// The head's swipe offset (≤ 0): the text moves with the title.
+    var slide: CGFloat = 0 {
+        didSet { if slide != oldValue { setNeedsLayout() } }
+    }
 
     override init(frame: CGRect) {
         super.init(frame: frame)
         clipsToBounds = true
         isUserInteractionEnabled = false
-        for icon in [trafficIcon, expiryIcon] {
-            icon.tintColor = .secondaryLabel
-            icon.contentMode = .center
-            addSubview(icon)
-        }
-        for label in [traffic, expiry] {
-            label.adjustsFontSizeToFitWidth = true
-            label.minimumScaleFactor = 0.8
-            addSubview(label)
-        }
-        expiry.textAlignment = .right
+        label.adjustsFontSizeToFitWidth = true
+        label.minimumScaleFactor = 0.75
+        label.lineBreakMode = .byTruncatingTail
+        addSubview(label)
     }
 
     @available(*, unavailable)
@@ -528,42 +532,32 @@ final class SubscriptionInfoStrip: UIView {
     func show(traffic text: String?, expiry date: String?) {
         guard shown.0 != text || shown.1 != date else { return }
         shown = (text, date)
-        traffic.text = text
-        expiry.text = date
-        trafficIcon.isHidden = text == nil
-        expiryIcon.isHidden = date == nil
+        let font = Theme.font(.footnote)
+        let color = UIColor.secondaryLabel
+        let line = NSMutableAttributedString()
+        func part(_ symbol: String, _ value: String) {
+            let configuration = UIImage.SymbolConfiguration(font: Theme.font(.caption1, .medium))
+            if let image = UIImage(systemName: symbol, withConfiguration: configuration)?.withTintColor(color, renderingMode: .alwaysOriginal) {
+                let attachment = NSTextAttachment(image: image)
+                line.append(NSAttributedString(attachment: attachment))
+                line.append(NSAttributedString(string: " "))
+            }
+            line.append(NSAttributedString(string: value, attributes: [.font: font, .foregroundColor: color]))
+        }
+        if let text { part("arrow.up.arrow.down", text) }
+        if text != nil, date != nil {
+            line.append(NSAttributedString(string: "  |  ", attributes: [.font: font, .foregroundColor: UIColor.tertiaryLabel]))
+        }
+        if let date { part("calendar", date) }
+        label.attributedText = line
         accessibilityLabel = [text, date].compactMap { $0 }.joined(separator: ", ")
         setNeedsLayout()
     }
 
     override func layoutSubviews() {
         super.layoutSubviews()
-        let inset: CGFloat = 20, icon: CGFloat = 16, gap: CGFloat = 5
-        let height: CGFloat = ServerListView.infoHeight
-        let top: CGFloat = 0
-        var left = inset
-        let right = bounds.width - inset
-        let both = shown.0 != nil && shown.1 != nil
-        let half = (bounds.width - 2 * inset - 12) / 2
-        if shown.0 != nil {
-            let want = ceil(traffic.intrinsicContentSize.width)
-            let width = min(want, (both ? half : bounds.width - 2 * inset) - icon - gap)
-            trafficIcon.frame = CGRect(x: left, y: top, width: icon, height: height)
-            traffic.frame = CGRect(x: left + icon + gap, y: top, width: width, height: height)
-            left += icon + gap + width + 12
-        }
-        if shown.1 != nil {
-            let want = ceil(expiry.intrinsicContentSize.width)
-            let room = both ? max(half, right - left) : bounds.width - 2 * inset
-            let width = min(want, room - icon - gap)
-            expiry.frame = CGRect(x: right - width, y: top, width: width, height: height)
-            expiryIcon.frame = CGRect(x: right - width - gap - icon, y: top, width: icon, height: height)
-            if !both {
-                // Alone it sits where the traffic would: on the left.
-                expiryIcon.frame.origin.x = inset
-                expiry.frame.origin.x = inset + icon + gap
-            }
-        }
+        let inset: CGFloat = 20
+        label.frame = CGRect(x: inset + slide, y: 0, width: max(0, bounds.width - 2 * inset), height: ServerListView.infoHeight)
     }
 }
 
@@ -664,6 +658,11 @@ final class ServerListView: UIScrollView {
     static let tail: CGFloat = 5
     static let gap: CGFloat = 10
 
+    /// Room above the first subscription (the search field lives there).
+    var leading: CGFloat = 0 {
+        didSet { if leading != oldValue { layoutList() } }
+    }
+
     var configureHeader: ((SubscriptionHeaderView, Int64) -> Void)?
     var configureRow: ((ServerRowView, Int64, String) -> Void)?
     var actionsForHeader: ((Int64) -> [SwipeAction])?
@@ -745,6 +744,13 @@ final class ServerListView: UIScrollView {
                 surface.header.tap.onTap = { [weak self] in self?.tappedHeader(section.id) }
                 surface.filters.onPick = { [weak self] tag in self?.onFilter?(section.id, tag) }
                 surface.header.onOpen = { [weak self] row in self?.swipeStarted(row) }
+                // The provider's line moves with the swiped title (the capsules
+                // stand beside the title, not over the line).
+                surface.header.onSlide = { [weak surface] offset in
+                    guard let surface else { return }
+                    surface.info.slide = offset
+                    surface.info.layoutIfNeeded()
+                }
                 insertSubview(surface, at: 0)
                 surfaces[section.id] = surface
             }
@@ -934,7 +940,7 @@ final class ServerListView: UIScrollView {
 
     private func layoutList() {
         let width = bounds.width - 2 * Self.margin
-        var y: CGFloat = 0
+        var y: CGFloat = leading
         for section in sections {
             guard let surface = surfaces[section.id] else { continue }
             let progress = max(0, springs[section.id]?.value ?? 0)
@@ -967,7 +973,11 @@ final class ServerListView: UIScrollView {
             surface.show(progress: min(1, progress), standalone: section.standalone)
             y += height + Self.gap
         }
-        let size = CGSize(width: bounds.width, height: max(0, y - Self.gap) + 24)
+        var height = max(0, y - Self.gap) + 24
+        // With room above (the search), a short list is still long enough to tuck
+        // that room under the bar.
+        if leading > 0 { height = max(height, bounds.height - adjustedContentInset.top - adjustedContentInset.bottom + leading) }
+        let size = CGSize(width: bounds.width, height: height)
         if contentSize != size { contentSize = size }
         // A closing subscription near the end pulls the list back with it.
         let maxOffset = max(-adjustedContentInset.top, contentSize.height + adjustedContentInset.bottom - bounds.height)

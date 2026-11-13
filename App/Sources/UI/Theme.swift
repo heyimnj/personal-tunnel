@@ -311,9 +311,9 @@ extension UIStackView {
 
 /// A plain control that dims while pressed and calls a closure. With `ripple`
 /// it gives 1.5.0's `ModernTouchFeedback` instead: the control grows by 1.2 %
-/// and a soft shade spreads from under the finger over the whole control; it
-/// stays while the finger holds it and fades once it lets go. Only the server
-/// capsule and the connect button of Home use it.
+/// and a faint wave runs from under the finger out to the edges; a barely
+/// visible tint stays while the finger holds it and fades once it lets go. Only
+/// the server capsule and the connect button of Home use it.
 class TapControl: UIControl {
     var onTap: (() -> Void)?
     var pressScale: CGFloat = 0.97
@@ -378,9 +378,9 @@ class TapControl: UIControl {
         bringSubviewToFront(rippleClip)
     }
 
-    /// The shade: a soft, nearly even radial wash twice the diagonal, centred under
-    /// the finger. It covers the whole control in 0.25 s and holds there until the
-    /// press ends.
+    /// The wave: a faint disc with a slightly brighter soft rim, centred under the
+    /// finger. It runs out to the farthest corner in 0.35 s, the rim leaving past
+    /// the edges, and a barely visible tint stays while the finger holds on.
     private func spread(from point: CGPoint) {
         let clip: UIView
         if let rippleClip { clip = rippleClip } else {
@@ -394,37 +394,41 @@ class TapControl: UIControl {
         }
         bringSubviewToFront(clip)
         fadeShade()
-        let reach = hypot(bounds.width, bounds.height) * 2
+        // From the finger to the farthest corner, so the disc covers it all; the rim
+        // (the outer 15 %) has left the control by then.
+        let corners = [CGPoint.zero, CGPoint(x: bounds.width, y: 0), CGPoint(x: 0, y: bounds.height), CGPoint(x: bounds.width, y: bounds.height)]
+        let farthest = corners.map { hypot($0.x - point.x, $0.y - point.y) }.max() ?? 1
+        let radius = farthest / 0.85
+        let ink = UIColor.label.resolvedColor(with: traitCollection)
         let shade = CAGradientLayer()
         shade.type = .radial
-        let ink = UIColor.label.resolvedColor(with: traitCollection)
-        shade.colors = [ink.withAlphaComponent(0.08).cgColor, ink.withAlphaComponent(0.06).cgColor, ink.withAlphaComponent(0).cgColor]
-        shade.locations = [0, 0.75, 1]
+        shade.colors = [ink.withAlphaComponent(0.035).cgColor, ink.withAlphaComponent(0.035).cgColor,
+                        ink.withAlphaComponent(0.07).cgColor, ink.withAlphaComponent(0).cgColor]
+        shade.locations = [0, 0.84, 0.93, 1]
         shade.startPoint = CGPoint(x: 0.5, y: 0.5)
         shade.endPoint = CGPoint(x: 1, y: 1)
         CATransaction.begin()
         CATransaction.setDisableActions(true)
-        shade.bounds = CGRect(x: 0, y: 0, width: reach, height: reach)
+        shade.bounds = CGRect(x: 0, y: 0, width: radius * 2, height: radius * 2)
         shade.position = point
-        shade.transform = CATransform3DIdentity
         shade.opacity = 1
         clip.layer.addSublayer(shade)
         CATransaction.commit()
         let grow = CABasicAnimation(keyPath: "transform.scale")
-        grow.fromValue = 0.02
+        grow.fromValue = 0.05
         grow.toValue = 1
-        grow.duration = 0.25
-        grow.timingFunction = CAMediaTimingFunction(name: .easeOut)
+        grow.duration = 0.35
+        grow.timingFunction = CAMediaTimingFunction(controlPoints: 0.25, 0.6, 0.35, 1)
         shade.add(grow, forKey: "spread")
         let appear = CABasicAnimation(keyPath: "opacity")
         appear.fromValue = 0
         appear.toValue = 1
-        appear.duration = 0.08
+        appear.duration = 0.06
         shade.add(appear, forKey: "appear")
         self.shade = shade
     }
 
-    /// The press ended: the shade keeps spreading and fades over 0.35 s.
+    /// The press ended: the wave keeps running and fades over 0.3 s.
     private func fadeShade() {
         guard let shade else { return }
         self.shade = nil
@@ -434,7 +438,7 @@ class TapControl: UIControl {
         let fade = CABasicAnimation(keyPath: "opacity")
         fade.fromValue = current
         fade.toValue = 0
-        fade.duration = 0.35
+        fade.duration = 0.3
         fade.timingFunction = CAMediaTimingFunction(name: .easeOut)
         shade.opacity = 0
         shade.add(fade, forKey: "fade")
