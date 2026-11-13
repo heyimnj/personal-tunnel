@@ -135,7 +135,6 @@
 "Интерфейс" = "Interface";
 "Карточки и панели" = "Cards and panels";
 "Классика" = "Classic";
-"Классика: активный узел проверяется по HTTPS раз в минуту. Список: generate_204 по HTTPS через каждый узел, до 8 одновременно, ожидание до 5 с; без VPN — то же ядром приложения, 3 с, до 10 одновременно." = "Classic: the active server is checked over HTTPS once a minute. The list: generate_204 over HTTPS through each server, up to 8 at once, waiting up to 5 s; without VPN the same by the app's core, 3 s, up to 10 at once.";
 "Кнопка подключения" = "Connect button";
 "Коммит" = "Commit";
 "Конфигурация 1.x не прочитана. Обновите подписку." = "The 1.x configuration could not be read. Update the subscription.";
@@ -428,7 +427,6 @@
 "Плюс HaGeZi Light: около 88 000 доменов рекламы, трекеров и телеметрии. Практически без ложных блокировок." = "Plus HaGeZi Light: about 88,000 ad, tracker and telemetry domains. Practically no false blocks.";
 "Плюс HaGeZi Normal: около 208 000 доменов. Блокирует больше, изредка может задеть нужный сайт; занимает больше памяти туннеля." = "Plus HaGeZi Normal: about 208,000 domains. Blocks more, may now and then catch a needed site; takes more of the tunnel's memory.";
 "Запросы к рекламным и следящим серверам отклоняются в трафике VPN раньше остальных правил: DNS отвечает 0.0.0.0, соединения по имени сервера (SNI) закрываются. Реклама, которая приходит с домена самого сервиса (YouTube, Spotify), так не убирается. Изменения применяются к работающему туннелю." = "Requests to ad and tracking servers are refused in the VPN's traffic before any other rule: DNS answers 0.0.0.0, connections are closed by server name (SNI). Ads served from the service's own domain (YouTube, Spotify) are not removed this way. Changes apply to the running tunnel.";
-"Основной: generate_204 через каждый узел подключённой подписки (3 с), до 20 одновременно. Серверы остальных подписок и все серверы без VPN проверяет ядро приложения: generate_204 через каждый сервер (3 с), до 10 одновременно; с VPN их задержка включает туннель. Результаты хранятся 2,5 минуты, при открытии списка проверяются только устаревшие." = "Primary: generate_204 through every server of the connected subscription (3 s), up to 20 at once. Servers of other subscriptions, and every server without VPN, are checked by the app's core: generate_204 through each server (3 s), up to 10 at once; with VPN their delay includes the tunnel. Results are kept for 2.5 minutes; opening the list checks only the outdated ones.";
 "URL-тест «%@» ядром приложения: %@" = "URL test “%@” by the app's core: %@";
 "URL-тест «%@» через туннель: %@" = "URL test “%@” through the tunnel: %@";
 "Подписка «%@»: ещё %@ серверов есть только в обычном списке ссылок — добавлены." = "Subscription “%@”: %@ more servers are only in the plain list of links — added.";
@@ -489,3 +487,5 @@
 "дня" = "days";
 "дней" = "days";
 "Готово" = "Done";
+"Классика: активный узел проверяется по HTTPS раз в минуту. Список: generate_204 по HTTPS через каждый узел, до 8 одновременно, ожидание до 5 с; без VPN — то же ядром приложения, 4 с, до 10 одновременно. Не уложившийся по времени узел сразу проверяется ещё раз." = "Classic: the active server is checked over HTTPS once a minute. The list: generate_204 over HTTPS through each server, up to 8 at once, waiting up to 5 s; without VPN the same by the app's core, 4 s, up to 10 at once. A server that runs out of time is checked once more at once.";
+"Основной: generate_204 через каждый узел подключённой подписки (4 с), до 20 одновременно. Серверы остальных подписок и все серверы без VPN проверяет ядро приложения: generate_204 через каждый сервер (4 с), до 10 одновременно; с VPN их задержка включает туннель. Не уложившийся по времени узел сразу проверяется ещё раз. Результаты хранятся 2,5 минуты, при открытии списка проверяются только устаревшие." = "Primary: generate_204 through every server of the connected subscription (4 s), up to 20 at once. Servers of other subscriptions, and every server without VPN, are checked by the app's core: generate_204 through each server (4 s), up to 10 at once; with VPN their delay includes the tunnel. A server that runs out of time is checked once more at once. Results are kept for 2.5 minutes; opening the list checks only the outdated ones.";

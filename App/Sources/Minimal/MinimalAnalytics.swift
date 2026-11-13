@@ -207,6 +207,11 @@ final class MinimalAnalyticsViewController: UIViewController {
         set { scroll.onPullEnd = newValue }
     }
 
+    var onHandOff: ((CGFloat) -> Void)? {
+        get { scroll.onHandOff }
+        set { scroll.onHandOff = newValue }
+    }
+
     /// The screen's insets (status bar, tab bar), set by Home.
     var pageInsets: UIEdgeInsets = .zero {
         didSet {
@@ -271,18 +276,30 @@ final class MinimalAnalyticsViewController: UIViewController {
             return UIStackView(.horizontal, spacing: 6, alignment: .center, [dot, UILabel(text, font: Theme.font(.caption1), color: color)])
         }
         graphCard.stack.addArrangedSubview(UIStackView(.horizontal, spacing: 14, alignment: .center, [key(L("Загрузка"), SpeedGraphView.downColor), key(L("Отдача"), SpeedGraphView.upColor), UIView()]))
-        graphCard.stack.addArrangedSubview(graphHint)
+        // Over the graph, not under it: when data comes the card keeps its height
+        // (a card that changed height moved the page under a scrolling finger).
+        graphHint.textAlignment = .center
+        graphHint.numberOfLines = 0
+        graph.addSubview(graphHint)
+        graphHint.translatesAutoresizingMaskIntoConstraints = false
+        NSLayoutConstraint.activate([
+            graphHint.centerYAnchor.constraint(equalTo: graph.centerYAnchor), graphHint.leadingAnchor.constraint(equalTo: graph.leadingAnchor, constant: 12),
+            graphHint.trailingAnchor.constraint(equalTo: graph.trailingAnchor, constant: -12),
+        ])
 
         let routes = AnalyticsCard()
         routes.stack.alignment = .fill
         routes.stack.spacing = 14
         routes.stack.addArrangedSubview(AnalyticsCard.title("chart.pie", L("Маршруты наблюдаемых соединений"), big: true))
-        // 1.5.0: an 88 pt ring with 8 pt around it, shown only once there is data.
+        // 1.5.0: an 88 pt ring with 8 pt around it. It is always there (grey with
+        // «no data» beside it until connections come), so the card never changes
+        // height while the page is scrolled: that moved everything below it.
         donut.translatesAutoresizingMaskIntoConstraints = false
         NSLayoutConstraint.activate([donut.widthAnchor.constraint(equalToConstant: 88), donut.heightAnchor.constraint(equalToConstant: 88)])
+        legend.spacing = 6
+        legend.addArrangedSubview(routesEmpty)
         let chart = UIStackView(.horizontal, spacing: 18, alignment: .center, [Classic.padded(donut, UIEdgeInsets(top: 8, left: 8, bottom: 8, right: 8)), legend])
         routesChart = chart
-        routes.stack.addArrangedSubview(routesEmpty)
         routes.stack.addArrangedSubview(chart)
         routes.stack.addArrangedSubview(UILabel(L("Показаны только соединения, полученные от ядра во время наблюдения; это не весь трафик сеанса."), font: Theme.font(.caption2), color: .secondaryLabel, lines: 0))
 
@@ -392,18 +409,27 @@ final class MinimalAnalyticsViewController: UIViewController {
     /// Names in the legend, in order; the rows are rebuilt only when they change.
     private var legendNames: [String] = []
     private var legendAmounts: [UILabel] = []
+    /// Five rows fit beside the ring, so the card's height stays the same.
+    private static let legendRows = 5
 
     private func show(_ connections: CoreConnections) {
         let tcpText = "\(connections.tcp)", udpText = "\(connections.udp)"
         if tcp.value.text != tcpText { tcp.value.text = tcpText }
         if udp.value.text != udpText { udp.value.text = udpText }
-        let top = Array(connections.routes.sorted { $0.value > $1.value }.prefix(6))
+        let top = Array(connections.routes.sorted { $0.value > $1.value }.prefix(Self.legendRows))
         let shares = top.map(\.value)
         if donut.shares != shares { donut.shares = shares }
-        routesEmpty.isHidden = !top.isEmpty
-        routesChart?.isHidden = top.isEmpty
         let names = top.map(\.key)
-        if names == legendNames {
+        if names.isEmpty {
+            if !legendNames.isEmpty || routesEmpty.superview == nil {
+                legendNames = []
+                legendAmounts = []
+                legend.arrangedSubviews.forEach { $0.removeFromSuperview() }
+                legend.addArrangedSubview(routesEmpty)
+            }
+            return
+        }
+        if names == legendNames, routesEmpty.superview == nil {
             for (label, route) in zip(legendAmounts, top) {
                 let text = Format.bytes(route.value)
                 if label.text != text { label.text = text }

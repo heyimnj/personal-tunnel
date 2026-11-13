@@ -155,11 +155,11 @@ struct NetworkProbes: LatencyProbes {
                     if result.error.isEmpty {
                         continuation.resume(returning: .delay(max(1, Int(result.delay))))
                     } else {
-                        if samples.take() { report?(Lf("URL-тест «%@» через туннель: %@", tag, Redactor.redact(result.error))) }
+                        if samples.take() { report?(Lf("URL-тест «%@» через туннель: %@", tag, Redactor.hideAddresses(Redactor.redact(result.error)))) }
                         continuation.resume(returning: .failed(ProbeFailure.classify(result.error)))
                     }
                 } catch {
-                    if samples.take() { report?(Lf("URL-тест «%@» через туннель: %@", tag, Redactor.redact(error.localizedDescription))) }
+                    if samples.take() { report?(Lf("URL-тест «%@» через туннель: %@", tag, Redactor.hideAddresses(Redactor.redact(error.localizedDescription)))) }
                     continuation.resume(returning: .failed(ProbeFailure.classify(error.localizedDescription)))
                 }
             }
@@ -252,7 +252,7 @@ final class LocalCoreProbes: LatencyProbes, @unchecked Sendable {
                 if result.error.isEmpty {
                     continuation.resume(returning: .delay(max(1, Int(result.delay))))
                 } else {
-                    if self.samples.take() { self.report?(Lf("URL-тест «%@» ядром приложения: %@", inner, Redactor.redact(result.error))) }
+                    if self.samples.take() { self.report?(Lf("URL-тест «%@» ядром приложения: %@", inner, Redactor.hideAddresses(Redactor.redact(result.error)))) }
                     continuation.resume(returning: .failed(ProbeFailure.classify(result.error)))
                 }
             }

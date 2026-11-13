@@ -48,9 +48,10 @@ public struct LatencyMode: Equatable, Sendable {
     public var link: String
 
     /// The app's own core without the VPN (3.0): a URL test of every server,
-    /// 3 s each, 10 at a time, at the address the chosen mode uses.
+    /// 4 s each (3.0.3, was 3: a cold first test spends most of it finding the
+    /// server's address), 10 at a time, at the address the chosen mode uses.
     public static func localCore(link: String) -> LatencyMode {
-        LatencyMode(tcpFilter: false, directTimeout: 3, directConcurrency: 10, urlTimeoutMs: 3000, urlConcurrency: 10, link: link)
+        LatencyMode(tcpFilter: false, directTimeout: 3, directConcurrency: 10, urlTimeoutMs: 4000, urlConcurrency: 10, link: link)
     }
 
     /// «Основной», «Классика», «Альтернативный» — параметры 1.5.0.
@@ -58,7 +59,7 @@ public struct LatencyMode: Equatable, Sendable {
         switch name {
         case "classic": return LatencyMode(tcpFilter: false, directTimeout: 3, directConcurrency: 10, urlTimeoutMs: 5000, urlConcurrency: 8, link: "https://www.gstatic.com/generate_204")
         case "alternative": return LatencyMode(tcpFilter: false, directTimeout: 3, directConcurrency: 10, urlTimeoutMs: 2500, urlConcurrency: 12, link: "http://www.gstatic.com/generate_204")
-        default: return LatencyMode(tcpFilter: true, directTimeout: 3, directConcurrency: 10, urlTimeoutMs: 3000, urlConcurrency: 20, link: "https://www.gstatic.com/generate_204")
+        default: return LatencyMode(tcpFilter: true, directTimeout: 3, directConcurrency: 10, urlTimeoutMs: 4000, urlConcurrency: 20, link: "https://www.gstatic.com/generate_204")
         }
     }
 }
@@ -126,8 +127,15 @@ public actor LatencyRunner {
             let failed = results.filter { if case .failed = $0.value { return true }; return false }
             if !failed.isEmpty { await deliver(failed) }
         }) { [probes] target in
-            let result = await LatencyRunner.deadline(seconds: 2) {
+            var result = await LatencyRunner.deadline(seconds: 2) {
                 await probes.tcp(host: target.host ?? "", port: target.port ?? 0, timeout: 1.5, label: target.label)
+            }
+            // A quick connect that only ran out of time gets one more try before the
+            // server is written off.
+            if LatencyRunner.worthRetry(result), !Task.isCancelled {
+                result = await LatencyRunner.deadline(seconds: 2) {
+                    await probes.tcp(host: target.host ?? "", port: target.port ?? 0, timeout: 1.5, label: target.label)
+                }
             }
             if case .delay = result { await survivors.add(target.tag) }
             return result
@@ -136,9 +144,7 @@ public actor LatencyRunner {
         let passed = await survivors.tags
         let second = targets.filter { $0.udp || $0.host == nil || $0.port == nil || passed.contains($0.tag) }
         await pass(second, concurrency: mode.urlConcurrency, deliver: deliver) { [probes] target in
-            await LatencyRunner.deadline(seconds: Double(mode.urlTimeoutMs) / 1000 + 1) {
-                await probes.url(tag: target.tag, link: mode.link, timeoutMs: mode.urlTimeoutMs)
-            }
+            await LatencyRunner.urlTest(target, probes: probes, mode: mode)
         }
     }
 
@@ -173,12 +179,28 @@ public actor LatencyRunner {
         if !buffer.isEmpty, !Task.isCancelled { await deliver(buffer) }
     }
 
-    static func measure(_ target: Target, probes: LatencyProbes, mode: LatencyMode, tunnel: Bool) async -> ProbeResult {
-        if tunnel {
-            return await deadline(seconds: Double(mode.urlTimeoutMs) / 1000 + 1) {
+    /// A first test through a server is often cold: the core still has to find the
+    /// server's address and open every layer of the connection. One that runs out
+    /// of time (or trips on that lookup) is tried once more at once, warmed up; a
+    /// second answer that comes is the real delay.
+    static func worthRetry(_ result: ProbeResult) -> Bool {
+        if case let .failed(reason) = result { return reason == .timeout || reason == .dns }
+        return false
+    }
+
+    static func urlTest(_ target: Target, probes: LatencyProbes, mode: LatencyMode) async -> ProbeResult {
+        let once: () async -> ProbeResult = {
+            await deadline(seconds: Double(mode.urlTimeoutMs) / 1000 + 1) {
                 await probes.url(tag: target.tag, link: mode.link, timeoutMs: mode.urlTimeoutMs)
             }
         }
+        let first = await once()
+        guard worthRetry(first), !Task.isCancelled else { return first }
+        return await once()
+    }
+
+    static func measure(_ target: Target, probes: LatencyProbes, mode: LatencyMode, tunnel: Bool) async -> ProbeResult {
+        if tunnel { return await urlTest(target, probes: probes, mode: mode) }
         // Without the VPN: a quick TCP connect with one retry, as 1.5.0 did.
         guard !target.udp else { return .failed(.unsupported) }
         guard let host = target.host, let port = target.port else { return .failed(.noAddress) }

@@ -1,6 +1,6 @@
 // Версия Personal Tunnel. Номер сборки должен только расти: 1.5.0 была сборкой 179.
-MARKETING_VERSION = 3.0.2
-CURRENT_PROJECT_VERSION = 220
+MARKETING_VERSION = 3.0.3
+CURRENT_PROJECT_VERSION = 221
 // Метка предрелиза внизу настроек: «3.0, RC 2 (217)», «3.0, RC 1 (216)». Пусто у релиза: «3.0 (218)».
 PRERELEASE =
 

@@ -70,8 +70,13 @@ final class MinimalServersViewController: UIViewController, UIScrollViewDelegate
     private var placedSearch = false
     private static let searchHeight: CGFloat = 52
     private static let barHeight: CGFloat = 70
-    /// Where the last touch began: only a pull that starts on the bar closes the sheet.
+    /// Where the last touch began, and whether the search was already out then:
+    /// a pull closes the sheet from the bar, or from anywhere once the search is out.
     private var touchStart: CGPoint = .zero
+    private var searchOutAtTouch = false
+    /// The swipe from the screen's edge that closes the sheet (3.0.2). Off since
+    /// 3.0.3 at the owner's word; the code stays for a later decision.
+    static let edgeCloseEnabled = false
     private var expanded = Prefs.expandedSubscriptions
     private var ordered: [Subscription] = []
     private let subtitle = UILabel(font: Theme.font(12), color: .secondaryLabel)
@@ -284,7 +289,11 @@ final class MinimalServersViewController: UIViewController, UIScrollViewDelegate
         list.delegate = self
         list.keyboardDismissMode = .onDrag
         // Touches are noted (never taken) to tell a pull on the bar from one in the list.
-        let recorder = TouchRecorder { [weak self] point in self?.touchStart = point }
+        let recorder = TouchRecorder { [weak self] point in
+            guard let self else { return }
+            self.touchStart = point
+            self.searchOutAtTouch = self.placedSearch && self.list.contentOffset.y <= self.searchShown + 1
+        }
         view.addGestureRecognizer(recorder)
     }
 
@@ -310,10 +319,11 @@ final class MinimalServersViewController: UIViewController, UIScrollViewDelegate
         targetContentOffset.pointee.y = out ? searchShown : searchHidden
     }
 
-    /// The sheet closes from a pull only when it starts on the bar (the close
-    /// button, the title, the buttons); in the list a pull brings out the search.
+    /// The sheet closes from a pull that starts on the bar (the close button, the
+    /// title, the buttons), or anywhere once the search is out: the first pull in
+    /// the list brings out the search, the next one closes the sheet.
     func presentationControllerShouldDismiss(_: UIPresentationController) -> Bool {
-        touchStart.y <= Self.barHeight
+        touchStart.y <= Self.barHeight || searchOutAtTouch
     }
 
     // MARK: Closing from the edge
@@ -321,6 +331,7 @@ final class MinimalServersViewController: UIViewController, UIScrollViewDelegate
     /// A swipe from the very left or right edge of the screen takes the sheet away
     /// sideways under the finger («Назад»); from anywhere else it is the rows' swipe.
     private func buildEdgeClose() {
+        guard Self.edgeCloseEnabled else { return }
         for edge in [UIRectEdge.left, .right] {
             let pan = UIScreenEdgePanGestureRecognizer(target: self, action: #selector(edgePanned(_:)))
             pan.edges = edge

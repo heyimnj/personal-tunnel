@@ -23,6 +23,21 @@ private final class LabelProbes: LatencyProbes, @unchecked Sendable {
     func url(tag _: String, link _: String, timeoutMs _: Int) async -> ProbeResult { .delay(1) }
 }
 
+/// URL tests that time out a set number of times per server, then answer.
+private final class ColdProbes: LatencyProbes, @unchecked Sendable {
+    private let lock = NSLock()
+    private var calls: [String: Int] = [:]
+    let coldFor: Int
+    let failure: ProbeFailure
+    init(coldFor: Int, failure: ProbeFailure = .timeout) { self.coldFor = coldFor; self.failure = failure }
+    func count(_ tag: String) -> Int { lock.lock(); defer { lock.unlock() }; return calls[tag] ?? 0 }
+    func tcp(host _: String, port _: Int, timeout _: TimeInterval) async -> ProbeResult { .delay(5) }
+    func url(tag: String, link _: String, timeoutMs _: Int) async -> ProbeResult {
+        lock.lock(); calls[tag, default: 0] += 1; let n = calls[tag]!; lock.unlock()
+        return n <= coldFor ? .failed(failure) : .delay(120)
+    }
+}
+
 private actor Sink {
     var all: [String: ProbeResult] = [:]
     var batches = 0
@@ -41,6 +56,36 @@ final class LatencyTests: XCTestCase {
         XCTAssertEqual(all["b"], .failed(.refused))
         XCTAssertEqual(all["c"], .failed(.unsupported))
         XCTAssertEqual(all["d"], .failed(.noAddress))
+    }
+
+    func testColdURLTestIsTriedOnceMore() async {
+        let probes = ColdProbes(coldFor: 1)
+        let sink = Sink()
+        await LatencyRunner(probes: probes).run([.init(tag: "a", host: "h", port: 1, udp: false)],
+                                                mode: .localCore(link: "https://x"), tunnel: true) { await sink.add($0) }
+        let all = await sink.all
+        XCTAssertEqual(all["a"], .delay(120))
+        XCTAssertEqual(probes.count("a"), 2)
+    }
+
+    func testURLTestRetriesOnlyOnce() async {
+        let probes = ColdProbes(coldFor: 5)
+        let sink = Sink()
+        await LatencyRunner(probes: probes).run([.init(tag: "a", host: "h", port: 1, udp: false)],
+                                                mode: .named("primary"), tunnel: true) { await sink.add($0) }
+        let all = await sink.all
+        XCTAssertEqual(all["a"], .failed(.timeout))
+        XCTAssertEqual(probes.count("a"), 2)
+    }
+
+    func testRefusedURLTestIsNotRetried() async {
+        let probes = ColdProbes(coldFor: 1, failure: .refused)
+        let sink = Sink()
+        await LatencyRunner(probes: probes).run([.init(tag: "a", host: "h", port: 1, udp: false)],
+                                                mode: .localCore(link: "https://x"), tunnel: true) { await sink.add($0) }
+        let all = await sink.all
+        XCTAssertEqual(all["a"], .failed(.refused))
+        XCTAssertEqual(probes.count("a"), 1)
     }
 
     func testTunnelRunFiltersThenURLTests() async {

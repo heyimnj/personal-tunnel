@@ -241,8 +241,9 @@ class SwipeRow: UIView, UIGestureRecognizerDelegate {
 
     override func gestureRecognizerShouldBegin(_ gesture: UIGestureRecognizer) -> Bool {
         guard let pan = gesture as? UIPanGestureRecognizer, !actions.isEmpty else { return false }
-        // A swipe from the very edge of the screen belongs to the sheet («Назад»).
-        if let window {
+        // A swipe from the very edge of the screen belongs to the sheet («Назад»),
+        // while that gesture is on.
+        if MinimalServersViewController.edgeCloseEnabled, let window {
             let start = pan.location(in: window).x - pan.translation(in: window).x
             if start < 24 || start > window.bounds.width - 24 { return false }
         }

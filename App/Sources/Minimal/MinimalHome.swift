@@ -56,15 +56,28 @@ final class HandoffScrollView: UIScrollView {
         }
     }
 
+    /// The page took a drag while the list stood past its top (the bounce after a
+    /// flick): how far past, so the page can start from there instead of the list
+    /// jumping back to its top in one frame.
+    var onHandOff: ((CGFloat) -> Void)?
+
     override func gestureRecognizerShouldBegin(_ gestureRecognizer: UIGestureRecognizer) -> Bool {
         if gestureRecognizer === panGestureRecognizer {
             let top = -adjustedContentInset.top
-            // Still settling at the top edge (the bounce after a flick, while the
-            // scroll indicator shows): a touch here would only catch that bounce,
-            // so the page takes the drag at once.
-            if isDecelerating, contentOffset.y <= top + 1 { return false }
             let velocity = panGestureRecognizer.velocity(in: self)
-            if contentOffset.y <= top + 1, velocity.y > 0, abs(velocity.y) > abs(velocity.x) { return false }
+            let downward = velocity.y > 0 && abs(velocity.y) > abs(velocity.x)
+            // At the top edge (resting, or still in the bounce after a flick) a pull
+            // down belongs to the page. A drag up stays with the list, bounce or not
+            // (3.0.2 gave every drag in the bounce to the page, which cut the bounce
+            // off with a jump and nudged the page).
+            if contentOffset.y <= top + 1, downward {
+                let past = top - contentOffset.y
+                if past > 0.5 {
+                    setContentOffset(CGPoint(x: contentOffset.x, y: top), animated: false)
+                    onHandOff?(past)
+                }
+                return false
+            }
         }
         return super.gestureRecognizerShouldBegin(gestureRecognizer)
     }
@@ -121,6 +134,7 @@ final class MinimalHomeViewController: UIViewController, UIScrollViewDelegate, U
         pager.addSubview(analyticsNavigation.view)
         analyticsNavigation.didMove(toParent: self)
         analytics.onPull = { [weak self] pull in self?.pullPage(pull) }
+        analytics.onHandOff = { [weak self] past in self?.handOff(past) }
         analytics.onPullEnd = { [weak self] velocity in self?.releasePage(velocity) }
         connection.onChooseServer = { [weak self] in
             self?.present(MinimalServersViewController.wrapped(), animated: true)
@@ -184,6 +198,19 @@ final class MinimalHomeViewController: UIViewController, UIScrollViewDelegate, U
             showDots()
         }
         pager.contentOffset = CGPoint(x: 0, y: max(0, height - pull))
+    }
+
+    /// The list gave up a drag while bouncing past its top: the page moves down by
+    /// that much (what was on screen stays where it was) and its own drag carries
+    /// on from there. Should no drag follow, it settles back on the page.
+    private func handOff(_ past: CGFloat) {
+        let height = pager.bounds.height
+        guard height > 0, page == 1, !animatingPage else { return }
+        pager.contentOffset = CGPoint(x: 0, y: max(0, height - past))
+        DispatchQueue.main.async { [weak self] in
+            guard let self, !self.pager.isDragging, !self.pullingPage, !self.animatingPage else { return }
+            self.go(to: self.page, animated: true)
+        }
     }
 
     private func releasePage(_ velocity: CGFloat) {

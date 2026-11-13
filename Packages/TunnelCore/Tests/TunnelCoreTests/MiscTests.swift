@@ -247,4 +247,10 @@ final class ServerDraftTests: XCTestCase {
         other.transport = .tcp
         XCTAssertNil(try other.outbound(updating: xhttp)["transport"])
     }
+
+    func testProbeLinesLoseAddresses() {
+        XCTAssertEqual(Redactor.hideAddresses("dial tcp 203.0.113.7:443: i/o timeout"), "dial tcp <адрес>:443: i/o timeout")
+        XCTAssertEqual(Redactor.hideAddresses("dial tcp [2001:db8::1]:443: refused"), "dial tcp [<адрес>]:443: refused")
+        XCTAssertEqual(Redactor.hideAddresses("context deadline exceeded"), "context deadline exceeded")
+    }
 }

@@ -28,6 +28,13 @@ public enum Redactor {
 public extension Redactor {
     private static let ipAddress = try! NSRegularExpression(pattern: #"\b(?:\d{1,3}\.){3}\d{1,3}\b|\b[0-9a-fA-F]{1,4}(?::[0-9a-fA-F]{0,4}){2,7}\b"#)
 
+    /// Every IP address in the text becomes `<адрес>`. For lines about the user's
+    /// own servers (a failed probe names the address it dialled), where a
+    /// server's name may be missing and only its address shows.
+    static func hideAddresses(_ text: String) -> String {
+        ipAddress.stringByReplacingMatches(in: text, range: NSRange(text.startIndex..., in: text), withTemplate: "<адрес>")
+    }
+
     /// Hides the user's own servers in a text that leaves the app: their names
     /// become `<сервер>`, and a line that named one loses its IP addresses too
     /// (the core logs what a server's name resolved to).
