@@ -4,9 +4,14 @@ import Foundation
 public struct TunnelOptions: Codable, Equatable, Sendable {
     /// Reject domains of the bundled ad list.
     public var adBlocking = true
-    /// Which bundled ad list: `basic` (geosite ads, as before 3.0), `standard`
-    /// (+ HaGeZi Light, the default) or `extended` (+ HaGeZi Normal).
+    /// Which bundled ad list (3.0.5): `basic` (HaGeZi Light), `standard` (HaGeZi
+    /// Pro, the default) or `extended` (HaGeZi Pro++); each with geosite ads and
+    /// the Russian and mobile ad servers of AdGuard's filters.
     public var adBlockLevel = AdBlockLevel.standard
+    /// With ad blocking: apps' own encrypted DNS (DoH, DoT, DoQ) and iCloud
+    /// Private Relay are refused, so their names go through the tunnel's DNS and
+    /// its blocking instead of around it (3.0.5).
+    public var blockEncryptedDNS = true
     /// Russian domains and addresses go outside the VPN.
     public var bypassRussia = true
     /// Private (LAN) addresses go outside the VPN.
@@ -24,12 +29,14 @@ public struct TunnelOptions: Codable, Equatable, Sendable {
 public enum AdBlockLevel: String, Codable, CaseIterable, Sendable {
     case basic, standard, extended
 
-    /// The bundled rule sets this level blocks with.
+    /// The bundled rule sets this level blocks with. Each HaGeZi list contains
+    /// the smaller ones, so a level loads only its own.
     public var ruleSets: [String] {
+        let common = [ConfigBuilder.RuleSet.adBlock, ConfigBuilder.RuleSet.adRegional]
         switch self {
-        case .basic: return [ConfigBuilder.RuleSet.adBlock]
-        case .standard: return [ConfigBuilder.RuleSet.adBlock, ConfigBuilder.RuleSet.adStandard]
-        case .extended: return [ConfigBuilder.RuleSet.adBlock, ConfigBuilder.RuleSet.adExtended]
+        case .basic: return common + [ConfigBuilder.RuleSet.adBasic]
+        case .standard: return common + [ConfigBuilder.RuleSet.adStandard]
+        case .extended: return common + [ConfigBuilder.RuleSet.adExtended]
         }
     }
 }
@@ -44,14 +51,30 @@ public enum ConfigBuilder {
 
     /// Bundled rule sets: tag → file name inside the extension's `Rules` folder.
     public enum RuleSet {
+        /// geosite category-ads-all.
         public static let adBlock = "pt-ad-block"
+        /// Russian and mobile ad servers from AdGuard's filters (3.0.5).
+        public static let adRegional = "pt-ad-ru"
+        /// HaGeZi Light, Pro and Pro++ (3.0.5; standard was Light, extended Normal).
+        public static let adBasic = "pt-ad-basic"
         public static let adStandard = "pt-ad-standard"
         public static let adExtended = "pt-ad-extended"
+        /// HaGeZi Encrypted DNS Bypass: DoH/DoT servers and iCloud Private Relay.
+        public static let encryptedDNS = "pt-doh"
         public static let russia = ["pt-ru-domains", "pt-ru-inside", "pt-ru-ip"]
         public static let files: [String: String] = [
-            "pt-ad-block": "ad-block.srs", "pt-ad-standard": "ad-standard.srs", "pt-ad-extended": "ad-extended.srs",
+            "pt-ad-block": "ad-block.srs", "pt-ad-ru": "ad-ru.srs", "pt-ad-basic": "ad-light.srs",
+            "pt-ad-standard": "ad-standard.srs", "pt-ad-extended": "ad-extended.srs", "pt-doh": "doh.srs",
             "pt-ru-domains": "ru-domains.srs",
             "pt-ru-inside": "ru-inside.srs", "pt-ru-ip": "ru-ip.srs",
+        ]
+        /// Public resolvers apps reach by address for DNS over HTTPS/TLS/QUIC.
+        public static let encryptedDNSAddresses = [
+            "1.1.1.1/32", "1.0.0.1/32", "2606:4700:4700::1111/128", "2606:4700:4700::1001/128",
+            "8.8.8.8/32", "8.8.4.4/32", "2001:4860:4860::8888/128", "2001:4860:4860::8844/128",
+            "9.9.9.9/32", "149.112.112.112/32", "2620:fe::fe/128", "2620:fe::9/128",
+            "94.140.14.14/32", "94.140.15.15/32", "2a10:50c0::ad1:ff/128", "2a10:50c0::ad2:ff/128",
+            "208.67.222.222/32", "208.67.220.220/32", "77.88.8.8/32", "77.88.8.1/32",
         ]
         /// Marks a path the extension must point at its own bundle.
         public static let pathPrefix = "@rules/"
@@ -195,6 +218,20 @@ public enum ConfigBuilder {
             dnsRules.append(["rule_set": JSONValue(sets), "query_type": ["A"], "action": "predefined", "answer": ["*. 300 IN A 0.0.0.0"]])
             dnsRules.append(["rule_set": JSONValue(sets), "query_type": ["AAAA"], "action": "predefined", "answer": ["*. 300 IN AAAA ::"]])
             dnsRules.append(["rule_set": JSONValue(sets), "action": "predefined", "rcode": "NOERROR"])
+            if options.blockEncryptedDNS {
+                // An app or browser with its own encrypted DNS (and Safari through iCloud
+                // Private Relay) resolves around the blocking. Its resolver is refused by
+                // name, by port (DoT/DoQ) and by the public resolvers' addresses, so it
+                // falls back to the system's DNS, which is the tunnel's. The tunnel's own
+                // resolver is not affected: it is dialled through the server, not routed.
+                ruleSets.append(local(RuleSet.encryptedDNS))
+                routeRules.append(["rule_set": [.string(RuleSet.encryptedDNS)], "action": "reject", "no_drop": true])
+                routeRules.append(["port": 853, "action": "reject", "no_drop": true])
+                routeRules.append(["ip_cidr": JSONValue(RuleSet.encryptedDNSAddresses), "port": [443, 853], "action": "reject", "no_drop": true])
+                dnsRules.append(["rule_set": [.string(RuleSet.encryptedDNS)], "query_type": ["A"], "action": "predefined", "answer": ["*. 300 IN A 0.0.0.0"]])
+                dnsRules.append(["rule_set": [.string(RuleSet.encryptedDNS)], "query_type": ["AAAA"], "action": "predefined", "answer": ["*. 300 IN AAAA ::"]])
+                dnsRules.append(["rule_set": [.string(RuleSet.encryptedDNS)], "action": "predefined", "rcode": "NOERROR"])
+            }
         }
         if options.bypassPrivate {
             routeRules.append(["ip_is_private": true, "outbound": "direct"])

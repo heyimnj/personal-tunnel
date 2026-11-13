@@ -173,6 +173,12 @@ enum Prefs {
         set { defaults.set(newValue.rawValue, forKey: "pt.net.adBlockLevel") }
     }
 
+    /// With ad blocking: apps' own encrypted DNS and iCloud Private Relay are refused (3.0.5).
+    static var blockEncryptedDNS: Bool {
+        get { bool("pt.net.blockEncryptedDNS", true) }
+        set { defaults.set(newValue, forKey: "pt.net.blockEncryptedDNS") }
+    }
+
     static var bypassRussia: Bool {
         get { bool("pt.net.bypassRussia", true) }
         set { defaults.set(newValue, forKey: "pt.net.bypassRussia") }
@@ -227,6 +233,7 @@ enum Prefs {
         options.logLevel = verboseLog ? "trace" : "info"
         options.adBlocking = adBlocking
         options.adBlockLevel = adBlockLevel
+        options.blockEncryptedDNS = blockEncryptedDNS
         options.bypassRussia = bypassRussia
         options.bypassPrivate = localNetwork
         options.autoSelect = autoSelect

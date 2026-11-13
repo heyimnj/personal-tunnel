@@ -424,9 +424,11 @@
 "Стандартный" = "Standard";
 "Расширенный" = "Extended";
 "Список" = "List";
-"Около 900 рекламных доменов (v2fly category-ads-all). Почти не занимает памяти." = "About 900 ad domains (v2fly category-ads-all). Takes almost no memory.";
-"Плюс HaGeZi Light: около 88 000 доменов рекламы, трекеров и телеметрии. Практически без ложных блокировок." = "Plus HaGeZi Light: about 88,000 ad, tracker and telemetry domains. Practically no false blocks.";
-"Плюс HaGeZi Normal: около 208 000 доменов. Блокирует больше, изредка может задеть нужный сайт; занимает больше памяти туннеля." = "Plus HaGeZi Normal: about 208,000 domains. Blocks more, may now and then catch a needed site; takes more of the tunnel's memory.";
+"HaGeZi Light: около 90 000 доменов рекламы и трекеров, и российские рекламные сети. Меньше всего памяти туннеля." = "HaGeZi Light: about 90,000 ad and tracker domains, plus Russian ad networks. Uses the least tunnel memory.";
+"HaGeZi Pro: около 226 000 доменов рекламы, трекеров, телеметрии и рекламных SDK в приложениях, и российские рекламные сети (из фильтров AdGuard). Почти без ложных блокировок." = "HaGeZi Pro: about 226,000 domains of ads, trackers, telemetry and in-app ad SDKs, plus Russian ad networks (from AdGuard's filters). Almost no false blocks.";
+"HaGeZi Pro++: около 243 000 доменов. Блокирует больше; изредка может задеть нужный сайт или вход через соцсети." = "HaGeZi Pro++: about 243,000 domains. Blocks more; may now and then catch a needed site or a social sign-in.";
+"Браузеры и приложения со своим зашифрованным DNS (DoH, DoT), а также Safari через «Частный узел iCloud» узнают адреса в обход блокировки. Их DNS-серверы закрываются, и они переходят на DNS туннеля. Выключите, если какое-то приложение перестанет работать." = "Browsers and apps with their own encrypted DNS (DoH, DoT), and Safari through iCloud Private Relay, look up addresses around the blocking. Their DNS servers are closed, so they switch to the tunnel's DNS. Turn this off if some app stops working.";
+"Не пускать в обход блокировки" = "Don't let apps bypass blocking";
 "Запросы к рекламным и следящим серверам отклоняются в трафике VPN раньше остальных правил: DNS отвечает 0.0.0.0, соединения по имени сервера (SNI) закрываются. Реклама, которая приходит с домена самого сервиса (YouTube, Spotify), так не убирается. Изменения применяются к работающему туннелю." = "Requests to ad and tracking servers are refused in the VPN's traffic before any other rule: DNS answers 0.0.0.0, connections are closed by server name (SNI). Ads served from the service's own domain (YouTube, Spotify) are not removed this way. Changes apply to the running tunnel.";
 "URL-тест «%@» ядром приложения: %@" = "URL test “%@” by the app's core: %@";
 "URL-тест «%@» через туннель: %@" = "URL test “%@” through the tunnel: %@";

@@ -1,0 +1,8 @@
+Personal Tunnel regional ad-block list (ad-ru.srs)
+
+Whole-domain ad server rules ("||domain^", without per-site context) from AdGuard Filters:
+CyrillicFilters/common-sections/adservers.txt, adservers_firstparty.txt,
+CyrillicFilters/RussianFilter/sections/adservers_firstparty.txt, MobileFilter/sections/adservers.txt;
+domains allowlisted in the same filters are left out.
+https://github.com/AdguardTeam/AdguardFilters — GNU General Public License v3.0
+Revision: 0cbe282a7b179745c082e2d570fc4e9d4b110538

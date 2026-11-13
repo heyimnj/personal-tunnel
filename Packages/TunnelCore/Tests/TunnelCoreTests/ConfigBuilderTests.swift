@@ -54,20 +54,45 @@ final class ConfigBuilderTests: XCTestCase {
         let subscription = try subscription()
         var options = TunnelOptions()
         let standard = try ConfigBuilder.build(subscription: subscription, selected: nil, options: options)
-        XCTAssertEqual(standard.at("route", "rules")?[2]?["rule_set"], ["pt-ad-block", "pt-ad-standard"])
-        XCTAssertEqual(standard.at("route", "rules")?[2]?["action"], "reject")
+        let rules = standard.at("route", "rules")?.arrayValue ?? []
+        XCTAssertEqual(rules[2]["rule_set"], ["pt-ad-block", "pt-ad-ru", "pt-ad-standard"])
+        XCTAssertEqual(rules[2]["action"], "reject")
+        // 3.0.5: apps' own encrypted DNS is refused by name, port and address, ahead of the bypass rules.
+        XCTAssertEqual(rules[3]["rule_set"], ["pt-doh"])
+        XCTAssertEqual(rules[3]["action"], "reject")
+        XCTAssertEqual(rules[4]["port"], 853)
+        XCTAssertEqual(rules[4]["action"], "reject")
+        XCTAssertEqual(rules[5]["port"], [443, 853])
+        XCTAssertEqual(rules[5]["ip_cidr"]?.arrayValue?.contains("1.1.1.1/32"), true)
+        XCTAssertEqual(rules[5]["action"], "reject")
+        XCTAssertEqual(rules[6]["ip_is_private"], true)
         let dns = standard.at("dns", "rules")?.arrayValue ?? []
         XCTAssertEqual(dns[0]["answer"], ["*. 300 IN A 0.0.0.0"])
         XCTAssertEqual(dns[1]["answer"], ["*. 300 IN AAAA ::"])
         XCTAssertEqual(dns[2]["rcode"], "NOERROR")
+        XCTAssertEqual(dns[3]["rule_set"], ["pt-doh"])
+        XCTAssertEqual(dns[3]["answer"], ["*. 300 IN A 0.0.0.0"])
+        XCTAssertEqual(dns[5]["rcode"], "NOERROR")
         let paths = (standard.at("route", "rule_set")?.arrayValue ?? []).compactMap { $0["path"]?.stringValue }
-        XCTAssertTrue(paths.contains("@rules/ad-standard.srs"))
+        XCTAssertEqual(paths.filter { !$0.contains("/ru-") }, ["@rules/ad-block.srs", "@rules/ad-ru.srs", "@rules/ad-standard.srs", "@rules/doh.srs"])
         options.adBlockLevel = .extended
         let extended = try ConfigBuilder.build(subscription: subscription, selected: nil, options: options)
-        XCTAssertEqual(extended.at("route", "rules")?[2]?["rule_set"], ["pt-ad-block", "pt-ad-extended"])
+        XCTAssertEqual(extended.at("route", "rules")?[2]?["rule_set"], ["pt-ad-block", "pt-ad-ru", "pt-ad-extended"])
         options.adBlockLevel = .basic
         let basic = try ConfigBuilder.build(subscription: subscription, selected: nil, options: options)
-        XCTAssertEqual(basic.at("route", "rules")?[2]?["rule_set"], ["pt-ad-block"])
+        XCTAssertEqual(basic.at("route", "rules")?[2]?["rule_set"], ["pt-ad-block", "pt-ad-ru", "pt-ad-basic"])
+        XCTAssertTrue((basic.at("route", "rule_set")?.arrayValue ?? []).contains { $0["path"] == "@rules/ad-light.srs" })
+        // Without the encrypted DNS guard only the ad rules remain.
+        options.blockEncryptedDNS = false
+        let open = try ConfigBuilder.build(subscription: subscription, selected: nil, options: options)
+        XCTAssertEqual(open.at("route", "rules")?[3]?["ip_is_private"], true)
+        XCTAssertEqual(open.at("dns", "rules")?.arrayValue?.count, 4)
+        XCTAssertFalse(open.serialized(pretty: false).contains("pt-doh"))
+        // Every bundled file the levels name exists in the extension's Rules folder.
+        let rulesFolder = URL(fileURLWithPath: #filePath).deletingLastPathComponent().appendingPathComponent("../../../../PacketTunnel/Rules").standardized
+        for file in ConfigBuilder.RuleSet.files.values {
+            XCTAssertTrue(FileManager.default.fileExists(atPath: rulesFolder.appendingPathComponent(file).path), file)
+        }
     }
 
     func testProbeConfigurationHasServersButNoTunnel() throws {
@@ -120,9 +145,9 @@ final class ConfigBuilderTests: XCTestCase {
         XCTAssertEqual(rules[0]["action"], "sniff")
         XCTAssertEqual(rules[1]["action"], "hijack-dns")
         XCTAssertEqual(rules[2]["action"], "reject")
-        XCTAssertEqual(rules[3]["ip_is_private"], true)
-        XCTAssertEqual(rules[4]["outbound"], "direct")
-        XCTAssertEqual(full.at("route", "rule_set")?.arrayValue?.count, 5)
+        XCTAssertEqual(rules[6]["ip_is_private"], true)
+        XCTAssertEqual(rules[7]["outbound"], "direct")
+        XCTAssertEqual(full.at("route", "rule_set")?.arrayValue?.count, 7)
         XCTAssertEqual(full.at("dns", "final"), "dns-remote")
         // 3.0.5: the resolver through the VPN is a group: HTTPS, and plain TCP
         // through the same server when HTTPS fails.
@@ -151,7 +176,7 @@ final class ConfigBuilderTests: XCTestCase {
         XCTAssertEqual(config.at("route", "rule_set")?[0]?["path"], "@rules/ad-block.srs")
         let moved = ConfigBuilder.relocateRuleSets(in: config, directory: "/bundle/Rules")
         XCTAssertEqual(moved.at("route", "rule_set")?[0]?["path"], "/bundle/Rules/ad-block.srs")
-        XCTAssertEqual(moved.at("route", "rule_set")?[4]?["path"], "/bundle/Rules/ru-ip.srs")
+        XCTAssertEqual(moved.at("route", "rule_set")?[6]?["path"], "/bundle/Rules/ru-ip.srs")
     }
 
     /// A configuration 1.x stored: locations are selectors over leaves, every leaf
