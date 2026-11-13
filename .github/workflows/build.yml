@@ -1,0 +1,226 @@
+name: Build
+
+on:
+  push:
+    branches: [main, "claude/**"]
+    paths-ignore:
+      - "**.md"
+      - "handoff/**"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # App Group профиля, которым подписывается IPA (та же, что у 1.x: данные лежат в ней).
+  APP_GROUP_IDENTIFIER: group.a69e6dc9a612eb7d.1
+
+jobs:
+  core:
+    name: Тесты ядра и проверка конфигураций
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Тесты TunnelCore и образцы конфигураций
+        run: |
+          set -euo pipefail
+          docker run --rm -e ROOT="$PWD" -v "$PWD":"$PWD" -w "$PWD" swift:6.1 bash -c '
+            set -euo pipefail
+            swift test --package-path Packages/TunnelCore 2>&1 | tail -40
+            swift run --package-path Packages/TunnelCore tunnelcore-fixtures build/fixtures "$ROOT/PacketTunnel/Rules"
+          '
+          sudo chown -R "$(id -u):$(id -g)" build Packages/TunnelCore/.build
+
+      - name: Контрольные суммы списков правил
+        run: cd PacketTunnel/Rules && sha256sum -c SHA256SUMS
+
+      - name: Закрепы ядра
+        id: pins
+        run: echo "go=$(grep '^GO_VERSION=' core/VERSION | cut -d= -f2)" >> "$GITHUB_OUTPUT"
+
+      - name: Кэш проверочного ядра
+        id: check-core
+        uses: actions/cache@v4
+        with:
+          path: build/sing-box-check
+          key: sing-box-check-${{ runner.os }}-${{ hashFiles('core/VERSION', 'core/patches/**', 'scripts/build-check-core.sh', 'scripts/core-env.sh') }}
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: ${{ steps.pins.outputs.go }}
+          cache: false
+
+      - name: Тесты моста (sing-box + Xray-core)
+        run: bash scripts/test-bridge.sh
+
+      - name: Сборка проверочного ядра
+        if: steps.check-core.outputs.cache-hit != 'true'
+        run: bash scripts/build-check-core.sh
+
+      - name: Проверка конфигураций закреплённым sing-box
+        run: |
+          set -uo pipefail
+          failed=0
+          for file in build/fixtures/*.json; do
+            # Xray's own configurations are checked by the bridge's tests (Xray-core).
+            case "$(basename "$file")" in xray-runtime-*) continue ;; esac
+            if output="$(build/sing-box-check check -c "$file" 2>&1)"; then
+              echo "ok   $(basename "$file")"
+            else
+              failed=1
+              echo "FAIL $(basename "$file")"
+              echo "$output" | tail -5
+            fi
+          done
+          exit $failed
+
+  ios:
+    name: Неподписанный IPA (ядро расширения ${{ matrix.tunnel_core }})
+    runs-on: macos-26-intel
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        # combined — расширение на общей библиотеке sing-box + Xray-core (основа с 3.0.1);
+        # singbox — только sing-box, как в 2.0.4: вернуть в список для сравнения на устройстве.
+        tunnel_core: [combined]
+    env:
+      TUNNEL_CORE: ${{ matrix.tunnel_core }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Xcode
+        id: xcode
+        run: |
+          set -euo pipefail
+          XCODE="$(ls -d /Applications/Xcode*.app | grep -vi beta | sort -V | tail -1)"
+          sudo xcode-select -s "$XCODE/Contents/Developer"
+          xcodebuild -version
+          echo "stamp=$(xcodebuild -version | shasum -a 256 | cut -c1-16)" >> "$GITHUB_OUTPUT"
+
+      - name: Закрепы ядра
+        id: pins
+        run: echo "go=$(grep '^GO_VERSION=' core/VERSION | cut -d= -f2)" >> "$GITHUB_OUTPUT"
+
+      - name: Кэш AppCore
+        id: appcore
+        uses: actions/cache/restore@v4
+        with:
+          path: AppCore.xcframework
+          key: appcore-${{ runner.arch }}-${{ steps.xcode.outputs.stamp }}-${{ hashFiles('core/VERSION', 'core/patches/**', 'core/bridge/**', 'scripts/build-libbox.sh', 'scripts/core-env.sh') }}
+
+      - name: Кэш Libbox
+        id: libbox
+        uses: actions/cache/restore@v4
+        with:
+          path: Libbox.xcframework
+          key: libbox-${{ matrix.tunnel_core }}-${{ runner.arch }}-${{ steps.xcode.outputs.stamp }}-${{ hashFiles('core/VERSION', 'core/patches/**', 'core/bridge/**', 'scripts/build-libbox.sh', 'scripts/core-env.sh') }}
+
+      - uses: actions/setup-go@v5
+        if: steps.libbox.outputs.cache-hit != 'true' || steps.appcore.outputs.cache-hit != 'true'
+        with:
+          go-version: ${{ steps.pins.outputs.go }}
+          cache: false
+
+      - name: Сборка AppCore (приложение)
+        if: steps.appcore.outputs.cache-hit != 'true'
+        run: bash scripts/build-libbox.sh app
+
+      - name: Сохранить AppCore
+        if: steps.appcore.outputs.cache-hit != 'true'
+        continue-on-error: true
+        uses: actions/cache/save@v4
+        with:
+          path: AppCore.xcframework
+          key: appcore-${{ runner.arch }}-${{ steps.xcode.outputs.stamp }}-${{ hashFiles('core/VERSION', 'core/patches/**', 'core/bridge/**', 'scripts/build-libbox.sh', 'scripts/core-env.sh') }}
+
+      - name: Сборка Libbox (расширение)
+        if: steps.libbox.outputs.cache-hit != 'true'
+        run: bash scripts/build-libbox.sh tunnel
+
+      - name: Сохранить Libbox
+        if: steps.libbox.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: Libbox.xcframework
+          key: libbox-${{ matrix.tunnel_core }}-${{ runner.arch }}-${{ steps.xcode.outputs.stamp }}-${{ hashFiles('core/VERSION', 'core/patches/**', 'core/bridge/**', 'scripts/build-libbox.sh', 'scripts/core-env.sh') }}
+
+      - name: Проект Xcode
+        run: |
+          set -euo pipefail
+          brew install xcodegen
+          xcodegen generate
+
+      - name: Компиляция
+        run: |
+          set -euo pipefail
+          mkdir -p build
+          set +e
+          xcodebuild -project PersonalTunnel.xcodeproj -scheme PersonalTunnel \
+            -configuration Release -destination 'generic/platform=iOS' \
+            -derivedDataPath build/DerivedData \
+            -skipPackagePluginValidation -skipMacroValidation \
+            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY= \
+            APP_GROUP_IDENTIFIER="$APP_GROUP_IDENTIFIER" \
+            TUNNEL_CORE="$TUNNEL_CORE" \
+            PERSONAL_SOURCE_COMMIT="$(git rev-parse --short=12 HEAD)" \
+            build > build/xcodebuild.log 2>&1
+          status=$?
+          set -e
+          grep -E "BUILD (SUCCEEDED|FAILED)" build/xcodebuild.log || true
+          exit $status
+
+      - name: Упаковка IPA
+        id: package
+        run: |
+          set -euo pipefail
+          VERSION="$(grep '^MARKETING_VERSION' Config/Base.xcconfig | cut -d= -f2 | tr -d ' ')"
+          BUILD="$(grep '^CURRENT_PROJECT_VERSION' Config/Base.xcconfig | cut -d= -f2 | tr -d ' ')"
+          NAME="PersonalTunnel-${VERSION//./_}-${BUILD}-tunnel-${TUNNEL_CORE}-unsigned.ipa"
+          APP="build/DerivedData/Build/Products/Release-iphoneos/PersonalTunnel.app"
+          test -d "$APP/PlugIns/PacketTunnel.appex"
+          test -f "$APP/PlugIns/PacketTunnel.appex/Rules/ad-block.srs"
+          /usr/libexec/PlistBuddy -c "Print :AppGroupIdentifier" "$APP/Info.plist"
+          /usr/libexec/PlistBuddy -c "Print :CFBundleShortVersionString" "$APP/Info.plist"
+          /usr/libexec/PlistBuddy -c "Print :CFBundleIdentifier" "$APP/PlugIns/PacketTunnel.appex/Info.plist"
+          mkdir -p build/ipa/Payload
+          cp -R "$APP" build/ipa/Payload/
+          (cd build/ipa && /usr/bin/ditto -c -k --keepParent Payload "../$NAME")
+          shasum -a 256 "build/$NAME" > build/SHA256SUMS
+          git rev-parse HEAD > build/source-commit.txt
+          { echo "[tunnel]"; cat Libbox.xcframework/CORE.txt; echo "[app]"; cat AppCore.xcframework/CORE.txt; } > build/core.txt
+          echo "name=$NAME" >> "$GITHUB_OUTPUT"
+          ls -la build/*.ipa
+
+      - name: Выложить IPA
+        uses: actions/upload-artifact@v4
+        with:
+          name: PersonalTunnel-unsigned-${{ github.run_number }}-tunnel-${{ matrix.tunnel_core }}
+          path: |
+            build/${{ steps.package.outputs.name }}
+            build/SHA256SUMS
+            build/source-commit.txt
+            build/core.txt
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Выложить журнал сборки
+        if: always()
+        continue-on-error: true
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-log-${{ github.run_number }}-${{ matrix.tunnel_core }}
+          path: build/xcodebuild.log
+          if-no-files-found: ignore
+          retention-days: 7
+
+      - name: Ошибки компилятора
+        if: failure()
+        run: |
+          grep -E "error: |Undefined symbol" build/xcodebuild.log | grep -v "^ " | sed "s|$PWD/||" | cut -c1-260 | sort -u | head -40 || true

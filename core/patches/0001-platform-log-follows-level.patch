@@ -1,0 +1,25 @@
+diff --git a/log/observable.go b/log/observable.go
+index ab50e56..8e4aad4 100644
+--- a/log/observable.go
++++ b/log/observable.go
+@@ -161,7 +161,7 @@ func (f *defaultFactory) output(ctx context.Context, level Level, tag string, me
+ 		f.subscriber.Emit(Entry{level, f.formatter.FormatSimple(ctx, tag, message)})
+ 	}
+ 	platformWriters := f.loadPlatformWriters()
+-	if len(platformWriters) > 0 {
++	if len(platformWriters) > 0 && level <= f.level {
+ 		platformMessage := f.platformFormatter.Format(ctx, level, tag, message, timestamp)
+ 		for _, platformWriter := range platformWriters {
+ 			platformWriter.WriteMessage(level, platformMessage)
+@@ -178,8 +178,9 @@ type observableLogger struct {
+ 
+ func (l *observableLogger) Log(ctx context.Context, level Level, args []any) {
+ 	level = OverrideLevelFromContext(level, ctx)
+-	platformWriters := l.loadPlatformWriters()
+-	if level > l.level && len(platformWriters) == 0 && !l.needObservable {
++	// Personal Tunnel: the platform log follows the configured level too, so a
++	// tunnel at "info" does not format and keep a line for every packet.
++	if level > l.level && !l.needObservable {
+ 		return
+ 	}
+ 	nowTime := time.Now()

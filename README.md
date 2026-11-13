@@ -1,18 +1,59 @@
 # Personal Tunnel
 
-Private build repository for the locally modified iOS VPN client.
+Личный VPN-клиент для iPhone на ядре sing-box. Без аккаунтов, оплаты, рекламы и аналитики: серверы и подписки добавляет пользователь.
 
-`personal-tunnel-source.bundle` contains the complete modified source and Git history, not an unmodified upstream import.
+**Версия 2.0 (сборка 200)** — приложение написано заново. Интерфейс 1.5.0 сохранён (стили «Классика» и «Минималистичный»), код новый. Исходники 1.5.0 лежат в ветке `claude/personal-tunnel-visual-refactor-eiz8j9` и служат только эталоном вида, текстов и формата данных.
 
-Source commit: `3ecb41d1ac01065a624c64a52d456838f3a4cbe9`
-Bundle SHA-256: `5c7b429221e7f0da15b10e6df55c135aaf1ab67f80e9ee381284dda890b5a9bd`
+Состояние работы: см. раздел «Что готово» внизу.
 
-Recover a normal source checkout:
+## Устройство репозитория
+
+| Путь | Что там |
+|---|---|
+| `Packages/TunnelCore` | Ядро без зависимостей от Apple: разбор ссылок и подписок, сборка конфигурации sing-box, перенос данных 1.x, пинг, статистика. Собирается и тестируется на Linux. |
+| `App` | Приложение на UIKit (iOS 16+). |
+| `PacketTunnel` | Network Extension: sing-box (Libbox) и встроенные списки правил. |
+| `core/VERSION` | Закреплённая версия ядра sing-box-lx и теги сборки. |
+| `project.yml` | Описание проекта для XcodeGen; `.xcodeproj` не хранится. |
+| `handoff/` | Бриф, скриншоты и записи экрана 1.5.0, по которым воспроизводится интерфейс. |
+
+## Сборка
+
+GitHub Actions (`.github/workflows/build.yml`) на каждый push в `main` и `claude/**`:
+
+1. Тесты `TunnelCore` на Linux.
+2. Проверка образцов конфигураций закреплённым ядром: `sing-box check` для каждого протокола.
+3. Сборка `Libbox.xcframework` из закреплённого ядра (кэшируется).
+4. Компиляция приложения без подписи, артефакт `PersonalTunnel-2_0-<сборка>-unsigned.ipa`.
+
+IPA нужно подписать вместе с Network Extension (`packet-tunnel-provider`) и App Group. Группа задаётся переменной `APP_GROUP_IDENTIFIER` в workflow и должна совпадать с группой 1.x, иначе перенос данных не найдёт базу.
+
+Локально (macOS, Xcode 26, Go из `core/VERSION`):
 
 ```sh
-git clone --branch audit/independent-client personal-tunnel-source.bundle source
-cd source
-git submodule update --init --recursive
+scripts/build-libbox.sh
+brew install xcodegen && xcodegen generate
+open PersonalTunnel.xcodeproj
 ```
 
-The build workflow verifies the bundle hash and exact source commit before compiling. No signing credentials or server credentials are uploaded. The resulting IPA is unsigned and requires valid app/Network Extension signing before installation. See REPORT.md inside the source checkout for unresolved verification items.
+Тесты ядра: `swift test --package-path Packages/TunnelCore`.
+
+## Переход с 1.x
+
+Bundle ID (`com.personaltunnelapp`), расширение и App Group прежние, поэтому 2.0 ставится поверх 1.2.0–1.5.0. При первом запуске подписки переносятся из базы 1.x (`settings.db` и `configs/`), оформление и настройки подхватываются по прежним ключам, HWID остаётся тем же. Старые файлы не удаляются.
+
+## Приватность
+
+У приложения нет своего сервера. Само оно выходит в сеть только чтобы обновить подписки, проверить соединение по кнопке и измерить задержку серверов.
+
+## Лицензия
+
+GPL-3.0-or-later. Ядро — [`Leadaxe/sing-box-lx`](https://github.com/Leadaxe/sing-box-lx) (форк sing-box). Списки правил: `PacketTunnel/Rules/ad-block.NOTICE.txt`.
+
+## Что готово
+
+- [x] Основа: проект, CI, сборка ядра.
+- [ ] Ядро `TunnelCore`: импорт и конфигурация готовы; перенос 1.x, пинг, статистика — в работе.
+- [ ] «Минималистичный».
+- [ ] «Классика».
+- [ ] Пункт управления.
