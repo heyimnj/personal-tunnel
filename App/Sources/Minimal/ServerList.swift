@@ -643,8 +643,8 @@ final class ServerListView: UIScrollView {
     static let filterHeight: CGFloat = 44
     static let infoHeight: CGFloat = 22
     /// The provider's line rises into the head's lower padding, so it sits close
-    /// under the title (the head is 66 pt with its title centred).
-    static let infoRise: CGFloat = 18
+    /// under the title (the head is 66 pt with its 17 pt title centred: about 5 pt between them).
+    static let infoRise: CGFloat = 21
 
     /// Height of the strip under the open head: the provider's line, then the filters.
     private func stripHeight(_ section: Section) -> CGFloat {
