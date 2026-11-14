@@ -490,10 +490,10 @@ final class ServerRowView: SwipeRow {
         leading.widthAnchor.constraint(equalToConstant: 30).isActive = true
         let titleRow = UIStackView(.horizontal, spacing: 6, alignment: .center, [name, check, UIView()])
         let text = UIStackView(.vertical, spacing: 5, alignment: .fill, [titleRow, badges])
-        let trailing = UIStackView(.horizontal, spacing: 0, alignment: .center, [ping, spinner])
-        trailing.isUserInteractionEnabled = false
-        pingButton.addSubview(trailing)
-        trailing.pin(to: pingButton, insets: UIEdgeInsets(top: 0, left: 8, bottom: 0, right: 0))
+        let latency = UIStackView(.horizontal, spacing: 0, alignment: .center, [ping, spinner])
+        latency.isUserInteractionEnabled = false
+        pingButton.addSubview(latency)
+        latency.pin(to: pingButton, insets: UIEdgeInsets(top: 0, left: 8, bottom: 0, right: 0))
         pingButton.widthAnchor.constraint(greaterThanOrEqualToConstant: 58).isActive = true
         pingButton.setContentHuggingPriority(.required, for: .horizontal)
         pingButton.setContentCompressionResistancePriority(.required, for: .horizontal)
@@ -1303,7 +1303,11 @@ final class ServerListView: UIScrollView {
         row.bind(subscription, node)
         row.plain = plain
         // A lone server has no card of its own: the surface gives way instead.
-        row.onSlide = plain ? { [weak surface] offset in surface?.setPull(-offset) } : nil
+        if plain {
+            row.onSlide = { [weak surface] offset in surface?.setPull(-offset) }
+        } else {
+            row.onSlide = nil
+        }
         row.close(animated: false)
         configureRow?(row, subscription, node)
         row.actions = actionsForRow?(subscription, node) ?? []
