@@ -14,6 +14,8 @@ struct NetworkProbes: LatencyProbes {
     /// Receives why a direct connect failed, for the service log.
     var report: (@Sendable (String) -> Void)?
     let samples = FailureSamples()
+    /// The subscription in the tunnel: URL-test failures are kept under its key.
+    var tunnelSubscription: Int64?
 
     func tcp(host: String, port: Int, timeout: TimeInterval) async -> ProbeResult {
         await tcp(host: host, port: port, timeout: timeout, label: nil)
@@ -144,6 +146,7 @@ struct NetworkProbes: LatencyProbes {
 
     func url(tag: String, link: String, timeoutMs: Int) async -> ProbeResult {
         let report = report, samples = samples
+        let key = tunnelSubscription.map { LatencyService.key($0, tag) }
         return await withCheckedContinuation { continuation in
             NetworkProbes.blocking.async {
                 guard let client = LibboxNewStandaloneCommandClient() else {
@@ -156,10 +159,12 @@ struct NetworkProbes: LatencyProbes {
                         continuation.resume(returning: .delay(max(1, Int(result.delay))))
                     } else {
                         if samples.take(ProbeFailure.classify(result.error)) { report?(Lf("URL-тест «%@» через туннель: %@", tag, Redactor.hideAddresses(Redactor.redact(result.error)))) }
+                        if let key { FailureNotes.shared.set(key, result.error) }
                         continuation.resume(returning: .failed(ProbeFailure.classify(result.error)))
                     }
                 } catch {
                     if samples.take(ProbeFailure.classify(error.localizedDescription)) { report?(Lf("URL-тест «%@» через туннель: %@", tag, Redactor.hideAddresses(Redactor.redact(error.localizedDescription)))) }
+                    if let key { FailureNotes.shared.set(key, error.localizedDescription) }
                     continuation.resume(returning: .failed(ProbeFailure.classify(error.localizedDescription)))
                 }
             }
@@ -253,10 +258,34 @@ final class LocalCoreProbes: LatencyProbes, @unchecked Sendable {
                     continuation.resume(returning: .delay(max(1, Int(result.delay))))
                 } else {
                     if self.samples.take(ProbeFailure.classify(result.error)) { self.report?(Lf("URL-тест «%@» ядром приложения: %@", inner, Redactor.hideAddresses(Redactor.redact(result.error)))) }
+                    FailureNotes.shared.set(tag, result.error)
                     continuation.resume(returning: .failed(ProbeFailure.classify(result.error)))
                 }
             }
         }
+    }
+}
+
+/// The core's own words for each server's last failed test (3.1.2), by result key:
+/// the server's page shows them, so a «certificate» or a «timeout» can be told
+/// apart into what exactly went wrong. Addresses are hidden.
+final class FailureNotes: @unchecked Sendable {
+    static let shared = FailureNotes()
+    private let lock = NSLock()
+    private var notes: [String: String] = [:]
+
+    func set(_ key: String, _ text: String) {
+        let clean = Redactor.hideAddresses(Redactor.redact(text))
+        lock.lock(); notes[key] = clean; lock.unlock()
+    }
+
+    func clear(_ key: String) {
+        lock.lock(); notes[key] = nil; lock.unlock()
+    }
+
+    func note(_ key: String) -> String? {
+        lock.lock(); defer { lock.unlock() }
+        return notes[key]
     }
 }
 
@@ -385,10 +414,12 @@ final class LatencyService {
         guard !items.isEmpty else { return }
         let mode = LatencyMode.named(Prefs.pingMode)
         let log: @Sendable (Int32, String) -> Void = { level, text in DispatchQueue.main.async { App.shared.core.note(text, level: level) } }
-        let runner = LatencyRunner(probes: NetworkProbes(avoidTunnel: tunnelUp, report: { log(3, $0) }))
+        let runner = LatencyRunner(probes: NetworkProbes(avoidTunnel: tunnelUp, report: { log(3, $0) }, tunnelSubscription: tunnelSubscription))
         tally = [:]
         answered = 0
         let keys = Set(items.map { LatencyService.key($0.subscription.id, $0.node.id) })
+        // This test's own words replace the last ones.
+        for key in keys { FailureNotes.shared.clear(key) }
         if continuing {
             // Already counted and spinning since they were added.
             testing.formUnion(keys)

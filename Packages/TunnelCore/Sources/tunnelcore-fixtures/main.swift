@@ -118,6 +118,20 @@ for (name, links) in samples {
     try write(name, try links.map(ShareLink.parse))
 }
 try write("xray-subscription", try ContentImporter.parse(xray).nodes)
+// 3.1.2: a panel's own certificate authority written into the Xray config
+// (a throwaway one, made for this sample) becomes the server's tls.certificate.
+let xrayTrustedCA = #"""
+[{"remarks": "Own CA", "outbounds": [{"protocol": "vless", "tag": "proxy",
+  "settings": {"vnext": [{"address": "a.example.com", "port": 443, "users": [{"id": "11111111-2222-3333-4444-555555555555", "flow": "xtls-rprx-vision"}]}]},
+  "streamSettings": {"network": "tcp", "security": "tls",
+                     "tlsSettings": {"serverName": "a.example.com", "fingerprint": "chrome", "certificates": [{"usage": "verify", "certificate": ["-----BEGIN CERTIFICATE-----", "MIIBjDCCATGgAwIBAgIUfQdPLS3bgEmJAM4vqh7LZGiegEEwCgYIKoZIzj0EAwIw", "GzEZMBcGA1UEAwwQdGVzdC1jYS5pbnRlcm5hbDAeFw0yNjExMTQwNzMyMTRaFw0z", "NjExMTEwNzMyMTRaMBsxGTAXBgNVBAMMEHRlc3QtY2EuaW50ZXJuYWwwWTATBgcq", "hkjOPQIBBggqhkjOPQMBBwNCAATDuD8/NfPCJ6FA1L2JLNLILG5H4w+LMOqyntdR", "FO094RV8migkpqY2vU4d9MPskd4jr1o17RfZi3UjYWTcddKmo1MwUTAdBgNVHQ4E", "FgQUrYvAHd3R3unJouY3Qb8DJPip2NowHwYDVR0jBBgwFoAUrYvAHd3R3unJouY3", "Qb8DJPip2NowDwYDVR0TAQH/BAUwAwEB/zAKBggqhkjOPQQDAgNJADBGAiEAvx4a", "b3em2AXxqXhsgCNdthZDYF/muipG1AfLy3PPLaECIQDMJmqv/wICAt38bmcq8QTT", "AeEDfgCZyanTN5lhFUVqBg==", "-----END CERTIFICATE-----"]}]}}}]}]
+"""#
+try write("xray-trusted-ca", try ContentImporter.parse(xrayTrustedCA).nodes)
+// 3.1.2: tests of every server go outside the tunnel.
+let allParsed = try samples.flatMap { try $0.1.map(ShareLink.parse) }
+try write("server-hosts-direct", allParsed) { options in
+    options.serverHosts = ConfigBuilder.serverHosts(of: [Subscription(id: 1, name: "all", nodes: NodeAssembler.assemble(allParsed))])
+}
 try write("all-together", try samples.flatMap { try $0.1.map(ShareLink.parse) } + ContentImporter.parse(xray).nodes)
 try write("no-routing-options", try samples[0].1.map(ShareLink.parse)) { options in
     options.adBlocking = false

@@ -113,6 +113,62 @@ final class ImportTests: XCTestCase {
         XCTAssertEqual(hysteria.at("tls", "certificate_sha256"), [.string(hash)])
     }
 
+    /// A throwaway certificate authority, made for these tests only.
+    static let testCAPEM = [
+                "-----BEGIN CERTIFICATE-----",
+                "MIIBjDCCATGgAwIBAgIUfQdPLS3bgEmJAM4vqh7LZGiegEEwCgYIKoZIzj0EAwIw",
+                "GzEZMBcGA1UEAwwQdGVzdC1jYS5pbnRlcm5hbDAeFw0yNjExMTQwNzMyMTRaFw0z",
+                "NjExMTEwNzMyMTRaMBsxGTAXBgNVBAMMEHRlc3QtY2EuaW50ZXJuYWwwWTATBgcq",
+                "hkjOPQIBBggqhkjOPQMBBwNCAATDuD8/NfPCJ6FA1L2JLNLILG5H4w+LMOqyntdR",
+                "FO094RV8migkpqY2vU4d9MPskd4jr1o17RfZi3UjYWTcddKmo1MwUTAdBgNVHQ4E",
+                "FgQUrYvAHd3R3unJouY3Qb8DJPip2NowHwYDVR0jBBgwFoAUrYvAHd3R3unJouY3",
+                "Qb8DJPip2NowDwYDVR0TAQH/BAUwAwEB/zAKBggqhkjOPQQDAgNJADBGAiEAvx4a",
+                "b3em2AXxqXhsgCNdthZDYF/muipG1AfLy3PPLaECIQDMJmqv/wICAt38bmcq8QTT",
+                "AeEDfgCZyanTN5lhFUVqBg==",
+                "-----END CERTIFICATE-----",
+    ]
+
+    /// 3.1.2: a panel's own certificate authority, written into the Xray config,
+    /// is trusted for that server (Xray-core adds it to its roots); a check by
+    /// another name than the SNI goes to Xray-core.
+    func testXrayTrustedCertificatesAndVerifyNames() throws {
+        let lines = Self.testCAPEM.map { "\"" + $0 + "\"" }.joined(separator: ", ")
+        let vless = try XrayImport.outbound(from: try JSONValue.parse("""
+        {"protocol": "vless", "settings": {"vnext": [{"address": "a.example.com", "port": 443, "users": [{"id": "u", "flow": "xtls-rprx-vision"}]}]},
+         "streamSettings": {"network": "tcp", "security": "tls",
+                            "tlsSettings": {"serverName": "a.example.com", "fingerprint": "chrome", "certificates": [{"usage": "verify", "certificate": [\(lines)]}]}}}
+        """))
+        XCTAssertEqual(vless.at("tls", "certificate"), [.string(Self.testCAPEM.joined(separator: "\n"))])
+        XCTAssertNil(vless.at("tls", "insecure"))
+        XCTAssertEqual(ServerInspection.certificateCheck(ServerNode(id: "a", name: "a", outbound: vless)), "свой центр сертификации")
+        let plain = try ShareLink.parse("trojan://pw@tr.example.com:443#T").outbound
+        XCTAssertEqual(ServerInspection.certificateCheck(ServerNode(id: "t", name: "t", outbound: plain)), "по корням Mozilla")
+        let insecure = try ShareLink.parse("trojan://pw@tr.example.com:443?allowInsecure=1#T").outbound
+        XCTAssertEqual(ServerInspection.certificateCheck(ServerNode(id: "i", name: "i", outbound: insecure)), "не проверяется")
+
+        // With a pin as well, the pin decides (the core takes only one of them).
+        let pinned = try XrayImport.outbound(from: try JSONValue.parse("""
+        {"protocol": "trojan", "settings": {"servers": [{"address": "1.2.3.4", "port": 443, "password": "p"}]},
+         "streamSettings": {"network": "tcp", "security": "tls",
+                            "tlsSettings": {"serverName": "a.internal", "pinnedPeerCertSha256": "\(String(repeating: "ab", count: 32))",
+                                            "certificates": [{"certificate": [\(lines)]}]}}}
+        """))
+        XCTAssertNil(pinned.at("tls", "certificate"))
+        XCTAssertNotNil(pinned.at("tls", "certificate_sha256"))
+
+        // verifyPeerCertByName without a pin: not convertible, the import keeps it for Xray-core.
+        let byName = """
+        [{"remarks": "By name", "outbounds": [{"protocol": "vless", "tag": "proxy",
+          "settings": {"vnext": [{"address": "1.2.3.4", "port": 443, "users": [{"id": "u", "flow": "xtls-rprx-vision"}]}]},
+          "streamSettings": {"network": "tcp", "security": "tls",
+                             "tlsSettings": {"serverName": "cdn.example.com", "verifyPeerCertByName": "real.example.com"}}}]}]
+        """
+        XCTAssertThrowsError(try XrayImport.node(from: try JSONValue.parse(byName).listValue[0], name: "By name"))
+        let parsed = XrayImport.parse(try JSONValue.parse(byName))
+        XCTAssertEqual(parsed.nodes.count, 1)
+        XCTAssertEqual(parsed.nodes.first?.outbound["type"], .string(XrayBacked.type))
+    }
+
     func testAssemblerMakesUniqueTagsAndRelinksGroups() throws {
         let result = try ContentImporter.parse(Self.xraySubscription)
         let nodes = NodeAssembler.assemble(result.nodes + [result.nodes[0]])

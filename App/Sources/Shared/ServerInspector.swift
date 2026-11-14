@@ -43,11 +43,20 @@ final class ServerInspectorViewController: FormViewController {
             case nil: return "—"
             }
         }))
+        facts.append(.value(title: L("Сертификат"), detail: { ServerInspection.certificateCheck(node) }))
         let link = node.link
+        // 3.1.2: the core's own words for the last failed test, so a «certificate»
+        // or a «timeout» says what exactly went wrong.
+        var failure: [FormSection] = []
+        if case .failed? = App.shared.latency.entry(subscriptionID, tag)?.result,
+           let note = FailureNotes.shared.note(LatencyService.key(subscriptionID, tag)) {
+            failure = [FormSection(L("Ошибка последней проверки"), [.note(note)])]
+        }
         return [
             FormSection(name, facts + [
                 .button(title: L("Проверить пинг этого узла"), destructive: false) { App.shared.ping(node: node, in: subscription) },
             ]),
+        ] + failure + [
             FormSection(L("Ссылка"), footer: link == nil ? L("У этого сервера нет исходной ссылки: он добавлен из файла или из подписки в формате JSON.") : nil, [
                 .button(title: L("Скопировать ссылку на сервер"), destructive: false) { [weak self] in self?.copy(link, done: L("Ссылка скопирована.")) },
                 .button(title: L("QR-код сервера"), destructive: false) { [weak self] in self?.showQR(link, name: name) },

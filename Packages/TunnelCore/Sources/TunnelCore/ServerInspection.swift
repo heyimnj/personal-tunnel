@@ -21,6 +21,18 @@ public enum ServerInspection {
         ]
     }
 
+    /// How the server's certificate is checked (3.1.2), for its page.
+    public static func certificateCheck(_ node: ServerNode) -> String {
+        let object = node.isGroup ? (node.members.first ?? node.outbound) : node.outbound
+        if object["type"]?.stringValue == XrayBacked.type { return CoreText.t("проверяет Xray-core") }
+        guard let tls = object["tls"], tls["enabled"]?.boolValue == true else { return "—" }
+        if tls["reality"]?["enabled"]?.boolValue == true { return "REALITY" }
+        if tls["insecure"]?.boolValue == true { return CoreText.t("не проверяется") }
+        if tls["certificate_sha256"] != nil || tls["certificate_public_key_sha256"] != nil { return CoreText.t("по отпечатку") }
+        if tls["certificate"] != nil { return CoreText.t("свой центр сертификации") }
+        return CoreText.t("по корням Mozilla")
+    }
+
     /// The server's outbounds as sing-box JSON with every secret replaced by `***`.
     public static func safeJSON(_ node: ServerNode) -> String {
         let objects = [node.outbound] + node.members

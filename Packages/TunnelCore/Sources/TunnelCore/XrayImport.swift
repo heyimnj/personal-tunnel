@@ -176,6 +176,33 @@ public enum XrayImport {
         return .object(outbound)
     }
 
+    /// `certificates`: every certificate written into the config (PEM, as a list
+    /// of lines or one string). Xray-core adds them all to the roots it trusts.
+    /// One kept only as a file name cannot travel with the subscription.
+    static func trustedCertificates(_ tlsSettings: JSONValue) -> [String] {
+        (tlsSettings["certificates"]?.arrayValue ?? []).compactMap { entry -> String? in
+            let value = entry["certificate"]
+            let text = value?.arrayValue.map { $0.compactMap(\.text).joined(separator: "\n") } ?? value?.text
+            guard let text, text.contains("BEGIN CERTIFICATE") else { return nil }
+            return text.trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+    }
+
+    /// `verifyPeerCertByName`: names the certificate is checked against instead of
+    /// the SNI. sing-box has nothing like it; such a server is left to Xray-core.
+    static func verifyNames(_ tlsSettings: JSONValue) -> [String] {
+        let value = tlsSettings["verifyPeerCertByName"] ?? tlsSettings["verifyPeerCertInNames"]
+        let items = value?.arrayValue?.compactMap(\.text) ?? value?.text.map { $0.split(separator: ",").map(String.init) } ?? []
+        return items.map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }
+    }
+
+    /// Throws when the certificate check needs what only Xray-core does (3.1.2):
+    /// the server then runs in Xray-core, checked as Happ checks it.
+    static func requireNativeCheck(_ tlsSettings: JSONValue) throws {
+        guard tlsSettings["allowInsecure"]?.looseBool != true, certificatePins(tlsSettings).isEmpty, !verifyNames(tlsSettings).isEmpty else { return }
+        throw ImportError(CoreText.t("Сертификат сервера проверяется по другому имени (verifyPeerCertByName): сервер работает через Xray-core."))
+    }
+
     /// `pinnedPeerCertSha256`: hex hashes, one string with commas or a list.
     static func certificatePins(_ tlsSettings: JSONValue) -> [String] {
         guard let value = tlsSettings["pinnedPeerCertSha256"] else { return [] }
@@ -192,6 +219,8 @@ public enum XrayImport {
             spec.allowInsecure = tls["allowInsecure"]?.looseBool ?? false
             spec.pinnedCertificates = Self.certificatePins(tls)
             spec.pinnedPublicKeys = CertificatePins.publicKeys(tls["pinnedPeerCertificatePublicKeySha256"]?.stringList ?? [])
+            spec.trustedCertificates = Self.trustedCertificates(tls)
+            if spec.security == "tls" { try Self.requireNativeCheck(tls) }
             spec.alpn = tls["alpn"]?.stringList ?? []
             spec.fingerprint = tls["fingerprint"]?.stringValue
         }
@@ -381,8 +410,12 @@ public enum XrayImport {
             tls["server_name"] = .string(host)
         }
         if tlsSettings["allowInsecure"]?.looseBool == true { tls["insecure"] = true }
-        CertificatePins.apply(certificates: certificatePins(tlsSettings),
-                              publicKeys: CertificatePins.publicKeys(tlsSettings["pinnedPeerCertificatePublicKeySha256"]?.stringList ?? []), to: &tls)
+        let pinned = certificatePins(tlsSettings)
+        let pinnedKeys = CertificatePins.publicKeys(tlsSettings["pinnedPeerCertificatePublicKeySha256"]?.stringList ?? [])
+        CertificatePins.apply(certificates: pinned, publicKeys: pinnedKeys, to: &tls)
+        let trusted = trustedCertificates(tlsSettings)
+        if tls["insecure"] == nil, pinned.isEmpty, pinnedKeys.isEmpty, !trusted.isEmpty { tls["certificate"] = JSONValue(trusted) }
+        try requireNativeCheck(tlsSettings)
         let alpn = tlsSettings["alpn"]?.stringList ?? []
         if !alpn.isEmpty { tls["alpn"] = JSONValue(alpn) }
 

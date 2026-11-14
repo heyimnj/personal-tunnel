@@ -528,3 +528,13 @@
 "недоступно" = "not available";
 "<адрес>" = "<address>";
 "<сервер>" = "<server>";
+
+/* 3.1.2 */
+"Сертификат сервера проверяется по другому имени (verifyPeerCertByName): сервер работает через Xray-core." = "The server's certificate is checked against another name (verifyPeerCertByName): the server runs through Xray-core.";
+"Сертификат" = "Certificate";
+"Ошибка последней проверки" = "Last test error";
+"проверяет Xray-core" = "checked by Xray-core";
+"не проверяется" = "not checked";
+"по отпечатку" = "by fingerprint";
+"свой центр сертификации" = "own certificate authority";
+"по корням Mozilla" = "against Mozilla roots";

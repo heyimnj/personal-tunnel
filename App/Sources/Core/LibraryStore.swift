@@ -90,7 +90,10 @@ final class LibraryStore {
         guard let subscription = current.activeSubscription else {
             throw ImportError(L("Сначала добавьте сервер или подписку."))
         }
-        let config = try ConfigBuilder.build(subscription: subscription, selected: current.selectedNodeID(in: subscription), options: Prefs.tunnelOptions)
+        var options = Prefs.tunnelOptions
+        // 3.1.2: the app's own tests of every server go outside the tunnel.
+        options.serverHosts = ConfigBuilder.serverHosts(of: current.subscriptions)
+        let config = try ConfigBuilder.build(subscription: subscription, selected: current.selectedNodeID(in: subscription), options: options)
         let text = config.serialized()
         if let paths {
             try Data(text.utf8).write(to: paths.activeConfig, options: .atomic)

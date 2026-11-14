@@ -56,27 +56,24 @@ struct SwipeAction {
     var handler: () -> Void
 }
 
-/// One button of the actions: a circle of the action's colour with a white symbol.
-/// Its size never changes while it appears (3.0.4): it grows with a scale
-/// transform, so the circle stays a circle and only one layer moves. Past the
-/// full swipe the button at the edge stretches into a capsule.
-private final class SwipePill: UIControl {
+/// One action behind a row (3.1.2): a tile of the card's own colour, height and
+/// rounding with the action's symbol, so the actions read as the card going on
+/// to the right. It grows from a sliver (a thin capsule) to its full width as
+/// the card moves away, and the symbol comes in once there is room for it.
+private final class SwipeTile: UIControl {
     let action: SwipeAction
-    private let disc = UIView()
     private let icon = UIImageView()
-    static let side: CGFloat = 46
+    /// Width of a tile when the actions are fully out: compact, about square.
+    static let width: CGFloat = 56
 
     init(_ action: SwipeAction) {
         self.action = action
-        icon.image = UIImage(systemName: action.symbol, withConfiguration: UIImage.SymbolConfiguration(pointSize: 16, weight: .semibold))
+        icon.image = UIImage(systemName: action.symbol, withConfiguration: UIImage.SymbolConfiguration(pointSize: 17, weight: .semibold))
         icon.contentMode = .center
-        icon.tintColor = .white
-        super.init(frame: .zero)
-        disc.isUserInteractionEnabled = false
-        disc.backgroundColor = action.color
-        disc.layer.cornerCurve = .continuous
+        icon.tintColor = action.color
         icon.isUserInteractionEnabled = false
-        addSubview(disc)
+        super.init(frame: .zero)
+        layer.cornerCurve = .continuous
         addSubview(icon)
         accessibilityLabel = action.title
         isAccessibilityElement = true
@@ -86,68 +83,61 @@ private final class SwipePill: UIControl {
     @available(*, unavailable)
     required init?(coder _: NSCoder) { fatalError() }
 
-    /// `size`: 0…side, how much room the button has been given so far (3.0.6: it
-    /// grows into the space the card frees, never over the card); `right`: where
-    /// its right side stands; `stretch`: extra width past the full swipe (the
-    /// edge button only).
-    func place(right: CGFloat, centerY: CGFloat, size: CGFloat, stretch: CGFloat) {
-        let side = Self.side
-        let width = side + stretch
-        let bounds = CGRect(x: 0, y: 0, width: width, height: side)
-        if self.bounds != bounds { self.bounds = bounds }
-        let t = max(0, min(1, size / side))
-        // Scaled about its centre, the circle is `size` wide: its centre sits half
-        // of that from its right side, so its left side follows the card's edge.
-        let visible = t * side + stretch
-        let center = CGPoint(x: right - visible / 2, y: centerY)
-        if self.center != center { self.center = center }
-        let radius = side / 2
-        if disc.layer.cornerRadius != radius { disc.layer.cornerRadius = radius }
-        if disc.frame != bounds { disc.frame = bounds }
-        // The symbol stays at the right end of a stretched capsule.
-        let iconFrame = CGRect(x: width - side, y: 0, width: side, height: side)
-        if icon.frame != iconFrame { icon.frame = iconFrame }
-        let scale = stretch > 0 ? 1 : t
-        transform = scale < 1 ? CGAffineTransform(scaleX: max(0.001, scale), y: max(0.001, scale)) : .identity
-        alpha = min(1, t * 2.5)
-        // The symbol comes in after its circle, turning from a slight tilt.
-        let late = max(0, min(1, (t - 0.35) / 0.65))
-        let iconEase = 1 - pow(1 - late, 2)
-        icon.alpha = iconEase
-        icon.transform = iconEase < 1 ? CGAffineTransform(rotationAngle: -0.35 * (1 - iconEase)).scaledBy(x: 0.7 + 0.3 * iconEase, y: 0.7 + 0.3 * iconEase) : .identity
-        isHidden = t <= 0.01
+    /// The card's colour, and its colour while pressed (the action's, faintly).
+    var surface: UIColor = .secondarySystemGroupedBackground {
+        didSet { if !isHighlighted { backgroundColor = surface } }
+    }
+
+    /// Frame and rounding for this frame of the swipe: plain layer properties, no
+    /// mask, so the tiles cost nothing per frame.
+    func place(_ frame: CGRect, radius: CGFloat) {
+        if self.frame != frame { self.frame = frame }
+        let corner = min(radius, frame.width / 2, frame.height / 2)
+        if layer.cornerRadius != corner { layer.cornerRadius = corner }
+        let side = min(frame.height, 44)
+        let iconFrame = CGRect(x: (frame.width - side) / 2, y: (frame.height - side) / 2, width: side, height: side)
+        if icon.bounds.size != iconFrame.size { icon.bounds = CGRect(origin: .zero, size: iconFrame.size) }
+        let center = CGPoint(x: iconFrame.midX, y: iconFrame.midY)
+        if icon.center != center { icon.center = center }
+        // The symbol shows once the tile is wide enough to hold it.
+        let t = max(0, min(1, (frame.width - 20) / 22))
+        let eased = t * t * (3 - 2 * t)
+        if icon.alpha != eased { icon.alpha = eased }
+        let scale = 0.6 + 0.4 * eased
+        let transform = eased < 1 ? CGAffineTransform(scaleX: scale, y: scale) : .identity
+        if icon.transform != transform { icon.transform = transform }
+        let hidden = frame.width < 1
+        if isHidden != hidden { isHidden = hidden }
     }
 
     override var isHighlighted: Bool {
         didSet {
             guard isHighlighted != oldValue else { return }
             UIView.animate(withDuration: isHighlighted ? 0.08 : 0.22, delay: 0, options: [.beginFromCurrentState, .allowUserInteraction, .curveEaseOut]) {
-                self.disc.alpha = self.isHighlighted ? 0.72 : 1
-                self.icon.alpha = self.isHighlighted ? 0.85 : 1
+                self.backgroundColor = self.isHighlighted ? SurfaceView.blend(self.surface, self.action.color, 0.28, traits: self.traitCollection) : self.surface
             }
         }
     }
 }
 
-/// A row whose card gives way to its actions. A full swipe only opens them:
+/// A row whose card moves aside for its actions. A full swipe only opens them:
 /// nothing is ever deleted by a swipe alone.
 ///
-/// 3.0.4: the motion is one spring stepped every frame (`SpringDriver`), so a
+/// The motion is one spring stepped every frame (`SpringDriver`, 3.0.4), so a
 /// row caught mid-way continues from where it is, with the finger's speed both
 /// ways.
 ///
-/// 3.0.6: the card itself gives way. Its left side stays, its right side follows
-/// the finger with its rounded corners, and what stands at that side (latency,
-/// count, chevron: `trailing`) moves with it; the name slips under them with a
-/// short fade (`cover`) instead of being cut. The buttons grow one after another
-/// in the room the card frees, always a gap apart from it and from each other,
-/// so card and buttons stay two things. 3.0.5 slid the content inside a card that
-/// stayed; 3.0.4 moved the whole card away.
+/// 3.1.2: the card moves left as a whole (it slides under the edge of the
+/// subscription, or of the screen), and the actions come out of its right side
+/// as tiles of its own colour, height and rounding — compact, symbol only, a
+/// small gap apart — that widen together with the finger, from thin capsules to
+/// their full width. 3.0.6 shrank the card and grew round buttons beside it;
+/// 3.0.5 slid only the content; 3.0.4 slid the card with circles behind it.
 class SwipeRow: UIView, UIGestureRecognizerDelegate {
     /// What stays in place: it holds `host` (the card, or the head's tap area).
     /// The list scales it while a card is being uncovered.
     let front = UIView()
-    /// The card or tap area in `front`: its right side gives way to the buttons.
+    /// The card or tap area in `front`: it moves aside as a whole.
     var host: UIView? {
         didSet {
             guard host !== oldValue else { return }
@@ -156,24 +146,30 @@ class SwipeRow: UIView, UIGestureRecognizerDelegate {
             setNeedsLayout()
         }
     }
-    /// The content of the card at its full width; subclasses put it here.
+    /// The content of the card; subclasses put it here.
     let sliding = PassThroughView()
-    /// Clips `sliding` at the card's moving edge (a plain rectangle: cheap per frame).
+    /// Keeps the content inside the card (a plain rectangle).
     private let clip = PassThroughView()
-    /// What moves with the card's right side.
-    var trailing: [UIView] = []
-    /// Goes before `trailing` and hides what they pass over; subclasses put it
-    /// just under them and set its colour to the card's.
-    let cover = EdgeCover()
     /// Height of the content; the view itself may be shorter while it is uncovered.
     var contentHeight: CGFloat = 63
+    /// The card's distance from the row's sides: a row spans its whole
+    /// subscription, so a card moving aside slides under the subscription's edge.
+    var cardInset: CGFloat = 0 {
+        didSet { if cardInset != oldValue { setNeedsLayout() } }
+    }
+    /// The card's rounding, which the tiles take.
+    var tileRadius: CGFloat = 14
+    /// The card's colour, which the tiles take.
+    var tileColor: UIColor = .secondarySystemGroupedBackground {
+        didSet { for tile in tiles { tile.surface = tileColor } }
+    }
     var onOpen: ((SwipeRow) -> Void)?
-    /// Every placement (the swipe offset), on every frame: the list makes the
-    /// surface give way with a card that has none of its own.
+    /// Every placement (the swipe offset), on every frame: the list moves the
+    /// surface with a card that has none of its own.
     var onSlide: ((CGFloat) -> Void)?
-    /// The buttons, beside the card; touches between them reach the card.
+    /// The tiles, beside the card; touches between them reach the row.
     private let rail = PassThroughView()
-    private var pills: [SwipePill] = []
+    private var tiles: [SwipeTile] = []
     /// The actions are fully out (a light tap of the haptics when they get there).
     private var fullyOut = false
     private(set) var offset: CGFloat = 0
@@ -183,33 +179,30 @@ class SwipeRow: UIView, UIGestureRecognizerDelegate {
         self.offset = value
         self.placeFront()
     }
-    private static let gap: CGFloat = 8
-    private static let margin: CGFloat = 8
+    private static let gap: CGFloat = 6
 
-    /// The buttons are built when a swipe first needs them, not with the row:
-    /// rows appear by the dozen as a subscription opens, and building three
-    /// symbol buttons for each of them cost the first frames of the motion.
+    /// The tiles are built when a swipe first needs them, not with the row: rows
+    /// appear by the dozen as a subscription opens.
     var actions: [SwipeAction] = [] {
         didSet {
             railStale = true
-            if !pills.isEmpty || offset != 0 { rebuildRail() }
+            if !tiles.isEmpty || offset != 0 { rebuildRail() }
         }
     }
     private var railStale = false
 
-    /// How far the card gives way to show every action: a gap, the buttons with
-    /// gaps between them, and a margin at the side.
+    /// How far the card moves to show every action: each tile with the gap before it.
     private var railWidth: CGFloat {
-        pills.isEmpty ? 0 : CGFloat(pills.count) * SwipePill.side + CGFloat(pills.count - 1) * Self.gap + 2 * Self.margin
+        CGFloat(tiles.count) * (SwipeTile.width + Self.gap)
     }
 
     override init(frame: CGRect) {
         super.init(frame: frame)
         addSubview(front)
+        // Above the card: it lets every touch outside a tile through.
         addSubview(rail)
         clip.clipsToBounds = true
         clip.addSubview(sliding)
-        cover.isHidden = true
         let pan = UIPanGestureRecognizer(target: self, action: #selector(panned(_:)))
         pan.delegate = self
         addGestureRecognizer(pan)
@@ -220,94 +213,66 @@ class SwipeRow: UIView, UIGestureRecognizerDelegate {
 
     private func rebuildRail() {
         railStale = false
-        pills.forEach { $0.removeFromSuperview() }
-        pills = actions.map { action in
-            let pill = SwipePill(action)
-            pill.isHidden = true
-            pill.addAction(UIAction { [weak self] _ in
+        tiles.forEach { $0.removeFromSuperview() }
+        tiles = actions.map { action in
+            let tile = SwipeTile(action)
+            tile.surface = tileColor
+            tile.backgroundColor = tileColor
+            tile.isHidden = true
+            tile.addAction(UIAction { [weak self] _ in
                 Haptics.tap()
                 self?.close(animated: true)
                 action.handler()
             }, for: .touchUpInside)
-            rail.addSubview(pill)
-            return pill
+            rail.addSubview(tile)
+            return tile
         }
         setNeedsLayout()
     }
 
+    /// The card's place in the row when it is at rest.
+    private var cardRect: CGRect {
+        CGRect(x: cardInset, y: 0, width: max(0, bounds.width - 2 * cardInset), height: contentHeight)
+    }
+
     override func layoutSubviews() {
         super.layoutSubviews()
-        let rect = CGRect(x: 0, y: 0, width: bounds.width, height: contentHeight)
+        let rect = cardRect
         if rail.frame != rect { rail.frame = rect }
         // bounds and center, never frame: the list scales the front of a card being
         // uncovered, and a frame set under a transform moves it.
-        if front.bounds.size != rect.size { front.bounds = rect }
+        let size = CGRect(origin: .zero, size: rect.size)
+        if front.bounds != size { front.bounds = size }
         let center = CGPoint(x: rect.midX, y: rect.midY)
         if front.center != center { front.center = center }
-        if sliding.bounds.size != rect.size { sliding.bounds = rect }
-        if sliding.center != center { sliding.center = center }
-        // The content is laid out once at full width; a swipe moves only layers.
-        sliding.layoutIfNeeded()
-        placeCover()
+        if let host {
+            if host.bounds != size { host.bounds = size }
+            let middle = CGPoint(x: size.midX, y: size.midY)
+            if host.center != middle { host.center = middle }
+        }
+        if clip.frame != size { clip.frame = size }
+        if sliding.frame != size { sliding.frame = size }
         placeFront()
     }
 
-    /// The cover starts where the first trailing view does, so at rest it lies
-    /// under them and hides nothing.
-    private func placeCover() {
-        guard let parent = cover.superview, !trailing.isEmpty else { return }
-        // From centre and bounds, which a transform leaves alone.
-        let left = trailing.filter { !$0.isHidden && $0.superview != nil }
-            .map { parent.convert(CGPoint(x: $0.center.x - $0.bounds.width / 2, y: 0), from: $0.superview).x }
-            .min() ?? parent.bounds.maxX
-        let frame = CGRect(x: left - 4, y: 0, width: parent.bounds.width - left + 4 + 160, height: parent.bounds.height)
-        if cover.bounds.size != frame.size { cover.bounds = CGRect(origin: .zero, size: frame.size) }
-        let center = CGPoint(x: frame.midX, y: frame.midY)
-        if cover.center != center { cover.center = center }
-    }
-
-    /// The card's edge at the offset and the buttons in the room it leaves. Called
-    /// on every frame of a swipe: only sizes of plain layers and transforms change.
+    /// The card at the offset and the tiles in the room it leaves. Called on every
+    /// frame of a swipe: a transform and the tiles' frames change, nothing else.
     private func placeFront() {
-        let pulled = max(0, -offset)
-        // Pulled the other way (rubber band): the card moves a little as a whole.
-        let push = max(0, offset)
-        let height = contentHeight
-        let width = max(0, bounds.width - pulled)
-        if let host {
-            let size = CGSize(width: width, height: height)
-            if host.bounds.size != size { host.bounds = CGRect(origin: .zero, size: size) }
-            let center = CGPoint(x: width / 2 + push, y: height / 2)
-            if host.center != center { host.center = center }
-            let clipFrame = CGRect(origin: .zero, size: size)
-            if clip.frame != clipFrame { clip.frame = clipFrame }
-        }
-        let slide = pulled == 0 ? CGAffineTransform.identity : CGAffineTransform(translationX: -pulled, y: 0)
-        for view in trailing where view.transform != slide { view.transform = slide }
-        if cover.transform != slide { cover.transform = slide }
-        let covering = pulled > 0.5
-        if cover.isHidden == covering {
-            // Placed again as it comes: the spinner may have come or gone since.
-            if covering { placeCover() }
-            cover.isHidden = !covering
-        }
+        let move = offset == 0 ? CGAffineTransform.identity : CGAffineTransform(translationX: offset, y: 0)
+        if let host, host.transform != move { host.transform = move }
         onSlide?(offset)
-        guard !pills.isEmpty else { return }
+        guard !tiles.isEmpty else { return }
+        let pulled = max(0, -offset)
+        let count = CGFloat(tiles.count)
         let full = railWidth
-        // Past the full width the button at the edge stretches with the finger.
-        let extra = max(0, pulled - full)
-        // The room between the card (a gap from it) and the side (a margin).
-        let room = max(0, min(pulled, full) - 2 * Self.margin)
-        let centerY = height / 2
-        var right = bounds.width - Self.margin
-        // Button k (0 at the side) has its slot k buttons in; it grows as the
-        // room reaches past it, so they come out one after another.
-        for (k, pill) in pills.reversed().enumerated() {
-            let start = CGFloat(k) * (SwipePill.side + Self.gap)
-            let size = max(0, min(SwipePill.side, room - start))
-            let stretch = k == 0 ? extra : 0
-            pill.place(right: right, centerY: centerY, size: size, stretch: stretch)
-            right -= SwipePill.side + stretch + Self.gap
+        // The gaps open with the swipe, so the tiles start as slivers right away.
+        let gap = Self.gap * min(1, pulled / max(1, full))
+        let width = max(0, (pulled - count * gap) / count)
+        let height = contentHeight
+        var right = rail.bounds.width
+        for tile in tiles.reversed() {
+            tile.place(CGRect(x: right - width, y: 0, width: width, height: height), radius: tileRadius)
+            right -= width + gap
         }
         let out = pulled > full - 2
         if out != fullyOut {
@@ -400,47 +365,6 @@ final class PassThroughStackView: UIStackView {
     }
 }
 
-/// The card's colour with a short fade at its left side: it goes before the
-/// views that move with the card's edge, so the name slips under them softly
-/// (3.0.6). A gradient over a plain colour: no mask, nothing offscreen.
-final class EdgeCover: UIView {
-    static let fade: CGFloat = 18
-    override class var layerClass: AnyClass { CAGradientLayer.self }
-    private var gradient: CAGradientLayer { layer as! CAGradientLayer }
-
-    /// The colour of what is behind the name (the card's, or the surface's).
-    var color: UIColor = .secondarySystemGroupedBackground {
-        didSet { if color != oldValue { applyColor() } }
-    }
-
-    override init(frame: CGRect) {
-        super.init(frame: frame)
-        isUserInteractionEnabled = false
-        gradient.startPoint = CGPoint(x: 0, y: 0.5)
-        gradient.endPoint = CGPoint(x: 1, y: 0.5)
-        applyColor()
-    }
-
-    @available(*, unavailable)
-    required init?(coder _: NSCoder) { fatalError() }
-
-    override func layoutSubviews() {
-        super.layoutSubviews()
-        let stop = NSNumber(value: Double(min(1, Self.fade / max(1, bounds.width))))
-        gradient.locations = [0, stop, 1]
-    }
-
-    override func traitCollectionDidChange(_ previous: UITraitCollection?) {
-        super.traitCollectionDidChange(previous)
-        applyColor()
-    }
-
-    private func applyColor() {
-        let solid = color.resolvedColor(with: traitCollection)
-        gradient.colors = [solid.withAlphaComponent(0).cgColor, solid.cgColor, solid.cgColor]
-    }
-}
-
 /// One server: flag, name, protocol badges and the latency (tap it to test again).
 final class ServerRowView: SwipeRow {
     let card = TapControl()
@@ -456,8 +380,14 @@ final class ServerRowView: SwipeRow {
     let mark = UIImageView()
     private(set) var key: (subscription: Int64, node: String) = (0, "")
     /// A single server shown on its own: the subscription surface is its card.
+    /// The tiles take the subscription's rounding then (3.1.2), and the row lets
+    /// the card's content move out past its sides with the surface.
     var plain = false {
-        didSet { card.backgroundColor = plain ? .clear : .secondarySystemGroupedBackground }
+        didSet {
+            card.backgroundColor = plain ? .clear : .secondarySystemGroupedBackground
+            tileRadius = plain ? 24 : 14
+            clipsToBounds = !plain
+        }
     }
 
     override init(frame: CGRect) {
@@ -506,9 +436,6 @@ final class ServerRowView: SwipeRow {
         sliding.addSubview(row)
         row.pin(to: sliding, insets: UIEdgeInsets(top: 0, left: 14, bottom: 0, right: 16))
         NSLayoutConstraint.activate([pingButton.heightAnchor.constraint(equalTo: row.heightAnchor)])
-        // The latency goes with the card's edge; the name slips under it.
-        row.insertSubview(cover, belowSubview: pingButton)
-        trailing = [pingButton]
     }
 
     func bind(_ subscription: Int64, _ node: String) { key = (subscription, node) }
@@ -536,6 +463,8 @@ final class SubscriptionHeaderView: SwipeRow {
     let mark = UIImageView()
     /// The count's pill, a plain layer behind it (no masking).
     private let countPill = UIView()
+    /// The open head's card while it is swiped (3.1.2): it moves with the head.
+    private let headCard = UIView()
 
     override init(frame: CGRect) {
         super.init(frame: frame)
@@ -543,6 +472,17 @@ final class SubscriptionHeaderView: SwipeRow {
         tap.pressScale = 1
         front.addSubview(tap)
         host = tap
+        headCard.isUserInteractionEnabled = false
+        headCard.backgroundColor = SurfaceView.card
+        headCard.layer.cornerRadius = 22
+        headCard.layer.cornerCurve = .continuous
+        headCard.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+        headCard.alpha = 0
+        tap.insertSubview(headCard, at: 0)
+        // While open, the head keeps what moves inside the container's rounded top.
+        layer.cornerRadius = 22
+        layer.cornerCurve = .continuous
+        layer.maskedCorners = [.layerMinXMinYCorner, .layerMaxXMinYCorner]
         pin.tintColor = Theme.accent
         pin.setContentHuggingPriority(.required, for: .horizontal)
         chevron.tintColor = .secondaryLabel
@@ -562,11 +502,9 @@ final class SubscriptionHeaderView: SwipeRow {
         sliding.addSubview(row)
         row.pin(to: sliding, insets: UIEdgeInsets(top: 0, left: 20, bottom: 0, right: 20))
         NSLayoutConstraint.activate([count.heightAnchor.constraint(equalToConstant: 24), count.widthAnchor.constraint(greaterThanOrEqualToConstant: 34)])
-        // The count, its pill, the spinner and the chevron go with the card's
-        // edge; the name and the pin slip under them (3.0.6).
-        row.insertSubview(cover, belowSubview: spinner)
-        row.insertSubview(countPill, aboveSubview: cover)
-        trailing = [spinner, countPill, count, chevron]
+        // With the count it belongs to: both move with the card.
+        sliding.insertSubview(countPill, at: 0)
+        tileRadius = 24
         countPill.translatesAutoresizingMaskIntoConstraints = false
         NSLayoutConstraint.activate([
             countPill.leadingAnchor.constraint(equalTo: count.leadingAnchor), countPill.trailingAnchor.constraint(equalTo: count.trailingAnchor),
@@ -576,6 +514,14 @@ final class SubscriptionHeaderView: SwipeRow {
 
     func setMark(_ selected: Bool?) {
         SelectionMark.apply(selected, to: mark)
+    }
+
+    /// `alpha`: the open head's own card (0 hides it); `clipped`: the head keeps
+    /// what moves inside the container (open), or lets it out with the card (closed).
+    func showCard(_ alpha: CGFloat, clipped: Bool) {
+        if headCard.frame != tap.bounds { headCard.frame = tap.bounds }
+        if headCard.alpha != alpha { headCard.alpha = alpha }
+        if clipsToBounds != clipped { clipsToBounds = clipped }
     }
 
     /// `progress`: how open the subscription is, 0…1, straight from the spring.
@@ -665,16 +611,11 @@ final class SubscriptionInfoStrip: UIView {
     private let label = UILabel()
     private var shown: (String?, String?) = (nil, nil)
 
-    /// How far the open head's card has given way to its buttons (3.0.6): the
-    /// line stops short of them, with a fade, and does not move.
-    var cut: CGFloat = 0 {
-        didSet { if cut != oldValue { placeLabel() } }
+    /// The open head's swipe offset (≤ 0): the line moves with the head's card
+    /// (3.1.2), so the tiles beside the head never stand over it.
+    var slide: CGFloat = 0 {
+        didSet { if slide != oldValue { placeLabel() } }
     }
-    /// Clips the line at the head's edge; the label inside keeps its full width,
-    /// so a swipe costs no text layout.
-    private let box = UIView()
-    /// The fade at that edge, in the colour under the line.
-    let cover = EdgeCover()
 
     /// Vertical offset while the subscription opens or closes (≤ 0: tucked under the title).
     var lift: CGFloat = 0 {
@@ -688,12 +629,7 @@ final class SubscriptionInfoStrip: UIView {
         label.adjustsFontSizeToFitWidth = true
         label.minimumScaleFactor = 0.75
         label.lineBreakMode = .byTruncatingTail
-        box.clipsToBounds = true
-        box.isUserInteractionEnabled = false
-        addSubview(box)
-        box.addSubview(label)
-        cover.isHidden = true
-        box.addSubview(cover)
+        addSubview(label)
     }
 
     @available(*, unavailable)
@@ -738,15 +674,8 @@ final class SubscriptionInfoStrip: UIView {
             label.bounds = CGRect(origin: .zero, size: frame.size)
             label.center = CGPoint(x: frame.midX, y: frame.midY)
         }
-        let transform = CGAffineTransform(translationX: 0, y: lift)
+        let transform = CGAffineTransform(translationX: slide, y: lift)
         if label.transform != transform { label.transform = transform }
-        let boxFrame = CGRect(x: 0, y: 0, width: max(0, bounds.width - cut), height: bounds.height)
-        if box.frame != boxFrame { box.frame = boxFrame }
-        cover.isHidden = cut < 0.5
-        if !cover.isHidden {
-            let coverFrame = CGRect(x: boxFrame.maxX - EdgeCover.fade - 6, y: 0, width: EdgeCover.fade + 6, height: bounds.height)
-            if cover.frame != coverFrame { cover.frame = coverFrame }
-        }
     }
 }
 
@@ -763,15 +692,12 @@ final class SurfaceView: UIView {
 
     private var shownProgress: CGFloat = -1
     private var shownStandalone: Bool?
-    /// The surface's colour and shape, apart from the view (3.0.6): a closed
-    /// subscription or a lone server is a card whose right side gives way to its
-    /// buttons, while what it holds keeps its width.
+    /// The surface's colour and shape, apart from the view: a closed subscription
+    /// or a lone server is a card that moves aside for its actions (3.1.2) while
+    /// what it holds stays where the list put it.
     private let plate = UIView()
-    /// An open subscription's head while it is swiped: a card of its own on the
-    /// container, giving way the same way.
-    private let headPlate = UIView()
     private var plateColor = SurfaceView.card
-    /// How far the card has given way (≥ 0).
+    /// How far the card has moved aside (≥ 0).
     private(set) var pull: CGFloat = 0
 
     override init(frame: CGRect) {
@@ -779,17 +705,14 @@ final class SurfaceView: UIView {
         // No clipping: a rounded mask over moving content renders offscreen every
         // frame. The server rows clip themselves at the container's edge instead.
         layer.cornerCurve = .continuous
-        for view in [plate, headPlate] {
-            view.isUserInteractionEnabled = false
-            view.layer.cornerCurve = .continuous
-            addSubview(view)
-        }
-        headPlate.backgroundColor = Self.card
-        headPlate.layer.cornerRadius = 22
-        headPlate.isHidden = true
+        plate.isUserInteractionEnabled = false
+        plate.layer.cornerCurve = .continuous
+        addSubview(plate)
         addSubview(filters)
-        addSubview(info)
         addSubview(header)
+        // Over the head (it takes no touches): the open head's own card, while it
+        // is swiped, lies under the provider's line, not over it.
+        addSubview(info)
         filters.isHidden = true
         info.isHidden = true
     }
@@ -832,23 +755,17 @@ final class SurfaceView: UIView {
 
     private func placePlates() {
         let open = shownStandalone == false && shownProgress > 0.001
-        let plateFrame = CGRect(x: 0, y: 0, width: open ? bounds.width : max(0, bounds.width - pull), height: bounds.height)
+        // Closed (or a lone server): the whole card moves aside, out past the
+        // surface's side (the list clips it at the screen's edge).
+        let shift = open ? 0 : pull
+        let plateFrame = CGRect(x: -shift, y: 0, width: bounds.width, height: bounds.height)
         if plate.frame != plateFrame { plate.frame = plateFrame }
-        let head = open && pull > 0.5
-        if headPlate.isHidden == head { headPlate.isHidden = !head }
-        // Behind the name: the card, or on an open container the head's card as
-        // it fades in over the first points.
-        var under = plateColor
-        if head {
-            let frame = CGRect(x: 0, y: 0, width: max(0, bounds.width - pull), height: ServerListView.headerHeight)
-            if headPlate.frame != frame { headPlate.frame = frame }
-            let alpha = min(1, pull / 24)
-            if headPlate.alpha != alpha { headPlate.alpha = alpha }
-            under = alpha < 1 ? Self.blend(plateColor, Self.card, alpha, traits: traitCollection) : Self.card
-        }
-        header.cover.color = under
-        info.cover.color = under
-        info.cut = open ? pull : 0
+        // Open: the head becomes a card of its own as it moves, inside the
+        // container, and the provider's line goes with it.
+        // Clipped only while it moves: a rounded clip at rest would cost every frame
+        // of a scroll for nothing.
+        header.showCard(open ? min(1, pull / 24) : 0, clipped: open && pull > 0.5)
+        info.slide = open ? -pull : 0
     }
 
     static func blend(_ from: UIColor, _ to: UIColor, _ t: CGFloat, traits: UITraitCollection) -> UIColor {
@@ -1256,6 +1173,7 @@ final class ServerListView: UIScrollView {
                 let row = rowView(section.id, node, in: surface, used: &used, plain: true)
                 row.frame = CGRect(x: 0, y: 0, width: width, height: Self.headerHeight)
                 row.contentHeight = Self.headerHeight
+                row.cardInset = 0
                 row.alpha = 1
                 row.front.transform = .identity
                 continue
@@ -1275,7 +1193,10 @@ final class ServerListView: UIScrollView {
                 row.contentHeight = Self.rowHeight
                 // The row clips itself at the container's moving edge (a plain
                 // rectangle clip, cheap), so the surface needs no mask.
-                let rowFrame = CGRect(x: Self.rowInset, y: top, width: width - 2 * Self.rowInset, height: max(0, min(Self.rowHeight, frame.height - top)))
+                // 3.1.2: the row spans the container and the card sits inset in it, so
+                // a card moving aside slides under the container's edge.
+                row.cardInset = Self.rowInset
+                let rowFrame = CGRect(x: 0, y: top, width: width, height: max(0, min(Self.rowHeight, frame.height - top)))
                 if row.frame != rowFrame { row.frame = rowFrame }
                 // A card being uncovered settles into place: it fades in and comes
                 // down the last few points as the edge passes it.

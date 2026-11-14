@@ -138,6 +138,30 @@ final class ConfigBuilderTests: XCTestCase {
         XCTAssertEqual(config.at("inbounds")?[0]?["mtu"], 1500)
     }
 
+    /// 3.1.2: with the VPN on, the app's tests of every server leave the tunnel:
+    /// their names resolve outside it and their connections go direct, matched
+    /// before sniffing (by the name the tunnel's DNS gave the address for).
+    func testServerAddressesGoOutsideTheTunnel() throws {
+        let subscription = try subscription()
+        let hosts = ConfigBuilder.serverHosts(of: [subscription])
+        XCTAssertFalse(hosts.isEmpty)
+        XCTAssertEqual(Set(hosts).count, hosts.count)
+        var options = TunnelOptions()
+        options.serverHosts = ["a.example.com", "1.2.3.4", "2001:db8::1", "A.example.com"]
+        let config = try ConfigBuilder.build(subscription: subscription, selected: nil, options: options)
+        let rules = config.at("route", "rules")?.arrayValue ?? []
+        XCTAssertEqual(rules[0]["outbound"], "direct")
+        XCTAssertEqual(rules[0]["domain"], ["a.example.com", "a.example.com"])
+        XCTAssertEqual(rules[1]["ip_cidr"], ["1.2.3.4/32", "2001:db8::1/128"])
+        XCTAssertEqual(rules[2]["action"], "sniff")
+        XCTAssertEqual(config.at("dns", "rules")?[0]?["server"], "dns-direct")
+        XCTAssertEqual(config.at("dns", "reverse_mapping"), true)
+        // Without addresses nothing changes.
+        let plain = try ConfigBuilder.build(subscription: subscription, selected: nil, options: TunnelOptions())
+        XCTAssertNil(plain.at("dns", "reverse_mapping"))
+        XCTAssertEqual(plain.at("route", "rules")?[0]?["action"], "sniff")
+    }
+
     func testRoutingOptions() throws {
         let subscription = try subscription()
         var options = TunnelOptions()

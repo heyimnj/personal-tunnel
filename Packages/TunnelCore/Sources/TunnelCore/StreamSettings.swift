@@ -38,6 +38,11 @@ public struct StreamSpec: Equatable {
     public var pinnedCertificates: [String] = []
     /// Xray `pinnedPeerCertificatePublicKeySha256`: the key's SHA-256, base64.
     public var pinnedPublicKeys: [String] = []
+    /// Certificates (PEM) to trust for this server: Xray `tlsSettings.certificates`
+    /// (3.1.2). A panel with its own certificate authority hands its certificate
+    /// to the client this way, and Xray-core adds it to the roots it trusts; the
+    /// server's own certificate, issued by it, is then accepted.
+    public var trustedCertificates: [String] = []
 
     public init() {}
 
@@ -63,6 +68,10 @@ public struct StreamSpec: Equatable {
         if tlsFragment { tls["fragment"] = true }
         if allowInsecure, !isReality { tls["insecure"] = true }
         if !isReality { CertificatePins.apply(certificates: pinnedCertificates, publicKeys: pinnedPublicKeys, to: &tls) }
+        // A pin or no check at all already decides; the core refuses both with certificates.
+        if !isReality, !allowInsecure, pinnedCertificates.isEmpty, pinnedPublicKeys.isEmpty, !trustedCertificates.isEmpty {
+            tls["certificate"] = JSONValue(trustedCertificates)
+        }
         let protocols = alpn.filter { !$0.isEmpty }
         if !protocols.isEmpty, !isReality { tls["alpn"] = JSONValue(protocols) }
         if isReality {

@@ -22,6 +22,12 @@ public struct TunnelOptions: Codable, Equatable, Sendable {
     public var logLevel = "info"
     /// Start on the `auto` group (lowest delay) instead of the chosen server.
     public var autoSelect = false
+    /// Addresses of the servers of every subscription (3.1.2). With the VPN on the
+    /// app's own core tests them through the tunnel: their names are resolved and
+    /// their connections sent outside it, so a test measures the server itself
+    /// and not the server the tunnel happens to use (a dead one made every test
+    /// time out).
+    public var serverHosts: [String] = []
 
     public init() {}
 }
@@ -205,6 +211,17 @@ public enum ConfigBuilder {
             ["protocol": "dns", "action": "hijack-dns"],
         ]
         var dnsRules: [JSONValue] = []
+        let probe = Self.splitHosts(options.serverHosts)
+        if !probe.domains.isEmpty {
+            // Before sniffing: the name is the one the app asked for (the tunnel's
+            // DNS remembers which address it gave), not the SNI a REALITY server
+            // borrows.
+            routeRules.insert(["domain": JSONValue(probe.domains), "outbound": "direct"], at: 0)
+            dnsRules.append(["domain": JSONValue(probe.domains), "server": "dns-direct"])
+        }
+        if !probe.addresses.isEmpty {
+            routeRules.insert(["ip_cidr": JSONValue(probe.addresses), "outbound": "direct"], at: probe.domains.isEmpty ? 0 : 1)
+        }
         func local(_ tag: String) -> JSONValue {
             ["tag": .string(tag), "type": "local", "format": "binary", "path": .string(RuleSet.pathPrefix + (RuleSet.files[tag] ?? tag))]
         }
@@ -270,6 +287,9 @@ public enum ConfigBuilder {
             "strategy": .string(options.dnsStrategy),
         ]
         if !dnsRules.isEmpty { dns["rules"] = .array(dnsRules) }
+        // Which name each address was given for, so connections to a server's
+        // address are known by the server's name (see `serverHosts`).
+        if !probe.domains.isEmpty { dns["reverse_mapping"] = true }
 
         var config: [String: JSONValue] = [
             "log": ["level": .string(options.logLevel), "timestamp": true],
@@ -295,6 +315,36 @@ public enum ConfigBuilder {
         ]
         if !endpoints.isEmpty { config["endpoints"] = .array(endpoints) }
         return .object(config)
+    }
+
+    /// Every server address of the subscriptions, without repeats (3.1.2).
+    public static func serverHosts(of subscriptions: [Subscription]) -> [String] {
+        var seen = Set<String>()
+        var hosts: [String] = []
+        for subscription in subscriptions {
+            for node in subscription.nodes {
+                guard let host = node.address?.host.lowercased(), !host.isEmpty, !seen.contains(host) else { continue }
+                seen.insert(host)
+                hosts.append(host)
+            }
+        }
+        return Array(hosts.prefix(4000))
+    }
+
+    /// Names apart from addresses (as /32 and /128).
+    static func splitHosts(_ hosts: [String]) -> (domains: [String], addresses: [String]) {
+        var domains: [String] = []
+        var addresses: [String] = []
+        for raw in hosts {
+            let host = raw.trimmingCharacters(in: CharacterSet(charactersIn: "[] ")).lowercased()
+            guard !host.isEmpty else { continue }
+            if TextCoding.isIPAddress(host) {
+                addresses.append(host.contains(":") ? host + "/128" : host + "/32")
+            } else if host.contains(".") {
+                domains.append(host)
+            }
+        }
+        return (domains, addresses)
     }
 
     /// The configuration the app's own core measures servers with, without the VPN:
