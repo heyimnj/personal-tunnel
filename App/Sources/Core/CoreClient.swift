@@ -95,7 +95,19 @@ final class CoreClient {
         parse.async { self.store = nil }
     }
 
+    /// The core's totals at the last «Сбросить статистику» (3.1.6): the core keeps
+    /// counting from the tunnel's start, so the cards show what came after it.
+    private var totalsBase: (up: Int64, down: Int64) = (0, 0)
+    /// The core's own totals, as they last came.
+    private var rawTotals: (up: Int64, down: Int64) = (0, 0)
+
     func resetStatistics() {
+        totalsBase = rawTotals
+        if var current = status.value {
+            current.uplinkTotal = 0
+            current.downlinkTotal = 0
+            status.set(current)
+        }
         history.value = TrafficHistory()
         connections.value = CoreConnections()
         parse.async { self.store = nil }
@@ -185,6 +197,12 @@ final class CoreClient {
     }
 
     fileprivate func apply(_ value: CoreStatus) {
+        var value = value
+        // A new tunnel starts its count again from zero; so does the base.
+        if value.uplinkTotal < totalsBase.up || value.downlinkTotal < totalsBase.down { totalsBase = (0, 0) }
+        rawTotals = (value.uplinkTotal, value.downlinkTotal)
+        value.uplinkTotal -= totalsBase.up
+        value.downlinkTotal -= totalsBase.down
         status.set(value)
         var next = history.value
         next.append(down: value.downlink, up: value.uplink)
