@@ -134,13 +134,26 @@ private final class ActionPlate: UIView {
 
     /// The plate's frame for this frame of the swipe; the buttons keep their
     /// places against its right end.
+    ///
+    /// 3.1.5: while it is narrower than the card is tall, the plate is a drop —
+    /// a circle as tall as it is wide, centred on the card — so it flows out of
+    /// the card's edge round, grows into a capsule and then into the full plate,
+    /// and goes back the same way. A full-height sliver had no room to round
+    /// its ends and looked like a sharp-edged strip.
     func place(_ frame: CGRect, radius: CGFloat) {
-        if self.frame != frame { self.frame = frame }
-        let corner = min(radius, frame.width / 2, frame.height / 2)
+        let full = frame.height
+        let height = min(full, max(0, frame.width))
+        let shaped = CGRect(x: frame.minX, y: frame.minY + (full - height) / 2, width: frame.width, height: height)
+        if self.frame != shaped { self.frame = shaped }
+        let corner = min(radius, shaped.width / 2, height / 2)
         if layer.cornerRadius != corner { layer.cornerRadius = corner }
+        // The first points come in as the drop grows, not as a hard-edged speck.
+        let fade = max(0, min(1, frame.width / 14))
+        if alpha != fade { alpha = fade }
         var right = frame.width - 4
         for button in buttons.reversed() {
-            let slot = CGRect(x: right - PlateButton.width, y: 0, width: PlateButton.width, height: frame.height)
+            // The symbols keep their place on the card while the drop is shorter.
+            let slot = CGRect(x: right - PlateButton.width, y: -(full - height) / 2, width: PlateButton.width, height: full)
             if button.frame != slot { button.frame = slot }
             // A symbol shows once most of its slot is uncovered.
             let shown = max(0, min(1, (slot.maxX - max(0, slot.minX)) / PlateButton.width))
