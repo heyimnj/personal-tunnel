@@ -348,8 +348,13 @@ class TapControl: UIControl {
                 }
                 return
             }
+            // 3.1.4: a control that does not scale leaves its transform alone. A
+            // swiped card is moved by its transform every frame; the release
+            // animated it back towards identity on top of the swipe (UIKit adds
+            // such animations), and the card fell behind its plate, then jumped.
+            let scales = pressScale != 1
             UIView.animate(withDuration: pressed ? 0.08 : 0.25, delay: 0, options: [.beginFromCurrentState, .allowUserInteraction]) {
-                self.transform = pressed ? CGAffineTransform(scaleX: self.pressScale, y: self.pressScale) : .identity
+                if scales { self.transform = pressed ? CGAffineTransform(scaleX: self.pressScale, y: self.pressScale) : .identity }
                 self.alpha = pressed ? 0.85 : 1
             }
         }

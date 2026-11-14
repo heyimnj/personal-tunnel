@@ -313,4 +313,27 @@ final class ImportTests: XCTestCase {
         """
         XCTAssertEqual(try ContentImporter.parse(document).nodes.map(\.name), ["a", "b"])
     }
+
+    /// 3.1.4: with no host of its own, the transport's Host is the TLS name, as Xray sends it.
+    func testTransportHostDefaultsToServerName() throws {
+        let json = #"""
+        {"remarks": "WS", "outbounds": [{"protocol": "vless", "settings": {"vnext": [{"address": "203.0.113.7", "port": 443, "users": [{"id": "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"}]}]},
+          "streamSettings": {"network": "ws", "security": "tls", "tlsSettings": {"serverName": "front.example.net"}, "wsSettings": {"path": "/socket"}}}]}
+        """#
+        let node = try XCTUnwrap(XrayImport.parse(try JSONValue.parse(json)).nodes.first)
+        XCTAssertEqual(node.outbound.at("transport", "headers", "Host"), "front.example.net")
+        XCTAssertEqual(node.outbound.at("tls", "server_name"), "front.example.net")
+        // Without TLS nothing is invented.
+        var plain = StreamSpec()
+        plain.network = "ws"
+        plain.sni = "front.example.net"
+        XCTAssertNil(try plain.transport()?.at("headers", "Host"))
+    }
+
+    func testOnlyWebAddressesAreRefreshed() {
+        var subscription = Subscription(id: 1, name: "S", url: "https://example.net/sub", nodes: [])
+        XCTAssertTrue(subscription.isRemote)
+        subscription.url = "happ://crypt/abc"
+        XCTAssertFalse(subscription.isRemote)
+    }
 }

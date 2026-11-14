@@ -98,7 +98,12 @@ public struct StreamSpec: Equatable {
 
     /// The `transport` object, or `nil` for plain TCP.
     public func transport() throws -> JSONValue? {
-        let host = hosts.first(where: { !$0.isEmpty })
+        // Without a host of its own, Xray sends the TLS server name as the HTTP
+        // Host of WebSocket, HTTPUpgrade and XHTTP (3.1.4); sing-box sent the
+        // server's address, and a server behind a proxy or CDN answered 404.
+        let secured = ["tls", "xtls", "reality"].contains(security.lowercased())
+        let named = secured ? sni.flatMap { $0.isEmpty ? nil : $0 } : nil
+        let host = hosts.first(where: { !$0.isEmpty }) ?? (["ws", "websocket", "httpupgrade", "xhttp", "splithttp"].contains(network.lowercased()) ? named : nil)
         switch network.lowercased() {
         case "", "tcp", "raw":
             guard headerType?.lowercased() == "http" else { return nil }

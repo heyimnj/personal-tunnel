@@ -73,6 +73,33 @@ final class MinimalRootViewController: UITabBarController, UITabBarControllerDel
         }
     }
 
+    /// Settings tapped again (3.1.4): a page that is not at its top goes back to
+    /// it first; one already at its top goes back one page, not to the root.
+    func tabBarController(_: UITabBarController, shouldSelect controller: UIViewController) -> Bool {
+        guard controller === settings, selectedViewController === settings, let page = settings.topViewController else { return true }
+        if let scroll = Self.scrollView(in: page) {
+            let top = -scroll.adjustedContentInset.top
+            if scroll.contentOffset.y > top + 1 {
+                scroll.setContentOffset(CGPoint(x: scroll.contentOffset.x, y: top), animated: true)
+                return false
+            }
+        }
+        if settings.viewControllers.count > 1 { settings.popViewController(animated: true) }
+        return false
+    }
+
+    /// The page's own scrolling view: the view itself, or the first one in it.
+    private static func scrollView(in page: UIViewController) -> UIScrollView? {
+        if let scroll = page.view as? UIScrollView { return scroll }
+        var queue: [UIView] = [page.view]
+        while !queue.isEmpty {
+            let view = queue.removeFirst()
+            if let scroll = view as? UIScrollView, !(view is UITextView), scroll.isScrollEnabled { return scroll }
+            queue.append(contentsOf: view.subviews)
+        }
+        return nil
+    }
+
     func tabBarController(_: UITabBarController, didSelect _: UIViewController) {
         let next = selectedIndex
         // Tapping Home again steps back through analytics (Settings pops to its root by itself).

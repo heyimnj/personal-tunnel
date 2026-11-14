@@ -184,7 +184,12 @@ public struct Subscription: Codable, Hashable, Identifiable, Sendable {
         sendsDeviceIdentity = try container.decodeIfPresent(Bool.self, forKey: .sendsDeviceIdentity) ?? true
     }
 
-    public var isRemote: Bool { !(url ?? "").isEmpty }
+    /// 3.1.4: only an http(s) address can be fetched again; a subscription kept
+    /// with anything else (an app link, say) is not refreshed and raises no error.
+    public var isRemote: Bool {
+        let text = (url ?? "").trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        return text.hasPrefix("https://") || text.hasPrefix("http://")
+    }
 
     /// A one-server entry is listed as that server, not as a folder.
     public var isStandalone: Bool { nodes.count == 1 }
