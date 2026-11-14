@@ -43,7 +43,19 @@ final class App {
         tunnel.loaded.observe(self, fireNow: false) { [weak self] loaded in
             // The first automatic ping waits for the real tunnel state: with the VPN
             // up, the app's own core would measure through the tunnel.
-            if loaded { self?.autoPing() }
+            guard loaded, let self else { return }
+            // 3.1.2: a new build may read subscriptions better (what a server is
+            // made of is decided when it is imported): every subscription is
+            // fetched again once after an update.
+            let build = Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? ""
+            if Prefs.refreshedForBuild != build {
+                Prefs.refreshedForBuild = build
+                if self.library.subscriptions.contains(where: \.isRemote) {
+                    self.refreshAll()
+                    return
+                }
+            }
+            self.autoPing()
         }
         tunnel.lastError.observe(self, fireNow: false) { [weak self] message in
             if let message { self?.notice.value = message }

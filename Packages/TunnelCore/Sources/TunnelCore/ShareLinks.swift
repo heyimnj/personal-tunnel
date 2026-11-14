@@ -8,12 +8,15 @@ public struct ParsedNode: Equatable {
     /// Outbounds the main one refers to, already tagged relative to each other.
     public var members: [JSONValue]
     public var link: String?
+    /// The server as the provider wrote it, when it came as Xray JSON (3.1.2).
+    public var source: JSONValue?
 
-    public init(name: String, outbound: JSONValue, members: [JSONValue] = [], link: String? = nil) {
+    public init(name: String, outbound: JSONValue, members: [JSONValue] = [], link: String? = nil, source: JSONValue? = nil) {
         self.name = name
         self.outbound = outbound
         self.members = members
         self.link = link
+        self.source = source
     }
 }
 

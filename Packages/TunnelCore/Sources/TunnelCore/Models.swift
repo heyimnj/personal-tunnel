@@ -13,16 +13,20 @@ public struct ServerNode: Codable, Hashable, Identifiable, Sendable {
     public var members: [JSONValue]
     /// The share link the node came from, when it came from one.
     public var link: String?
+    /// The server's outbounds as the provider's Xray JSON wrote them (3.1.2): what
+    /// its page shows without secrets, to see what the conversion made of it.
+    public var source: JSONValue?
 
-    public init(id: String, name: String, outbound: JSONValue, members: [JSONValue] = [], link: String? = nil) {
+    public init(id: String, name: String, outbound: JSONValue, members: [JSONValue] = [], link: String? = nil, source: JSONValue? = nil) {
         self.id = id
         self.name = name
         self.outbound = outbound
         self.members = members
         self.link = link
+        self.source = source
     }
 
-    private enum CodingKeys: String, CodingKey { case id, name, outbound, members, link }
+    private enum CodingKeys: String, CodingKey { case id, name, outbound, members, link, source }
 
     public init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
@@ -31,6 +35,7 @@ public struct ServerNode: Codable, Hashable, Identifiable, Sendable {
         outbound = try container.decode(JSONValue.self, forKey: .outbound)
         members = try container.decodeIfPresent([JSONValue].self, forKey: .members) ?? []
         link = try container.decodeIfPresent(String.self, forKey: .link)
+        source = try container.decodeIfPresent(JSONValue.self, forKey: .source)
     }
 }
 

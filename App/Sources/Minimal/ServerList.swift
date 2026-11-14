@@ -56,24 +56,26 @@ struct SwipeAction {
     var handler: () -> Void
 }
 
-/// One action behind a row (3.1.2): a tile of the card's own colour, height and
-/// rounding with the action's symbol, so the actions read as the card going on
-/// to the right. It grows from a sliver (a thin capsule) to its full width as
-/// the card moves away, and the symbol comes in once there is room for it.
-private final class SwipeTile: UIControl {
+/// One action on the plate: its symbol in the action's colour over a slot of
+/// the plate's full height.
+private final class PlateButton: UIControl {
     let action: SwipeAction
     private let icon = UIImageView()
-    /// Width of a tile when the actions are fully out: compact, about square.
-    static let width: CGFloat = 56
+    private let shade = UIView()
+    static let width: CGFloat = 50
 
     init(_ action: SwipeAction) {
         self.action = action
+        super.init(frame: .zero)
+        shade.isUserInteractionEnabled = false
+        shade.backgroundColor = action.color.withAlphaComponent(0.18)
+        shade.layer.cornerCurve = .continuous
+        shade.alpha = 0
+        addSubview(shade)
         icon.image = UIImage(systemName: action.symbol, withConfiguration: UIImage.SymbolConfiguration(pointSize: 17, weight: .semibold))
         icon.contentMode = .center
         icon.tintColor = action.color
         icon.isUserInteractionEnabled = false
-        super.init(frame: .zero)
-        layer.cornerCurve = .continuous
         addSubview(icon)
         accessibilityLabel = action.title
         isAccessibilityElement = true
@@ -83,40 +85,71 @@ private final class SwipeTile: UIControl {
     @available(*, unavailable)
     required init?(coder _: NSCoder) { fatalError() }
 
-    /// The card's colour, and its colour while pressed (the action's, faintly).
-    var surface: UIColor = .secondarySystemGroupedBackground {
-        didSet { if !isHighlighted { backgroundColor = surface } }
-    }
-
-    /// Frame and rounding for this frame of the swipe: plain layer properties, no
-    /// mask, so the tiles cost nothing per frame.
-    func place(_ frame: CGRect, radius: CGFloat) {
-        if self.frame != frame { self.frame = frame }
-        let corner = min(radius, frame.width / 2, frame.height / 2)
-        if layer.cornerRadius != corner { layer.cornerRadius = corner }
-        let side = min(frame.height, 44)
-        let iconFrame = CGRect(x: (frame.width - side) / 2, y: (frame.height - side) / 2, width: side, height: side)
-        if icon.bounds.size != iconFrame.size { icon.bounds = CGRect(origin: .zero, size: iconFrame.size) }
-        let center = CGPoint(x: iconFrame.midX, y: iconFrame.midY)
-        if icon.center != center { icon.center = center }
-        // The symbol shows once the tile is wide enough to hold it.
-        let t = max(0, min(1, (frame.width - 20) / 22))
-        let eased = t * t * (3 - 2 * t)
-        if icon.alpha != eased { icon.alpha = eased }
-        let scale = 0.6 + 0.4 * eased
-        let transform = eased < 1 ? CGAffineTransform(scaleX: scale, y: scale) : .identity
-        if icon.transform != transform { icon.transform = transform }
-        let hidden = frame.width < 1
-        if isHidden != hidden { isHidden = hidden }
+    override func layoutSubviews() {
+        super.layoutSubviews()
+        icon.frame = bounds
+        let inset = bounds.insetBy(dx: 4, dy: 6)
+        shade.frame = inset
+        shade.layer.cornerRadius = min(12, inset.height / 2)
     }
 
     override var isHighlighted: Bool {
         didSet {
             guard isHighlighted != oldValue else { return }
             UIView.animate(withDuration: isHighlighted ? 0.08 : 0.22, delay: 0, options: [.beginFromCurrentState, .allowUserInteraction, .curveEaseOut]) {
-                self.backgroundColor = self.isHighlighted ? SurfaceView.blend(self.surface, self.action.color, 0.28, traits: self.traitCollection) : self.surface
+                self.shade.alpha = self.isHighlighted ? 1 : 0
             }
         }
+    }
+}
+
+/// The actions behind a row (3.1.2): one plate of the card's colour, height and
+/// rounding that comes out of the card's right side as the card moves away —
+/// a thin capsule first, then wider with the finger. The symbols sit at their
+/// final places against the right end and are uncovered as the plate widens
+/// (it clips them), as in the reference the owner gave.
+private final class ActionPlate: UIView {
+    private(set) var buttons: [PlateButton] = []
+
+    override init(frame: CGRect) {
+        super.init(frame: frame)
+        clipsToBounds = true
+        layer.cornerCurve = .continuous
+    }
+
+    @available(*, unavailable)
+    required init?(coder _: NSCoder) { fatalError() }
+
+    var fullWidth: CGFloat { CGFloat(buttons.count) * PlateButton.width + 8 }
+
+    func set(_ actions: [SwipeAction], tap: @escaping (SwipeAction) -> Void) {
+        buttons.forEach { $0.removeFromSuperview() }
+        buttons = actions.map { action in
+            let button = PlateButton(action)
+            button.addAction(UIAction { _ in tap(action) }, for: .touchUpInside)
+            addSubview(button)
+            return button
+        }
+    }
+
+    /// The plate's frame for this frame of the swipe; the buttons keep their
+    /// places against its right end.
+    func place(_ frame: CGRect, radius: CGFloat) {
+        if self.frame != frame { self.frame = frame }
+        let corner = min(radius, frame.width / 2, frame.height / 2)
+        if layer.cornerRadius != corner { layer.cornerRadius = corner }
+        var right = frame.width - 4
+        for button in buttons.reversed() {
+            let slot = CGRect(x: right - PlateButton.width, y: 0, width: PlateButton.width, height: frame.height)
+            if button.frame != slot { button.frame = slot }
+            // A symbol shows once most of its slot is uncovered.
+            let shown = max(0, min(1, (slot.maxX - max(0, slot.minX)) / PlateButton.width))
+            let alpha = max(0, min(1, (shown - 0.45) / 0.45))
+            if button.alpha != alpha { button.alpha = alpha }
+            right -= PlateButton.width
+        }
+        let hidden = frame.width < 1
+        if isHidden != hidden { isHidden = hidden }
     }
 }
 
@@ -129,10 +162,11 @@ private final class SwipeTile: UIControl {
 ///
 /// 3.1.2: the card moves left as a whole (it slides under the edge of the
 /// subscription, or of the screen), and the actions come out of its right side
-/// as tiles of its own colour, height and rounding — compact, symbol only, a
-/// small gap apart — that widen together with the finger, from thin capsules to
-/// their full width. 3.0.6 shrank the card and grew round buttons beside it;
-/// 3.0.5 slid only the content; 3.0.4 slid the card with circles behind it.
+/// as one plate of its own colour, height and rounding (`ActionPlate`): a thin
+/// capsule that widens with the finger and uncovers the symbols, which wait at
+/// their places against its right end. 3.0.6 shrank the card and grew round
+/// buttons beside it; 3.0.5 slid only the content; 3.0.4 slid the card with
+/// circles behind it.
 class SwipeRow: UIView, UIGestureRecognizerDelegate {
     /// What stays in place: it holds `host` (the card, or the head's tap area).
     /// The list scales it while a card is being uncovered.
@@ -157,19 +191,19 @@ class SwipeRow: UIView, UIGestureRecognizerDelegate {
     var cardInset: CGFloat = 0 {
         didSet { if cardInset != oldValue { setNeedsLayout() } }
     }
-    /// The card's rounding, which the tiles take.
+    /// The card's rounding, which the plate takes.
     var tileRadius: CGFloat = 14
-    /// The card's colour, which the tiles take.
+    /// The card's colour, which the plate takes.
     var tileColor: UIColor = .secondarySystemGroupedBackground {
-        didSet { for tile in tiles { tile.surface = tileColor } }
+        didSet { plate.backgroundColor = tileColor }
     }
     var onOpen: ((SwipeRow) -> Void)?
     /// Every placement (the swipe offset), on every frame: the list moves the
     /// surface with a card that has none of its own.
     var onSlide: ((CGFloat) -> Void)?
-    /// The tiles, beside the card; touches between them reach the row.
+    /// The actions' plate, beside the card; touches outside it reach the row.
     private let rail = PassThroughView()
-    private var tiles: [SwipeTile] = []
+    private let plate = ActionPlate()
     /// The actions are fully out (a light tap of the haptics when they get there).
     private var fullyOut = false
     private(set) var offset: CGFloat = 0
@@ -181,26 +215,29 @@ class SwipeRow: UIView, UIGestureRecognizerDelegate {
     }
     private static let gap: CGFloat = 6
 
-    /// The tiles are built when a swipe first needs them, not with the row: rows
+    /// The buttons are built when a swipe first needs them, not with the row: rows
     /// appear by the dozen as a subscription opens.
     var actions: [SwipeAction] = [] {
         didSet {
             railStale = true
-            if !tiles.isEmpty || offset != 0 { rebuildRail() }
+            if !plate.buttons.isEmpty || offset != 0 { rebuildRail() }
         }
     }
     private var railStale = false
 
-    /// How far the card moves to show every action: each tile with the gap before it.
+    /// How far the card moves to show every action: the plate and the gap before it.
     private var railWidth: CGFloat {
-        CGFloat(tiles.count) * (SwipeTile.width + Self.gap)
+        plate.buttons.isEmpty ? 0 : plate.fullWidth + Self.gap
     }
 
     override init(frame: CGRect) {
         super.init(frame: frame)
         addSubview(front)
-        // Above the card: it lets every touch outside a tile through.
+        // Above the card: it lets every touch outside the plate through.
         addSubview(rail)
+        plate.backgroundColor = tileColor
+        plate.isHidden = true
+        rail.addSubview(plate)
         clip.clipsToBounds = true
         clip.addSubview(sliding)
         let pan = UIPanGestureRecognizer(target: self, action: #selector(panned(_:)))
@@ -213,19 +250,10 @@ class SwipeRow: UIView, UIGestureRecognizerDelegate {
 
     private func rebuildRail() {
         railStale = false
-        tiles.forEach { $0.removeFromSuperview() }
-        tiles = actions.map { action in
-            let tile = SwipeTile(action)
-            tile.surface = tileColor
-            tile.backgroundColor = tileColor
-            tile.isHidden = true
-            tile.addAction(UIAction { [weak self] _ in
-                Haptics.tap()
-                self?.close(animated: true)
-                action.handler()
-            }, for: .touchUpInside)
-            rail.addSubview(tile)
-            return tile
+        plate.set(actions) { [weak self] action in
+            Haptics.tap()
+            self?.close(animated: true)
+            action.handler()
         }
         setNeedsLayout()
     }
@@ -255,25 +283,20 @@ class SwipeRow: UIView, UIGestureRecognizerDelegate {
         placeFront()
     }
 
-    /// The card at the offset and the tiles in the room it leaves. Called on every
-    /// frame of a swipe: a transform and the tiles' frames change, nothing else.
+    /// The card at the offset and the plate in the room it leaves. Called on every
+    /// frame of a swipe: a transform and the plate's frame change, nothing else.
     private func placeFront() {
         let move = offset == 0 ? CGAffineTransform.identity : CGAffineTransform(translationX: offset, y: 0)
         if let host, host.transform != move { host.transform = move }
         onSlide?(offset)
-        guard !tiles.isEmpty else { return }
+        guard !plate.buttons.isEmpty else { return }
         let pulled = max(0, -offset)
-        let count = CGFloat(tiles.count)
         let full = railWidth
-        // The gaps open with the swipe, so the tiles start as slivers right away.
+        // The gap opens with the swipe, so the plate starts as a sliver right away.
         let gap = Self.gap * min(1, pulled / max(1, full))
-        let width = max(0, (pulled - count * gap) / count)
+        let width = max(0, pulled - gap)
         let height = contentHeight
-        var right = rail.bounds.width
-        for tile in tiles.reversed() {
-            tile.place(CGRect(x: right - width, y: 0, width: width, height: height), radius: tileRadius)
-            right -= width + gap
-        }
+        plate.place(CGRect(x: rail.bounds.width - width, y: 0, width: width, height: height), radius: tileRadius)
         let out = pulled > full - 2
         if out != fullyOut {
             fullyOut = out
@@ -380,7 +403,7 @@ final class ServerRowView: SwipeRow {
     let mark = UIImageView()
     private(set) var key: (subscription: Int64, node: String) = (0, "")
     /// A single server shown on its own: the subscription surface is its card.
-    /// The tiles take the subscription's rounding then (3.1.2), and the row lets
+    /// The plate takes the subscription's rounding then (3.1.2), and the row lets
     /// the card's content move out past its sides with the surface.
     var plain = false {
         didSet {
@@ -612,7 +635,7 @@ final class SubscriptionInfoStrip: UIView {
     private var shown: (String?, String?) = (nil, nil)
 
     /// The open head's swipe offset (≤ 0): the line moves with the head's card
-    /// (3.1.2), so the tiles beside the head never stand over it.
+    /// (3.1.2), so the plate beside the head never stands over it.
     var slide: CGFloat = 0 {
         didSet { if slide != oldValue { placeLabel() } }
     }

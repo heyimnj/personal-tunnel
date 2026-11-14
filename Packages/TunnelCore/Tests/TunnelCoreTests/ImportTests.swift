@@ -169,6 +169,50 @@ final class ImportTests: XCTestCase {
         XCTAssertEqual(parsed.nodes.first?.outbound["type"], .string(XrayBacked.type))
     }
 
+    /// 3.1.2: Happ's configs send TLS through a `freedom` outbound that splits the
+    /// ClientHello; that becomes the core's TLS fragmentation instead of being
+    /// dropped. UDP noise goes to Xray-core.
+    func testXrayFreedomFragmentAndNoises() throws {
+        let fragment = """
+        [{"remarks": "Frag", "outbounds": [
+          {"protocol": "vless", "tag": "proxy",
+           "settings": {"vnext": [{"address": "a.example.com", "port": 443, "users": [{"id": "u", "flow": "xtls-rprx-vision"}]}]},
+           "streamSettings": {"network": "tcp", "security": "tls", "tlsSettings": {"serverName": "a.example.com", "fingerprint": "chrome"},
+                              "sockopt": {"dialerProxy": "fragment"}}},
+          {"protocol": "freedom", "tag": "fragment", "settings": {"fragment": {"packets": "tlshello", "length": "100-200", "interval": "10-20"}}},
+          {"protocol": "freedom", "tag": "direct"}]}]
+        """
+        let node = try XrayImport.node(from: try JSONValue.parse(fragment).listValue[0], name: "Frag")
+        XCTAssertEqual(node.outbound.at("tls", "fragment"), true)
+        XCTAssertEqual(node.outbound.at("tls", "record_fragment"), true)
+        XCTAssertNil(node.outbound["detour"])
+        XCTAssertTrue(node.members.isEmpty)
+
+        let noise = """
+        [{"remarks": "Noise", "outbounds": [
+          {"protocol": "hysteria", "tag": "proxy", "settings": {"version": 2, "address": "1.2.3.4", "port": 443},
+           "streamSettings": {"network": "hysteria", "security": "tls", "tlsSettings": {"serverName": "h.example.com"},
+                              "hysteriaSettings": {"version": 2, "auth": "secret"}, "sockopt": {"dialerProxy": "noise"}}},
+          {"protocol": "freedom", "tag": "noise", "settings": {"noises": [{"type": "rand", "packet": "10-20", "delay": "10-16"}]}}]}]
+        """
+        // The provider's own outbounds stay with the server, shown without secrets or addresses.
+        let parsed = XrayImport.parse(try JSONValue.parse(fragment)).nodes[0]
+        let assembled = NodeAssembler.assemble([parsed])[0]
+        let shown = try XCTUnwrap(ServerInspection.safeSource(assembled))
+        XCTAssertTrue(shown.contains("tlshello"))
+        XCTAssertFalse(shown.contains("a.example.com\","))
+        XCTAssertFalse(shown.contains("\"u\""))
+        XCTAssertFalse(shown.contains("\"direct\""))
+        let link = NodeAssembler.assemble([try ShareLink.parse("vless://secret-uuid@s.example.com:443?security=tls&sni=s.example.com&sid=ab#L")])[0]
+        let linkShown = try XCTUnwrap(ServerInspection.safeSource(link))
+        XCTAssertFalse(linkShown.contains("secret-uuid"))
+        XCTAssertTrue(linkShown.hasPrefix("vless://***@***:443?"))
+        XCTAssertTrue(linkShown.contains("sid=***"))
+
+        XCTAssertThrowsError(try XrayImport.node(from: try JSONValue.parse(noise).listValue[0], name: "Noise"))
+        XCTAssertEqual(XrayImport.parse(try JSONValue.parse(noise)).nodes.first?.outbound["type"], .string(XrayBacked.type))
+    }
+
     func testAssemblerMakesUniqueTagsAndRelinksGroups() throws {
         let result = try ContentImporter.parse(Self.xraySubscription)
         let nodes = NodeAssembler.assemble(result.nodes + [result.nodes[0]])

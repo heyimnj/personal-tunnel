@@ -52,6 +52,17 @@ final class ServerInspectorViewController: FormViewController {
            let note = FailureNotes.shared.note(LatencyService.key(subscriptionID, tag)) {
             failure = [FormSection(L("Ошибка последней проверки"), [.note(note)])]
         }
+        var jsonRows: [FormRow] = [
+            .button(title: L("Показать JSON без секретов"), destructive: false) { [weak self] in self?.showJSON(ServerInspection.safeJSON(node)) },
+        ]
+        // 3.1.2: what the provider gave (its Xray JSON or link), secrets and
+        // addresses hidden, to compare with what the app made of it.
+        if let source = ServerInspection.safeSource(node) {
+            jsonRows.append(.button(title: L("Как сервер пришёл от провайдера"), destructive: false) { [weak self] in self?.showJSON(source) })
+        }
+        jsonRows.append(.button(title: L("Скопировать JSON без секретов"), destructive: false) { [weak self] in
+            self?.copy(ServerInspection.safeJSON(node), done: L("JSON скопирован."))
+        })
         return [
             FormSection(name, facts + [
                 .button(title: L("Проверить пинг этого узла"), destructive: false) { App.shared.ping(node: node, in: subscription) },
@@ -61,12 +72,7 @@ final class ServerInspectorViewController: FormViewController {
                 .button(title: L("Скопировать ссылку на сервер"), destructive: false) { [weak self] in self?.copy(link, done: L("Ссылка скопирована.")) },
                 .button(title: L("QR-код сервера"), destructive: false) { [weak self] in self?.showQR(link, name: name) },
             ]),
-            FormSection("JSON", footer: L("Пароли, UUID и ключи заменены на ***."), [
-                .button(title: L("Показать JSON без секретов"), destructive: false) { [weak self] in self?.showJSON(ServerInspection.safeJSON(node)) },
-                .button(title: L("Скопировать JSON без секретов"), destructive: false) { [weak self] in
-                    self?.copy(ServerInspection.safeJSON(node), done: L("JSON скопирован."))
-                },
-            ]),
+            FormSection("JSON", footer: L("Пароли, UUID и ключи заменены на ***."), jsonRows),
         ]
     }
 

@@ -93,7 +93,7 @@ public enum NodeAssembler {
                 if let old = member["tag"]?.stringValue, let new = rename[old] { member["tag"] = .string(new) }
                 return member
             }
-            result.append(ServerNode(id: tag, name: item.name, outbound: main, members: members, link: item.link))
+            result.append(ServerNode(id: tag, name: item.name, outbound: main, members: members, link: item.link, source: item.source))
         }
         return result
     }

@@ -32,10 +32,13 @@ public enum XrayImport {
             let title = config["remarks"]?.stringValue?.trimmingCharacters(in: .whitespacesAndNewlines)
             let name = (title?.isEmpty == false ? title : nil) ?? "Сервер \(offset + 1)"
             do {
-                nodes.append(try node(from: config, name: name))
+                var converted = try node(from: config, name: name)
+                converted.source = source(of: config)
+                nodes.append(converted)
             } catch {
                 // What sing-box cannot run, Xray-core can: the server keeps its own outbounds.
-                if let backed = XrayBacked.node(config: config, name: name) {
+                if var backed = XrayBacked.node(config: config, name: name) {
+                    backed.source = source(of: config)
                     nodes.append(backed)
                 } else {
                     issues.append(ImportIssue(name: name, reason: (error as? ImportError)?.message ?? error.localizedDescription))
@@ -45,20 +48,42 @@ public enum XrayImport {
         return (nodes, issues)
     }
 
+    /// The outbounds that make the server (its proxies and the `freedom` helpers
+    /// they dial through), without routing and DNS: kept with the server.
+    static func source(of config: JSONValue) -> JSONValue {
+        let outbounds = (config["outbounds"]?.arrayValue ?? []).filter { item in
+            let kind = item["protocol"]?.stringValue?.lowercased() ?? ""
+            return proxyProtocols.contains(kind) || (kind == "freedom" && item["settings"]?.objectValue?.isEmpty == false)
+        }
+        return ["outbounds": .array(outbounds)]
+    }
+
     static func node(from config: JSONValue, name: String) throws -> ParsedNode {
         let proxies = (config["outbounds"]?.arrayValue ?? []).filter {
             proxyProtocols.contains($0["protocol"]?.stringValue?.lowercased() ?? "")
         }
         guard !proxies.isEmpty else { throw ImportError(CoreText.t("В конфигурации Xray нет прокси-сервера.")) }
 
+        // Outbounds that are not proxies but that a proxy dials through: Happ's
+        // configs send TLS through a `freedom` outbound that splits the
+        // ClientHello (`fragment`) or adds UDP noise (`noises`), to get past DPI.
+        var helpers: [String: JSONValue] = [:]
+        for item in config["outbounds"]?.arrayValue ?? [] where item["protocol"]?.stringValue?.lowercased() == "freedom" {
+            if let tag = item["tag"]?.stringValue { helpers[tag] = item }
+        }
+
         // Convert every proxy; a chain (`dialerProxy`) becomes a sing-box `detour`.
         var converted: [(tag: String, object: JSONValue, dialer: String?)] = []
         var firstError: Error?
         for (index, proxy) in proxies.enumerated() {
             do {
-                let object = try outbound(from: proxy)
+                var object = try outbound(from: proxy)
                 let tag = proxy["tag"]?.stringValue ?? "proxy-\(index)"
-                let dialer = proxy.at("streamSettings", "sockopt", "dialerProxy")?.stringValue
+                var dialer = proxy.at("streamSettings", "sockopt", "dialerProxy")?.stringValue
+                if let name = dialer, let helper = helpers[name] {
+                    try applyFreedom(helper, to: &object)
+                    dialer = nil
+                }
                 converted.append((tag, object, dialer?.isEmpty == false ? dialer : nil))
             } catch {
                 if firstError == nil { firstError = error }
@@ -97,6 +122,26 @@ public enum XrayImport {
             "idle_timeout": "30m",
         ]
         return ParsedNode(name: name, outbound: group, members: objects)
+    }
+
+    /// A proxy dialled through a `freedom` outbound (3.1.2). Its `fragment` (the
+    /// TLS ClientHello split into records and segments, Happ's way past DPI)
+    /// becomes the core's `fragment` and `record_fragment`; before, the helper
+    /// was dropped, the ClientHello went whole and the connection was cut (EOF).
+    /// UDP `noises` have nothing like them in sing-box: such a UDP server is left
+    /// to Xray-core.
+    static func applyFreedom(_ helper: JSONValue, to object: inout JSONValue) throws {
+        let settings = helper["settings"] ?? .object([:])
+        if settings["fragment"]?.objectValue != nil, var tls = object["tls"]?.objectValue, tls["enabled"]?.boolValue == true {
+            tls["fragment"] = true
+            tls["record_fragment"] = true
+            object["tls"] = .object(tls)
+        }
+        let udp = ["hysteria2", "hysteria", "tuic", "wireguard"].contains(object["type"]?.stringValue ?? "")
+            || object["transport"]?["type"]?.stringValue == "quic"
+        if udp, let noises = settings["noises"]?.arrayValue, !noises.isEmpty {
+            throw ImportError(CoreText.t("Сервер добавляет UDP-шум (noises): он работает через Xray-core."))
+        }
     }
 
     // MARK: One outbound

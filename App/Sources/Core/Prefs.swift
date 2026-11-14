@@ -240,6 +240,12 @@ enum Prefs {
         return options
     }
 
+    /// The build that last fetched every subscription again (3.1.2).
+    static var refreshedForBuild: String? {
+        get { defaults.string(forKey: "pt.refresh.build") }
+        set { defaults.set(newValue, forKey: "pt.refresh.build") }
+    }
+
     static var migratedFrom1x: Bool {
         get { defaults.bool(forKey: "pt.migrated.v1") }
         set { defaults.set(newValue, forKey: "pt.migrated.v1") }
