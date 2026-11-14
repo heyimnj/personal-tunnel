@@ -67,6 +67,8 @@ final class MinimalServersViewController: UIViewController, UIScrollViewDelegate
     /// list brings it out (as in Telegram's chat list).
     private let search = UISearchTextField()
     private var query = ""
+    /// Subscriptions the search found by their servers (opened to show them).
+    private var searchFound = Set<Int64>()
     private var placedSearch = false
     /// The search's slot above the list (3.1.0: the field is 48 pt, was 40).
     private static let searchHeight: CGFloat = 64
@@ -454,18 +456,32 @@ final class MinimalServersViewController: UIViewController, UIScrollViewDelegate
         }
     }
 
-    /// The servers the list shows, in its order (3.0.5): open subscriptions (the
-    /// search opens those it found) and single servers, each narrowed by the
-    /// search and by its filters. 3.0.4 took every server of an open
-    /// subscription, so a search for «США» still tested all of them. With nothing
-    /// open, every server left by the search and the filters.
+    /// The servers the list shows, in its order (3.0.5): open subscriptions and
+    /// single servers, each narrowed by its filters. With nothing open, every
+    /// server left by the filters.
+    ///
+    /// 3.1.1: while searching, exactly the servers the search found, whether
+    /// their subscription has finished opening or not; and the field's own text
+    /// is read first, so a change that has not reached the list yet (a word
+    /// picked from the keyboard's suggestions) still counts. The test ran over
+    /// whole open subscriptions when the list lagged behind the field.
     private func shownServers() -> [(Subscription, ServerNode)] {
+        let typed = (search.text ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        if typed != query {
+            query = typed
+            reload()
+        }
         let library = App.shared.library
         func servers(_ sections: [ServerListView.Section]) -> [(Subscription, ServerNode)] {
             sections.flatMap { section -> [(Subscription, ServerNode)] in
                 guard let subscription = library.subscription(section.id) else { return [] }
                 return section.nodes.compactMap { tag in subscription.node(tag).map { (subscription, $0) } }
             }
+        }
+        if !query.isEmpty {
+            // Found by their servers (open, or opening), and those open by hand; a
+            // subscription matched only by its name shows just its head until opened.
+            return servers(list.sections.filter { $0.standalone || searchFound.contains($0.id) || list.isOpen($0.id) })
         }
         let open = servers(list.sections.filter { $0.standalone || list.isOpen($0.id) })
         return open.isEmpty ? servers(list.sections) : open
@@ -736,6 +752,7 @@ final class MinimalServersViewController: UIViewController, UIScrollViewDelegate
                                           tags: tags, selected: selected,
                                           traffic: Self.trafficText(subscription.info), expiry: Self.expiryText(subscription.info))
         }
+        searchFound = found
         // Subscriptions found by their servers open to show them; the user's own
         // open/closed choice is kept for when the search is cleared.
         list.set(sections, open: needle.isEmpty ? expanded : expanded.union(found))

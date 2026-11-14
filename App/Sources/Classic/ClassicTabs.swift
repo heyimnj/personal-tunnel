@@ -54,6 +54,9 @@ final class ClassicServersViewController: UIViewController, UITableViewDataSourc
             Haptics.tap()
             // 3.0.5: the servers the list shows (search and filter applied), not the whole subscription.
             if App.shared.latency.progress.value.running { App.shared.latency.cancel() } else if let self, let subscription = self.subscription {
+                // 3.1.1: the rows again from the field's own text, in case its last
+                // change has not reached them.
+                self.reload()
                 App.shared.ping(nodes: self.rows.map { (subscription, $0) })
             }
         }
