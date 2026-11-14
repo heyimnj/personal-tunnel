@@ -1,4 +1,30 @@
-# Следующая сессия: 3.1.3 (229) на устройстве владельца
+# Следующая сессия: 3.1.4 (230) на устройстве владельца
+
+## 3.1.4 (230): отзыв на 3.1.3 (логи по серверам, две записи свайпа, скриншоты)
+
+- Логи: VLESS TLS Vision «ALL VPN» всё ещё `EOF` и с фрагментацией 3.1.3; Hysteria2 Soda/Velvet теперь
+  отвечают (certificate ушёл); Kot/Bebra молчат (timeout, через Bebra не проходит даже DNS); LVI USA
+  (VLESS TLS WebSocket, Xray JSON) — сервер отвечает `404` на апгрейд WebSocket.
+- Одиночный VLESS поверх TLS из Xray JSON теперь идёт в Xray-core со своими выходами (`XrayImport.runsInXray`),
+  как в Happ; балансировщики и REALITY остаются в sing-box. Замер: Xray-core тратит ~19 КБ на сервер
+  (150 серверов ≈ 3 МБ), лимит расширения выдерживает. На устройстве не проверено.
+- 404: Xray без своего Host у WebSocket/HTTPUpgrade/XHTTP шлёт в Host имя TLS (SNI), sing-box слал адрес
+  сервера. `StreamSpec.transport` подставляет SNI (ссылки и балансировщики).
+- Свайп: карточка — `TapControl`; при отпускании пальца её анимация «отжатия» ставила `transform` в identity
+  с анимацией поверх смещения свайпа (UIKit складывает такие анимации) — карточка с названием отставала
+  от плашки и прыгала. `TapControl` без масштаба (`pressScale == 1`) больше не трогает `transform`.
+- Вкладка «Настройки» повторно: раздел не наверху — прокрутка к началу; наверху — на один раздел назад
+  (`MinimalRootViewController.shouldSelect`).
+- «VPN Direct»: адрес подписки не http(s) — после обновления сыпались «Это не адрес подписки».
+  `Subscription.isRemote` теперь только для http(s).
+- Адблок в играх (Block Blast; в Anywhere работает). Исходники Anywhere (NodePassProject/Anywhere): тот же
+  принцип — отказ на DNS (0.0.0.0), ярус ADBlock выше всех правил, SNI/QUIC; сам список (AnywhereRules)
+  закрыт. Наши списки ловят AppLovin, Unity, ironSource, AdMob, Pangle API, Vungle, Moloco, но не было
+  Mintegral (`mbridge.com`), мобильной рекламы Яндекса, BigoAds, статики Pangle, Google IMA и др. —
+  `scripts/ad-games.txt`, добавлен в `ad-ru.srs` (все уровни).
+
+Что спросить: подключаются ли VLESS TLS (Horizon, HIT, Appa) и LVI; есть ли реклама в Block Blast; свайп
+при закрытии; если Kot/Bebra молчат — «Как сервер пришёл от провайдера» для Bebra.
 
 ## 3.1.3 (229): отзыв на 3.1.2 (лог с текстами ошибок, скриншот, образец свайпа Spotify)
 

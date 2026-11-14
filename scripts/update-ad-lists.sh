@@ -94,6 +94,8 @@ kept = sorted(d for d in blocked if not covered(d, allowed))
 open(sys.argv[1], "w").write("\n".join(kept) + "\n")
 print(len(kept), "regional ad servers")
 PY
+# 3.1.4: рекламные сети мобильных игр, которых нет в этих фильтрах.
+cat "$ROOT/scripts/ad-games.txt" >> "$WORK/ru.txt"
 compile_domains "$WORK/ru.txt" ad-ru
 
 {

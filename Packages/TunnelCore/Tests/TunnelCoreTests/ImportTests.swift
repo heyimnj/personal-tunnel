@@ -72,7 +72,12 @@ final class ImportTests: XCTestCase {
         XCTAssertEqual(group.members.count, 2)
         XCTAssertEqual(group.members[1].at("transport", "headers", "Host"), "b.example.net")
 
-        let xhttp = result.nodes[2].outbound
+        // 3.1.4: a single VLESS-over-TLS server runs in Xray-core with its own outbounds.
+        XCTAssertEqual(result.nodes[2].outbound["type"], .string(XrayBacked.type))
+        XCTAssertEqual(result.nodes[2].outbound["server"], "x.example.net")
+        // The conversion itself is still what a share link of the same server gets.
+        let config = try XCTUnwrap(try JSONValue.parse(Self.xraySubscription).arrayValue?[2])
+        let xhttp = try XrayImport.outbound(from: try XCTUnwrap(config["outbounds"]?.arrayValue?.first))
         XCTAssertEqual(xhttp.at("transport", "type"), "xhttp")
         XCTAssertEqual(xhttp.at("transport", "x_padding_bytes"), "100-1000")
         XCTAssertNil(xhttp.at("transport", "no_grpc_header"))
@@ -317,7 +322,7 @@ final class ImportTests: XCTestCase {
     /// 3.1.4: with no host of its own, the transport's Host is the TLS name, as Xray sends it.
     func testTransportHostDefaultsToServerName() throws {
         let json = #"""
-        {"remarks": "WS", "outbounds": [{"protocol": "vless", "settings": {"vnext": [{"address": "203.0.113.7", "port": 443, "users": [{"id": "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"}]}]},
+        {"remarks": "WS", "outbounds": [{"protocol": "trojan", "settings": {"servers": [{"address": "203.0.113.7", "port": 443, "password": "pw"}]},
           "streamSettings": {"network": "ws", "security": "tls", "tlsSettings": {"serverName": "front.example.net"}, "wsSettings": {"path": "/socket"}}}]}
         """#
         let node = try XCTUnwrap(XrayImport.parse(try JSONValue.parse(json)).nodes.first)

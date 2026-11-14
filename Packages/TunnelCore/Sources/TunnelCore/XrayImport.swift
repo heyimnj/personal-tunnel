@@ -32,6 +32,9 @@ public enum XrayImport {
             let title = config["remarks"]?.stringValue?.trimmingCharacters(in: .whitespacesAndNewlines)
             let name = (title?.isEmpty == false ? title : nil) ?? "Сервер \(offset + 1)"
             do {
+                if runsInXray(config) {
+                    throw ImportError(CoreText.t("VLESS с TLS работает через Xray-core, как в Happ."))
+                }
                 var converted = try node(from: config, name: name)
                 converted.source = source(of: config)
                 nodes.append(converted)
@@ -46,6 +49,22 @@ public enum XrayImport {
             }
         }
         return (nodes, issues)
+    }
+
+    /// 3.1.4: VLESS over TLS from an Xray config is run by Xray-core itself,
+    /// with the provider's own outbounds. sing-box's rendering of it broke on
+    /// real panels (Vision cut with EOF, WebSocket answered 404) while Happ, on
+    /// Xray-core, connected; REALITY and the other protocols stay in sing-box.
+    /// An Xray-backed server costs the tunnel about 20 KB.
+    /// A balancer (several proxies in one config) stays a sing-box group: Xray-backed
+    /// servers are run by their first proxy alone.
+    static func runsInXray(_ config: JSONValue) -> Bool {
+        let proxies = (config["outbounds"]?.arrayValue ?? []).filter { proxyProtocols.contains($0["protocol"]?.stringValue?.lowercased() ?? "") }
+        guard proxies.count == 1 else { return false }
+        return proxies.contains { item in
+            item["protocol"]?.stringValue?.lowercased() == "vless"
+                && ["tls", "xtls"].contains(item.at("streamSettings", "security")?.stringValue?.lowercased() ?? "")
+        }
     }
 
     /// The outbounds that make the server (its proxies and the `freedom` helpers

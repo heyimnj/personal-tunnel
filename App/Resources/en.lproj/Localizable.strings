@@ -540,3 +540,4 @@
 "по корням Mozilla" = "against Mozilla roots";
 "Сервер добавляет UDP-шум (noises): он работает через Xray-core." = "The server adds UDP noise (noises): it runs through Xray-core.";
 "Как сервер пришёл от провайдера" = "The server as the provider gave it";
+"VLESS с TLS работает через Xray-core, как в Happ." = "VLESS over TLS runs through Xray-core, as in Happ.";

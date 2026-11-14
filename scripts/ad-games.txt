@@ -1,0 +1,36 @@
+# Рекламные сети мобильных игр, которых нет в HaGeZi и AdGuard (3.1.4).
+# Добавляются к ad-ru.srs, то есть действуют на всех уровнях блокировки.
+# Только домены, которые обслуживают рекламу: ничего общего с самими играми.
+# Mintegral / Mbridge
+mbridge.com
+mintegral.com
+mintegral.net
+mtgglobals.com
+mtg-native.com
+rayjump.com
+# BigoAds
+bigoads.com
+bigossp.com
+# Pangle (ByteDance), статика объявлений
+pangle.io
+pangleglobal.com
+i18n-pglstatp.com
+pglstatp-toutiao.com
+# Google IMA (видеореклама)
+imasdk.googleapis.com
+# Яндекс: мобильная реклама
+mobileads.yandex.ru
+mobileads.yandex.net
+mobile-ads-beacon.yandex.ru
+adsdk.yandex.net
+an.yandex.net
+ads.yandex.net
+yandexadexchange.net
+adfox.ru
+# myTarget / VK Ads: показ объявлений
+r.mradx.net
+ad.vk.com
+# ironSource, Digital Turbine, Verve
+isappcloud.com
+ad.digitalturbine.com
+sdk.verve.com
