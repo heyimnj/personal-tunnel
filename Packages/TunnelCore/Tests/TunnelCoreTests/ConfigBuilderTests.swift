@@ -110,7 +110,7 @@ final class ConfigBuilderTests: XCTestCase {
         XCTAssertEqual(config.at("route", "final"), "direct")
         XCTAssertNil(config.at("route", "rule_set"))
         XCTAssertNil(config.at("route", "rules"))
-        XCTAssertEqual(config.at("dns", "servers")?.arrayValue?.map { $0["tag"] }, ["dns-direct"])
+        XCTAssertEqual(config.at("dns", "servers")?.arrayValue?.map { $0["tag"] }, ["dns-direct", "dns-direct-1", "dns-direct-2", "dns-direct-3"])
         // Nothing points at what was removed.
         let text = config.serialized(pretty: false)
         XCTAssertFalse(text.contains("dns-remote"))
@@ -154,18 +154,27 @@ final class ConfigBuilderTests: XCTestCase {
         XCTAssertEqual(full.at("dns", "servers")?[0]?["type"], "group")
         XCTAssertEqual(full.at("dns", "servers")?[0]?["tag"], "dns-remote")
         XCTAssertEqual(full.at("dns", "servers")?[0]?["servers"], ["dns-remote-https", "dns-remote-tcp"])
+        XCTAssertEqual(full.at("dns", "servers")?[0]?["mode"], "parallel")
         XCTAssertEqual(full.at("dns", "servers")?[1]?["type"], "https")
         XCTAssertEqual(full.at("dns", "servers")?[1]?["detour"], "proxy")
         XCTAssertEqual(full.at("dns", "servers")?[2]?["type"], "tcp")
         XCTAssertEqual(full.at("dns", "servers")?[2]?["detour"], "proxy")
+        // 3.0.6: outside the tunnel, the chosen resolver and two fallbacks at once.
         XCTAssertEqual(full.at("dns", "servers")?[3]?["tag"], "dns-direct")
-        XCTAssertNil(full.at("dns", "servers")?[3]?["detour"])
+        XCTAssertEqual(full.at("dns", "servers")?[3]?["type"], "group")
+        XCTAssertEqual(full.at("dns", "servers")?[3]?["servers"], ["dns-direct-1", "dns-direct-2", "dns-direct-3"])
+        XCTAssertEqual(full.at("dns", "servers")?[4]?["server"], "1.1.1.1")
+        XCTAssertEqual(full.at("dns", "servers")?[5]?["server"], "77.88.8.8")
+        XCTAssertNil(full.at("dns", "servers")?[4]?["detour"])
         XCTAssertEqual(full.at("route", "default_domain_resolver", "server"), "dns-direct")
 
         options.adBlocking = false
         options.bypassRussia = false
         options.bypassPrivate = false
+        options.dnsServer = "8.8.8.8"
         let bare = try ConfigBuilder.build(subscription: subscription, selected: nil, options: options)
+        // A fallback that is already the chosen resolver is not asked twice.
+        XCTAssertEqual(bare.at("dns", "servers")?[3]?["servers"], ["dns-direct-1", "dns-direct-2"])
         XCTAssertEqual(bare.at("route", "rules")?.arrayValue?.count, 2)
         XCTAssertNil(bare.at("route", "rule_set"))
         XCTAssertNil(bare.at("dns", "rules"))

@@ -253,18 +253,19 @@ public enum ConfigBuilder {
         if !ruleSets.isEmpty { route["rule_set"] = .array(ruleSets) }
 
         var dns: [String: JSONValue] = [
-            "servers": [
+            "servers": .array([
                 // Everything apps ask is resolved through the VPN: nothing leaks to the local network.
-                // 3.0.5: a group of two ways through the server (the core's `group`,
-                // mode «stable»: one is used while it answers, a failed query is asked
-                // again through the other at once). Some servers break DNS over HTTPS
-                // to the resolver (they answer it with their own certificate, which
-                // the system refuses), and with HTTPS alone no name resolved at all.
-                ["type": "group", "tag": "dns-remote", "servers": ["dns-remote-https", "dns-remote-tcp"], "mode": "stable"],
+                // 3.0.5: a group of two ways through the server (the core's `group`).
+                // Some servers break DNS over HTTPS to the resolver (they answer it
+                // with their own certificate, which the system refuses), and with
+                // HTTPS alone no name resolved at all. 3.0.6: mode «parallel» — every
+                // name is asked both ways at once and the first answer counts; with
+                // «stable» a start that picked the broken way waited 5–10 s for it
+                // to fail before the other was asked.
+                ["type": "group", "tag": "dns-remote", "servers": ["dns-remote-https", "dns-remote-tcp"], "mode": "parallel"],
                 ["type": "https", "tag": "dns-remote-https", "server": .string(options.dnsServer), "detour": .string(selectorTag)],
                 ["type": "tcp", "tag": "dns-remote-tcp", "server": .string(options.dnsServer), "detour": .string(selectorTag)],
-                ["type": "udp", "tag": "dns-direct", "server": .string(options.dnsServer)],
-            ],
+            ] + directResolvers(options)),
             "final": "dns-remote",
             "strategy": .string(options.dnsStrategy),
         ]
@@ -300,7 +301,7 @@ public enum ConfigBuilder {
         config["inbounds"] = nil
         config["log"] = ["level": "error"]
         config["dns"] = [
-            "servers": [["type": "udp", "tag": "dns-direct", "server": .string(options.dnsServer)]],
+            "servers": .array(directResolvers(options)),
             "final": "dns-direct",
             "strategy": .string(options.dnsStrategy),
         ]
@@ -309,6 +310,25 @@ public enum ConfigBuilder {
             "final": "direct",
         ]
         return config
+    }
+
+    /// Public resolvers tried next to the chosen one for server addresses and
+    /// names that stay outside the tunnel (3.0.6): Yandex answers where 1.1.1.1
+    /// is slowed down or cut, and Google where neither does.
+    static let fallbackResolvers = ["77.88.8.8", "8.8.8.8"]
+
+    /// `dns-direct`: the resolver outside the tunnel. 3.0.6: a group asking the
+    /// chosen resolver and the fallbacks at once over UDP — with one resolver a
+    /// lost answer left a server's address unknown and its ping read
+    /// «lookup …: context deadline exceeded».
+    static func directResolvers(_ options: TunnelOptions) -> [JSONValue] {
+        var addresses = [options.dnsServer]
+        for address in fallbackResolvers where !addresses.contains(address) { addresses.append(address) }
+        let members = addresses.enumerated().map { index, address -> JSONValue in
+            ["type": "udp", "tag": .string("dns-direct-\(index + 1)"), "server": .string(address)]
+        }
+        let group: JSONValue = ["type": "group", "tag": "dns-direct", "servers": .array(members.map { $0["tag"] ?? .null }), "mode": "parallel"]
+        return [group] + members
     }
 
     /// Servers keep fields that point into the configuration they came from:

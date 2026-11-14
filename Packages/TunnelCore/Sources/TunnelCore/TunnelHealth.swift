@@ -24,9 +24,16 @@ public struct MemorySample: Codable, Equatable, Sendable {
     /// `[mem] занято 21.4 МиБ, пик 25.0 МиБ, доступно 28.6 МиБ`
     public var line: String {
         func mib(_ value: Double) -> String { String(format: "%.1f", value) }
-        var text = "[mem] занято \(mib(used)) МиБ, пик \(mib(peak)) МиБ"
-        if available > 0 { text += ", доступно \(mib(available)) МиБ" }
-        return text
+        // The same texts as `TunnelText.formats`: the extension writes them in
+        // Russian, the app shows them translated.
+        if available > 0 { return CoreText.f("[mem] занято %@ МиБ, пик %@ МиБ, доступно %@ МиБ", mib(used), mib(peak), mib(available)) }
+        return CoreText.f("[mem] занято %@ МиБ, пик %@ МиБ", mib(used), mib(peak))
+    }
+
+    /// Worth a new line in the log after `logged`: a megabyte up or down, a new
+    /// peak by a megabyte, or ten minutes since (3.0.6).
+    public func differs(from logged: MemorySample) -> Bool {
+        abs(used - logged.used) >= 1 || peak - logged.peak >= 1 || date.timeIntervalSince(logged.date) >= 600
     }
 
     public func encoded() -> Data? { try? JSONEncoder().encode(self) }
@@ -88,7 +95,7 @@ public enum CrashReport {
             parts.append(CoreText.t("Ядро:") + "\n" + Redactor.redact(kept.joined(separator: "\n")))
         }
         if !events.isEmpty {
-            parts.append(CoreText.t("Последние события расширения:") + "\n" + events.suffix(40).map(Redactor.redact).joined(separator: "\n"))
+            parts.append(CoreText.t("Последние события расширения:") + "\n" + events.suffix(40).map { TunnelText.localize(Redactor.redact($0)) }.joined(separator: "\n"))
         }
         return (cause, parts.joined(separator: "\n\n"))
     }

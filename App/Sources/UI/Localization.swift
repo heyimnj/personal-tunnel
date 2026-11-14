@@ -23,6 +23,7 @@ enum Language {
         table = code == "ru" ? nil : Bundle.main.path(forResource: code, ofType: "lproj").flatMap(Bundle.init(path:))
         CoreText.translate = { L($0) }
         CoreText.russianPlurals = code == "ru"
+        CoreText.russian = code == "ru"
     }
 
     /// Dates and numbers in the interface language.

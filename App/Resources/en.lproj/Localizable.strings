@@ -358,6 +358,7 @@
 "проверено" = "checked";
 "путь: " = "path: ";
 "сертификат" = "certificate";
+"обрыв" = "dropped";
 "сервер" = "server";
 "сервера" = "servers";
 "серверов" = "servers";
@@ -492,3 +493,38 @@
 "Готово" = "Done";
 "Классика: активный узел проверяется по HTTPS раз в минуту. Список: generate_204 по HTTPS через каждый узел, до 8 одновременно, ожидание до 5 с; без VPN — то же ядром приложения, 4 с, до 10 одновременно. Не уложившийся по времени узел сразу проверяется ещё раз." = "Classic: the active server is checked over HTTPS once a minute. The list: generate_204 over HTTPS through each server, up to 8 at once, waiting up to 5 s; without VPN the same by the app's core, 4 s, up to 10 at once. A server that runs out of time is checked once more at once.";
 "Основной: generate_204 через каждый узел подключённой подписки (4 с), до 20 одновременно. Серверы остальных подписок и все серверы без VPN проверяет ядро приложения: generate_204 через каждый сервер (4 с), до 10 одновременно; с VPN их задержка включает туннель. Не уложившийся по времени узел сразу проверяется ещё раз. Результаты хранятся 2,5 минуты, при открытии списка проверяются только устаревшие." = "Primary: generate_204 through every server of the connected subscription (4 s), up to 20 at once. Servers of other subscriptions, and every server without VPN, are checked by the app's core: generate_204 through each server (4 s), up to 10 at once; with VPN their delay includes the tunnel. A server that runs out of time is checked once more at once. Results are kept for 2.5 minutes; opening the list checks only the outdated ones.";
+
+/* 3.0.6: the packet tunnel's own lines (TunnelText), translated when shown */
+"запуск, ядро %@" = "start, core %@";
+"ядро расширения: %@" = "extension core: %@";
+"запуск не удался: %@" = "start failed: %@";
+"остановка, причина %@" = "stop, reason %@";
+"перезагрузка конфигурации" = "reloading the configuration";
+"перезагрузка не удалась: %@" = "reload failed: %@";
+"Нет доступа к общей группе приложения (%@). Проверьте подпись приложения и расширения." = "No access to the app group (%@). Check how the app and the extension are signed.";
+"Ядро не инициализировалось: %@" = "The core did not initialize: %@";
+"Командный сервер не создан: %@" = "The command server was not created: %@";
+"Командный сервер не создан." = "The command server was not created.";
+"Командный сервер не запущен." = "The command server is not running.";
+"Xray-core запущен, интерфейс %@" = "Xray-core started, interface %@";
+"в подписке есть серверы Xray, но расширение собрано без Xray-core" = "the subscription has Xray servers, but the extension was built without Xray-core";
+"сеть сменилась (%@): перезапуск Xray-core" = "network changed (%@): restarting Xray-core";
+"Туннель не запущен." = "The tunnel is not running.";
+"закрытие службы: %@" = "closing the service: %@";
+"Нет сохранённой конфигурации. Откройте Personal Tunnel и выберите сервер." = "No saved configuration. Open Personal Tunnel and choose a server.";
+"[mem] занято %@ МиБ, пик %@ МиБ, доступно %@ МиБ" = "[mem] used %@ MiB, peak %@ MiB, available %@ MiB";
+"[mem] занято %@ МиБ, пик %@ МиБ" = "[mem] used %@ MiB, peak %@ MiB";
+"ядро не передало параметры TUN" = "the core did not pass the TUN options";
+"не найден файловый дескриптор TUN" = "TUN file descriptor not found";
+"система не применила настройки туннеля за 20 с" = "the system did not apply the tunnel settings within 20 s";
+"монитор сети не запущен" = "the network monitor is not running";
+"владелец соединения на iOS недоступен" = "the connection owner is not available on iOS";
+"оболочка недоступна" = "shell not available";
+"пользователи недоступны" = "users not available";
+"SFTP недоступен" = "SFTP not available";
+"SSH-агент недоступен" = "SSH agent not available";
+"SSH недоступен" = "SSH not available";
+"мосты недоступны" = "bridges not available";
+"недоступно" = "not available";
+"<адрес>" = "<address>";
+"<сервер>" = "<server>";

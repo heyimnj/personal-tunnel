@@ -104,6 +104,19 @@ final class LatencyTests: XCTestCase {
         XCTAssertGreaterThanOrEqual(Date().timeIntervalSince(start), 0.25)
     }
 
+    /// 3.0.6: a connection cut midway (EOF) is tried again even when it took long.
+    func testSlowEOFIsRetried() async {
+        let probes = ColdProbes(coldFor: 1, failure: .closed)
+        let sink = Sink()
+        var mode = LatencyMode.localCore(link: "https://x")
+        mode.quickFailure = 0
+        await LatencyRunner(probes: probes).run([.init(tag: "a", host: "h", port: 1, udp: false)],
+                                                mode: mode, tunnel: true) { await sink.add($0) }
+        let all = await sink.all
+        XCTAssertEqual(all["a"], .delay(120))
+        XCTAssertEqual(probes.count("a"), 2)
+    }
+
     /// A certificate that is not accepted stays so: no second attempt.
     func testCertificateFailureIsNotRetried() async {
         let probes = ColdProbes(coldFor: 1, failure: .certificate)
@@ -180,5 +193,8 @@ final class LatencyTests: XCTestCase {
         XCTAssertEqual(ProbeFailure.classify("tls: failed to verify certificate: x509: \u{201C}a.internal\u{201D} certificate is not standards compliant"), .certificate)
         XCTAssertEqual(ProbeFailure.classify("certificate pin: unrecognized server certificate 00ff"), .certificate)
         XCTAssertEqual(ProbeFailure.classify("timeout: no recent network activity"), .timeout)
+        XCTAssertEqual(ProbeFailure.classify("EOF"), .closed)
+        XCTAssertEqual(ProbeFailure.classify("read tcp 1.2.3.4:5->6.7.8.9:443: read: connection reset by peer"), .closed)
+        XCTAssertEqual(ProbeFailure.classify("dial tcp 1.2.3.4:443: connect: connection refused"), .refused)
     }
 }

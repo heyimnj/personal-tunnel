@@ -193,7 +193,7 @@ final class CoreClient {
 
     /// The app's own lines; cleaned here, they are short and few.
     fileprivate func append(_ entries: [(Int32, String)]) {
-        appendPrepared(entries.map { ($0.0, Redactor.redact(LogText.clean($0.1))) })
+        appendPrepared(entries.map { ($0.0, TunnelText.localize(Redactor.redact(LogText.clean($0.1)))) })
     }
 
     /// Lines already cleaned and masked (on `parse`).
@@ -272,7 +272,7 @@ final class CoreClient {
             guard !entries.isEmpty else { return }
             let token = self.token
             owner.parse.async { [weak owner] in
-                let prepared = entries.map { ($0.0, Redactor.redact(LogText.clean($0.1))) }
+                let prepared = entries.map { ($0.0, TunnelText.localize(Redactor.redact(LogText.clean($0.1)))) }
                 owner?.receive(token) { $0.appendPrepared(prepared) }
             }
         }

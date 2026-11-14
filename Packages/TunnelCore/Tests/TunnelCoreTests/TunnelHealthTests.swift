@@ -21,6 +21,16 @@ final class TunnelHealthTests: XCTestCase {
         XCTAssertEqual(MemorySample(used: 1, peak: 2, available: 0).line, "[mem] занято 1.0 МиБ, пик 2.0 МиБ")
     }
 
+    /// 3.0.6: memory is sampled every 15 s but written only when it moves.
+    func testMemoryLineIsWrittenWhenItMoves() {
+        let start = Date(timeIntervalSince1970: 1_000)
+        let logged = MemorySample(used: 30, peak: 31, available: 20, date: start)
+        XCTAssertFalse(MemorySample(used: 30.6, peak: 31.5, available: 19.4, date: start.addingTimeInterval(15)).differs(from: logged))
+        XCTAssertTrue(MemorySample(used: 31.2, peak: 31.5, available: 18.8, date: start.addingTimeInterval(15)).differs(from: logged))
+        XCTAssertTrue(MemorySample(used: 30, peak: 32.1, available: 20, date: start.addingTimeInterval(15)).differs(from: logged))
+        XCTAssertTrue(MemorySample(used: 30, peak: 31, available: 20, date: start.addingTimeInterval(600)).differs(from: logged))
+    }
+
     func testCrashCausePrefersCoreThenMemoryThenSystem() {
         let near = MemorySample(used: 47, peak: 48, available: 2)
         XCTAssertEqual(CrashReport.text(startedAt: nil, systemReason: "x", memory: near, events: [], coreCrash: "panic: boom").cause, "Ядро завершилось с ошибкой.")

@@ -264,7 +264,7 @@ final class ServiceLogViewController: UIViewController, UITableViewDataSource, U
             return "\(level) \(line.text)"
         }
         if let paths = App.shared.paths {
-            let events = TunnelEvents.read(TunnelEvents.file(paths))
+            let events = TunnelEvents.read(TunnelEvents.file(paths)).map(TunnelText.localize)
             if !events.isEmpty { text += ["", L("Расширение:")] + events }
             let xray = ServiceLogViewController.tail(paths.xrayLog, lines: 80)
             if !xray.isEmpty { text += ["", "Xray-core:"] + xray }

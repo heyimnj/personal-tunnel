@@ -8,6 +8,8 @@ public enum CoreText {
     nonisolated(unsafe) public static var translate: (String) -> String = { $0 }
     /// Russian counts have three forms (1 сервер, 2 сервера, 5 серверов); others two.
     nonisolated(unsafe) public static var russianPlurals = true
+    /// The interface is Russian: nothing to translate (3.0.6, see `TunnelText`).
+    nonisolated(unsafe) public static var russian = true
 
     public static func t(_ text: String) -> String { translate(text) }
 

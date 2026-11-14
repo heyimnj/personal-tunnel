@@ -32,7 +32,7 @@ public extension Redactor {
     /// own servers (a failed probe names the address it dialled), where a
     /// server's name may be missing and only its address shows.
     static func hideAddresses(_ text: String) -> String {
-        ipAddress.stringByReplacingMatches(in: text, range: NSRange(text.startIndex..., in: text), withTemplate: "<адрес>")
+        ipAddress.stringByReplacingMatches(in: text, range: NSRange(text.startIndex..., in: text), withTemplate: NSRegularExpression.escapedTemplate(for: CoreText.t("<адрес>")))
     }
 
     /// Hides the user's own servers in a text that leaves the app: their names
@@ -45,11 +45,11 @@ public extension Redactor {
             var line = String(line)
             var named = false
             for name in names where line.range(of: name, options: .caseInsensitive) != nil {
-                line = line.replacingOccurrences(of: name, with: "<сервер>", options: .caseInsensitive)
+                line = line.replacingOccurrences(of: name, with: CoreText.t("<сервер>"), options: .caseInsensitive)
                 named = true
             }
             if named {
-                line = ipAddress.stringByReplacingMatches(in: line, range: NSRange(line.startIndex..., in: line), withTemplate: "<адрес>")
+                line = ipAddress.stringByReplacingMatches(in: line, range: NSRange(line.startIndex..., in: line), withTemplate: NSRegularExpression.escapedTemplate(for: CoreText.t("<адрес>")))
             }
             return line
         }.joined(separator: "\n")

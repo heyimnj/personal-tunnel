@@ -73,3 +73,12 @@ func TestProberStartsOnProbeFixtures(t *testing.T) {
 		prober.Close()
 	}
 }
+
+func TestSetGCPercent(t *testing.T) {
+	previous := SetGCPercent(50)
+	defer SetGCPercent(previous)
+	if SetGCPercent(50) != 50 {
+		t.Fatal("GC percent was not set")
+	}
+	FreeMemory()
+}

@@ -28,6 +28,10 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
     private var xrayPath: NWPathMonitor?
     private var xrayInterface: String?
     private var memoryPeak: Double = 0
+    /// The last memory line written to the extension's log (3.0.6: it is sampled
+    /// every 15 s, written when it moves by a megabyte or every ten minutes).
+    private var memoryLogged: MemorySample?
+    private var memoryFreedAt: Date?
 
     // MARK: Lifecycle
 
@@ -124,6 +128,12 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
         var error: NSError?
         LibboxSetup(options, &error)
         if let error { throw TunnelError("Ядро не инициализировалось: \(error.localizedDescription)") }
+        #if TUNNEL_XRAY
+        // 3.0.6: with a limit of its own the core leaves Go's heap growth at 100%;
+        // a night of backups through the tunnel could double the heap before a
+        // collection. 50% is what the core itself uses in an extension.
+        _ = PtbridgeSetGCPercent(50)
+        #endif
         PacketTunnelProvider.coreIsSetUp = true
     }
 
@@ -253,9 +263,10 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
     private func startMemoryLog() {
         memoryTimer?.cancel()
         memoryPeak = 0
+        memoryLogged = nil
         sampleMemory()
         let timer = DispatchSource.makeTimerSource(queue: queue)
-        timer.schedule(deadline: .now() + 60, repeating: 60, leeway: .seconds(5))
+        timer.schedule(deadline: .now() + 15, repeating: 15, leeway: .seconds(3))
         timer.setEventHandler { [weak self] in self?.sampleMemory() }
         timer.resume()
         memoryTimer = timer
@@ -274,8 +285,25 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
         memoryPeak = max(memoryPeak, used, Double(info.ledger_phys_footprint_peak) / mib)
         let available = Double(os_proc_available_memory()) / mib
         let sample = MemorySample(used: used, peak: memoryPeak, available: available)
+        // Kept for the app at every sample: if the system ends the extension, the
+        // last one is at most 15 s old.
         AppGroup.defaults.set(sample.encoded(), forKey: SharedKey.tunnelMemory)
+        if available > 0, available < 10 { relieveMemory(sample) }
+        guard memoryLogged.map({ sample.differs(from: $0) }) ?? true else { return }
+        memoryLogged = sample
         commandServer?.writeMessage(4, message: sample.line)
+        event(sample.line)
+    }
+
+    /// Close to the limit: the core returns what it can to the system at once,
+    /// at most once a minute, and the log says so.
+    private func relieveMemory(_ sample: MemorySample) {
+        if let last = memoryFreedAt, Date().timeIntervalSince(last) < 60 { return }
+        memoryFreedAt = Date()
+        #if TUNNEL_XRAY
+        PtbridgeFreeMemory()
+        #endif
+        log(sample.line, level: .warn)
         event(sample.line)
     }
 

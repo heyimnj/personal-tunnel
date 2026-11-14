@@ -1,6 +1,7 @@
 import Foundation
 import NetworkExtension
 import TunnelCore
+import UIKit
 
 enum TunnelState: Equatable {
     case disconnected, connecting, connected, disconnecting, reasserting
@@ -28,14 +29,39 @@ final class TunnelController {
     let loaded = Observable(false)
 
     private var manager: NETunnelProviderManager?
-    private var observer: NSObjectProtocol?
+    private var observers: [NSObjectProtocol] = []
+    /// A start was asked for and the system has not reported the tunnel coming up
+    /// yet (3.0.6): until then a «disconnected» read is the status before the start,
+    /// not its end, and the button keeps showing the connection.
+    private var startPending: Date?
+    private var reloading = false
 
     init() {
-        observer = NotificationCenter.default.addObserver(forName: .NEVPNStatusDidChange, object: nil, queue: .main) { [weak self] note in
-            guard let self, let connection = note.object as? NEVPNConnection, connection === self.manager?.connection else { return }
-            self.sync()
-        }
+        let center = NotificationCenter.default
+        observers.append(center.addObserver(forName: .NEVPNStatusDidChange, object: nil, queue: .main) { [weak self] note in
+            guard let self, let connection = note.object as? NEVPNConnection else { return }
+            if connection === self.manager?.connection {
+                self.sync()
+            } else if connection is NETunnelProviderSession {
+                // 3.0.6: after an update (or a configuration saved elsewhere) the
+                // system hands out a new connection object, and its news used to be
+                // dropped: the tunnel ran while the app showed it off, and the next
+                // press stopped it. The configuration is read again instead.
+                self.reread()
+            }
+        })
+        // Whatever happened while the app was away is read again on return.
+        observers.append(center.addObserver(forName: UIApplication.willEnterForegroundNotification, object: nil, queue: .main) { [weak self] _ in
+            self?.reread()
+        })
         load { _ in }
+    }
+
+    /// Reads the system's configuration again (once at a time).
+    private func reread() {
+        guard !reloading else { return }
+        reloading = true
+        load { [weak self] _ in self?.reloading = false }
     }
 
     /// Bundle identifier of the embedded packet tunnel, read from the app itself
@@ -70,13 +96,24 @@ final class TunnelController {
 
     private func sync() {
         let status = manager?.connection.status ?? .disconnected
-        let next: TunnelState
+        var next: TunnelState
         switch status {
         case .connected: next = .connected
         case .connecting: next = .connecting
         case .disconnecting: next = .disconnecting
         case .reasserting: next = .reasserting
         default: next = .disconnected
+        }
+        if let pending = startPending {
+            if next != .disconnected {
+                // The system answered the start: from here its status is the truth.
+                startPending = nil
+            } else if Date().timeIntervalSince(pending) < TunnelController.startGrace {
+                // Not up yet: a status read before the start reached the system.
+                next = .connecting
+            } else {
+                startPending = nil
+            }
         }
         if next.isOn {
             if connectedSince.value == nil { connectedSince.value = manager?.connection.connectedDate ?? Date() }
@@ -86,7 +123,7 @@ final class TunnelController {
         if next == .disconnected, state.value == .connecting || state.value == .connected {
             if let message = AppGroup.defaults.string(forKey: SharedKey.lastTunnelError), !message.isEmpty {
                 AppGroup.defaults.removeObject(forKey: SharedKey.lastTunnelError)
-                lastError.value = message
+                lastError.value = TunnelText.localize(message)
             }
         }
         state.set(next)
@@ -170,27 +207,61 @@ final class TunnelController {
         }
     }
 
+    /// How long a start may take to show up in the system's status (seconds).
+    private static let startGrace: TimeInterval = 10
+
     func start(config: String) {
         state.set(.connecting)
-        prepared { [weak self] result in
+        startPending = Date()
+        load { [weak self] existing in
             guard let self else { return }
-            switch result {
-            case let .failure(error):
-                self.lastError.value = error.localizedDescription
+            // 3.0.6: the app may have lost the tunnel's status (see `init`). A tunnel
+            // that is already up or coming up is kept: saving the configuration under
+            // it would stop it.
+            switch existing?.connection.status {
+            case .connected?, .connecting?, .reasserting?:
+                self.startPending = nil
                 self.sync()
-            case let .success(manager):
-                do {
-                    try manager.connection.startVPNTunnel(options: [TunnelIPC.configOption: config as NSString])
-                } catch {
+                return
+            default: break
+            }
+            self.prepared { [weak self] result in
+                guard let self else { return }
+                switch result {
+                case let .failure(error):
+                    self.startPending = nil
                     self.lastError.value = error.localizedDescription
+                    self.sync()
+                case let .success(manager):
+                    do {
+                        try manager.connection.startVPNTunnel(options: [TunnelIPC.configOption: config as NSString])
+                    } catch {
+                        self.startPending = nil
+                        self.lastError.value = error.localizedDescription
+                    }
+                    // The wait counts from the start itself, not from the save before it.
+                    if self.startPending != nil { self.startPending = Date() }
+                    self.sync()
+                    self.recheckStart()
                 }
+            }
+        }
+    }
+
+    /// Reads the status again while a start is pending, in case its news is lost;
+    /// the last read comes after `startGrace` and ends the wait either way.
+    private func recheckStart() {
+        for delay in [1, 3, 6, TunnelController.startGrace + 0.5] {
+            DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
+                guard let self, self.startPending != nil else { return }
                 self.sync()
             }
         }
     }
 
     func stop() {
-        guard let manager else { return }
+        startPending = nil
+        guard let manager else { sync(); return }
         // Otherwise on-demand brings the tunnel straight back.
         if manager.isOnDemandEnabled {
             manager.isOnDemandEnabled = false
@@ -215,7 +286,7 @@ final class TunnelController {
         do {
             try session.sendProviderMessage(Data(TunnelIPC.reloadMessage.utf8)) { response in
                 DispatchQueue.main.async {
-                    completion(response.flatMap { String(data: $0, encoding: .utf8) })
+                    completion(response.flatMap { String(data: $0, encoding: .utf8) }.map(TunnelText.localize))
                 }
             }
         } catch {

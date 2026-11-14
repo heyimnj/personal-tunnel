@@ -5,7 +5,10 @@ public enum ProbeFailure: String, Codable, Sendable, Equatable {
     /// `certificate` (3.0.5): the server's certificate was not accepted — a
     /// self-signed server without its pin, or one that does not match. Shown
     /// apart from `tls`, which is a TLS/REALITY handshake that broke.
-    case dns, timeout, refused, tls, certificate, unreachable, noAddress, unsupported, other
+    /// `closed` (3.0.6): the connection was cut midway («EOF», «reset», «broken
+    /// pipe») — most often a pooled one the server had already dropped; it is
+    /// always tried once more.
+    case dns, timeout, refused, tls, certificate, unreachable, noAddress, unsupported, closed, other
 
     public var title: String {
         switch self {
@@ -17,6 +20,7 @@ public enum ProbeFailure: String, Codable, Sendable, Equatable {
         case .unreachable: return CoreText.t("нет маршрута")
         case .noAddress: return CoreText.t("нет адреса")
         case .unsupported: return CoreText.t("только с VPN")
+        case .closed: return CoreText.t("обрыв")
         case .other: return CoreText.t("ошибка")
         }
     }
@@ -27,7 +31,9 @@ public enum ProbeFailure: String, Codable, Sendable, Equatable {
         if t.contains("timeout") || t.contains("timed out") || t.contains("deadline") { return .timeout }
         if t.contains("x509") || t.contains("certificate") { return .certificate }
         if t.contains("no such host") || t.contains("lookup") || t.contains("dns") || t.contains("nxdomain") { return .dns }
-        if t.contains("refused") || t.contains("reset") { return .refused }
+        if t.contains("refused") { return .refused }
+        if t.contains("eof") || t.contains("reset") || t.contains("broken pipe") || t.contains("connection closed")
+            || t.contains("closed network connection") { return .closed }
         if t.contains("tls") || t.contains("reality") || t.contains("certificate") || t.contains("handshake") { return .tls }
         if t.contains("unreachable") || t.contains("no route") || t.contains("network is down") { return .unreachable }
         return .other
@@ -191,9 +197,10 @@ public actor LatencyRunner {
     /// A first test through a server is often cold: the core still has to find the
     /// server's address and open every layer of the connection. One that runs out
     /// of time (or trips on that lookup) is tried once more at once, warmed up; a
-    /// second answer that comes is the real delay.
+    /// second answer that comes is the real delay. A connection cut midway
+    /// (EOF, reset) is tried again too, however long it took (3.0.6).
     static func worthRetry(_ result: ProbeResult) -> Bool {
-        if case let .failed(reason) = result { return reason == .timeout || reason == .dns }
+        if case let .failed(reason) = result { return reason == .timeout || reason == .dns || reason == .closed }
         return false
     }
 
@@ -221,7 +228,7 @@ public actor LatencyRunner {
         guard case let .failed(reason) = first, !isFinal(reason), !Task.isCancelled else { return first }
         let quick = Date().timeIntervalSince(start) < mode.quickFailure
         guard quick || worthRetry(first) else { return first }
-        if quick {
+        if quick || reason == .closed {
             try? await Task.sleep(nanoseconds: 300_000_000)
             guard !Task.isCancelled else { return first }
         }
