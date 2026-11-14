@@ -273,6 +273,13 @@ public enum ConfigBuilder {
 
         var config: [String: JSONValue] = [
             "log": ["level": .string(options.logLevel), "timestamp": true],
+            // 3.1.0: certificates are checked as Xray-core checks them (Happ and
+            // the other clients): against Mozilla's roots, by Go. Without a store
+            // the core hands the check to iOS, whose stricter rules turned down
+            // servers the other clients reach («certificate is not standards
+            // compliant»: a validity period, a missing Certificate Transparency
+            // proof). The probe configuration below keeps it.
+            "certificate": ["store": "mozilla"],
             "dns": .object(dns),
             "inbounds": [[
                 "type": "tun",

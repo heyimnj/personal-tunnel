@@ -68,7 +68,17 @@ final class MinimalServersViewController: UIViewController, UIScrollViewDelegate
     private let search = UISearchTextField()
     private var query = ""
     private var placedSearch = false
-    private static let searchHeight: CGFloat = 52
+    /// The search's slot above the list (3.1.0: the field is 48 pt, was 40).
+    private static let searchHeight: CGFloat = 64
+    private static let searchFieldHeight: CGFloat = 48
+    /// A well set into the sheet, darker than the cards and with a fine edge, so
+    /// the search does not read as one more subscription (3.1.0).
+    private static let searchFill = UIColor { traits in
+        traits.userInterfaceStyle == .dark ? UIColor(white: 0, alpha: 0.42) : UIColor(red: 0.878, green: 0.878, blue: 0.898, alpha: 1)
+    }
+    private static let searchEdge = UIColor { traits in
+        traits.userInterfaceStyle == .dark ? UIColor(white: 1, alpha: 0.10) : UIColor(white: 0, alpha: 0.06)
+    }
     private static let barHeight: CGFloat = 70
     /// Where the last touch began, and whether the search was already out then:
     /// a pull closes the sheet from the bar, or from anywhere once the search is out.
@@ -260,6 +270,11 @@ final class MinimalServersViewController: UIViewController, UIScrollViewDelegate
         return items
     }
 
+    override func traitCollectionDidChange(_ previous: UITraitCollection?) {
+        super.traitCollectionDidChange(previous)
+        search.layer.borderColor = Self.searchEdge.resolvedColor(with: traitCollection).cgColor
+    }
+
     override func viewWillAppear(_ animated: Bool) {
         super.viewWillAppear(animated)
         presentationController?.delegate = self
@@ -267,7 +282,8 @@ final class MinimalServersViewController: UIViewController, UIScrollViewDelegate
 
     override func viewDidLayoutSubviews() {
         super.viewDidLayoutSubviews()
-        search.frame = CGRect(x: ServerListView.margin, y: 4, width: max(0, list.bounds.width - 2 * ServerListView.margin), height: 40)
+        search.frame = CGRect(x: ServerListView.margin, y: 4, width: max(0, list.bounds.width - 2 * ServerListView.margin), height: Self.searchFieldHeight)
+        search.layer.borderColor = Self.searchEdge.resolvedColor(with: traitCollection).cgColor
         if !placedSearch, list.bounds.height > 0 {
             placedSearch = true
             list.layoutIfNeeded()
@@ -288,8 +304,11 @@ final class MinimalServersViewController: UIViewController, UIScrollViewDelegate
         search.autocorrectionType = .no
         search.autocapitalizationType = .none
         search.clearButtonMode = .whileEditing
-        search.backgroundColor = SurfaceView.card
-        search.layer.cornerRadius = 12
+        search.backgroundColor = Self.searchFill
+        search.borderStyle = .none
+        search.layer.borderWidth = 1 / UIScreen.main.scale
+        search.layer.cornerRadius = Self.searchFieldHeight / 2
+        search.leftView?.tintColor = .secondaryLabel
         search.layer.cornerCurve = .continuous
         search.clipsToBounds = true
         search.delegate = self

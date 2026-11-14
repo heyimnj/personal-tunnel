@@ -222,13 +222,14 @@ enum XHTTPOptions {
 /// checks `certificate_sha256` against every certificate the server presents,
 /// so a self-signed server works with its pin and nothing else does.
 public enum CertificatePins {
-    /// Hex SHA-256 hashes from a link or a file: separated by commas, semicolons
-    /// or spaces; colons inside a hash are allowed. Anything that is not a
-    /// whole hash is left out, so a broken value never stops the core.
+    /// Hex SHA-256 hashes from a link or a file: separated by commas, semicolons,
+    /// tildes, bars or spaces (3.1.0: clients write lists differently); colons
+    /// inside a hash are allowed. Anything that is not a whole hash is left out,
+    /// so a broken value never stops the core.
     public static func hex(_ values: [String]) -> [String] {
         var result: [String] = []
         for value in values {
-            for piece in value.split(whereSeparator: { $0 == "," || $0 == ";" || $0 == " " || $0 == "\n" }) {
+            for piece in value.split(whereSeparator: { ",;~| \n\t+".contains($0) }) {
                 let clean = piece.filter { $0 != ":" && $0 != "-" }.lowercased()
                 guard clean.count == 64, clean.allSatisfy(\.isHexDigit), !result.contains(clean) else { continue }
                 result.append(clean)

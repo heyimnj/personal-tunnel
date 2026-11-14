@@ -122,6 +122,10 @@ final class ShareLinkTests: XCTestCase {
     /// of `insecure`; the pin reaches the core, broken values are left out.
     func testCertificatePins() throws {
         let hash = String(repeating: "ab", count: 32)
+        // 3.1.0: lists written with other separators.
+        let other = String(repeating: "cd", count: 32)
+        XCTAssertEqual(CertificatePins.hex(["\(hash)~\(other)"]), [hash, other])
+        XCTAssertEqual(CertificatePins.hex(["\(hash)|\(other.uppercased())"]), [hash, other])
         let colons = stride(from: 0, to: 64, by: 2).map { i -> String in
             let start = hash.index(hash.startIndex, offsetBy: i)
             return String(hash[start ..< hash.index(start, offsetBy: 2)]).uppercased()

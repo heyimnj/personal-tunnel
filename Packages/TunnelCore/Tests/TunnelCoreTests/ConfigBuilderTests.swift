@@ -108,6 +108,7 @@ final class ConfigBuilderTests: XCTestCase {
             XCTAssertTrue(tags.contains(tag) || config["endpoints"]?.arrayValue?.contains { $0["tag"]?.stringValue == tag } == true, tag)
         }
         XCTAssertEqual(config.at("route", "final"), "direct")
+        XCTAssertEqual(config.at("certificate", "store"), "mozilla")
         XCTAssertNil(config.at("route", "rule_set"))
         XCTAssertNil(config.at("route", "rules"))
         XCTAssertEqual(config.at("dns", "servers")?.arrayValue?.map { $0["tag"] }, ["dns-direct", "dns-direct-1", "dns-direct-2", "dns-direct-3"])
@@ -149,6 +150,8 @@ final class ConfigBuilderTests: XCTestCase {
         XCTAssertEqual(rules[7]["outbound"], "direct")
         XCTAssertEqual(full.at("route", "rule_set")?.arrayValue?.count, 7)
         XCTAssertEqual(full.at("dns", "final"), "dns-remote")
+        // 3.1.0: certificates checked against Mozilla's roots, as Xray-core does.
+        XCTAssertEqual(full.at("certificate", "store"), "mozilla")
         // 3.0.5: the resolver through the VPN is a group: HTTPS, and plain TCP
         // through the same server when HTTPS fails.
         XCTAssertEqual(full.at("dns", "servers")?[0]?["type"], "group")

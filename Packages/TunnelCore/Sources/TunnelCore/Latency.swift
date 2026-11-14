@@ -8,14 +8,17 @@ public enum ProbeFailure: String, Codable, Sendable, Equatable {
     /// `closed` (3.0.6): the connection was cut midway («EOF», «reset», «broken
     /// pipe») — most often a pooled one the server had already dropped; it is
     /// always tried once more.
-    case dns, timeout, refused, tls, certificate, unreachable, noAddress, unsupported, closed, other
+    /// `reality` (3.1.0): a REALITY handshake that broke, apart from `tls` (both
+    /// read «TLS/Reality» before, and TLS servers showed «Reality»).
+    case dns, timeout, refused, tls, reality, certificate, unreachable, noAddress, unsupported, closed, other
 
     public var title: String {
         switch self {
         case .dns: return "DNS"
         case .timeout: return CoreText.t("таймаут")
         case .refused: return CoreText.t("отказ")
-        case .tls: return "TLS/Reality"
+        case .tls: return "TLS"
+        case .reality: return "Reality"
         case .certificate: return CoreText.t("сертификат")
         case .unreachable: return CoreText.t("нет маршрута")
         case .noAddress: return CoreText.t("нет адреса")
@@ -34,7 +37,8 @@ public enum ProbeFailure: String, Codable, Sendable, Equatable {
         if t.contains("refused") { return .refused }
         if t.contains("eof") || t.contains("reset") || t.contains("broken pipe") || t.contains("connection closed")
             || t.contains("closed network connection") { return .closed }
-        if t.contains("tls") || t.contains("reality") || t.contains("certificate") || t.contains("handshake") { return .tls }
+        if t.contains("reality") { return .reality }
+        if t.contains("tls") || t.contains("handshake") { return .tls }
         if t.contains("unreachable") || t.contains("no route") || t.contains("network is down") { return .unreachable }
         return .other
     }
@@ -61,20 +65,37 @@ public struct LatencyMode: Equatable, Sendable {
     /// connection that was already gone (a pooled QUIC, gRPC or XHTTP one): it is
     /// tried again after a short pause, whatever the reason (3.0.5).
     public var quickFailure: TimeInterval = 1
+    /// 3.1.0: the URL test runs in two waves. The first gives every server this
+    /// long (ms): a server that answers at all answers well within it. Those
+    /// that stay silent get a second, longer try (`urlTimeoutMs`) once the first
+    /// wave is through, `retryConcurrency` at a time — unless they were silent
+    /// in the previous test as well. A list of 200 servers, most of them dead,
+    /// took minutes when each dead one cost two full timeouts in turn.
+    public var firstTimeoutMs = 2500
+    public var retryConcurrency = 0
 
     /// The app's own core without the VPN (3.0): a URL test of every server,
     /// 4 s each (3.0.3, was 3: a cold first test spends most of it finding the
     /// server's address), 10 at a time, at the address the chosen mode uses.
+    /// 3.1.0: 32 at a time, the retries 48 (a silent server costs the app
+    /// nothing but a waiting socket); was 10.
     public static func localCore(link: String) -> LatencyMode {
-        LatencyMode(tcpFilter: false, directTimeout: 3, directConcurrency: 10, urlTimeoutMs: 4000, urlConcurrency: 10, link: link)
+        LatencyMode(tcpFilter: false, directTimeout: 3, directConcurrency: 10, urlTimeoutMs: 4000, urlConcurrency: 32, link: link,
+                    firstTimeoutMs: 2500, retryConcurrency: 48)
     }
 
     /// «Основной», «Классика», «Альтернативный» — параметры 1.5.0.
     public static func named(_ name: String?) -> LatencyMode {
         switch name {
-        case "classic": return LatencyMode(tcpFilter: false, directTimeout: 3, directConcurrency: 10, urlTimeoutMs: 5000, urlConcurrency: 8, link: "https://www.gstatic.com/generate_204")
-        case "alternative": return LatencyMode(tcpFilter: false, directTimeout: 3, directConcurrency: 10, urlTimeoutMs: 2500, urlConcurrency: 12, link: "http://www.gstatic.com/generate_204")
-        default: return LatencyMode(tcpFilter: true, directTimeout: 3, directConcurrency: 10, urlTimeoutMs: 4000, urlConcurrency: 20, link: "https://www.gstatic.com/generate_204")
+        // Through the tunnel the tests run in the extension (about 50 MiB): its
+        // first wave stays at 1.5.0's numbers, only the retries, mostly silent
+        // servers, go wider.
+        case "classic": return LatencyMode(tcpFilter: false, directTimeout: 3, directConcurrency: 10, urlTimeoutMs: 5000, urlConcurrency: 8, link: "https://www.gstatic.com/generate_204",
+                                           firstTimeoutMs: 3000, retryConcurrency: 12)
+        case "alternative": return LatencyMode(tcpFilter: false, directTimeout: 3, directConcurrency: 10, urlTimeoutMs: 2500, urlConcurrency: 12, link: "http://www.gstatic.com/generate_204",
+                                               firstTimeoutMs: 2500, retryConcurrency: 16)
+        default: return LatencyMode(tcpFilter: true, directTimeout: 3, directConcurrency: 10, urlTimeoutMs: 4000, urlConcurrency: 20, link: "https://www.gstatic.com/generate_204",
+                                    firstTimeoutMs: 2500, retryConcurrency: 28)
         }
     }
 }
@@ -113,8 +134,12 @@ public actor LatencyRunner {
         public var label: String?
         /// SNI for a TLS handshake probe; nil probes with a bare TCP connect.
         public var tlsName: String?
-        public init(tag: String, host: String?, port: Int?, udp: Bool, label: String? = nil, tlsName: String? = nil) {
+        /// The server did not answer the previous test either (3.1.0): a silent
+        /// first wave is then its result, without a second try.
+        public var silentBefore: Bool
+        public init(tag: String, host: String?, port: Int?, udp: Bool, label: String? = nil, tlsName: String? = nil, silentBefore: Bool = false) {
             self.tag = tag; self.host = host; self.port = port; self.udp = udp; self.label = label; self.tlsName = tlsName
+            self.silentBefore = silentBefore
         }
     }
 
@@ -129,10 +154,14 @@ public actor LatencyRunner {
     public func run(_ targets: [Target], mode: LatencyMode, tunnel: Bool,
                     deliver: @escaping @Sendable ([String: ProbeResult]) async -> Void) async
     {
-        guard tunnel, mode.tcpFilter else {
-            await pass(targets, concurrency: tunnel ? mode.urlConcurrency : mode.directConcurrency, deliver: deliver) { [probes] target in
-                await LatencyRunner.measure(target, probes: probes, mode: mode, tunnel: tunnel)
+        guard tunnel else {
+            await pass(targets, concurrency: mode.directConcurrency, deliver: deliver) { [probes] target in
+                await LatencyRunner.measure(target, probes: probes, mode: mode, tunnel: false)
             }
+            return
+        }
+        guard mode.tcpFilter else {
+            await urlWaves(targets, mode: mode, deliver: deliver)
             return
         }
         let filtered = targets.filter { !$0.udp && $0.host != nil && $0.port != nil }
@@ -158,8 +187,36 @@ public actor LatencyRunner {
         guard !Task.isCancelled else { return }
         let passed = await survivors.tags
         let second = targets.filter { $0.udp || $0.host == nil || $0.port == nil || passed.contains($0.tag) }
-        await pass(second, concurrency: mode.urlConcurrency, deliver: deliver) { [probes] target in
-            await LatencyRunner.urlTest(target, probes: probes, mode: mode)
+        await urlWaves(second, mode: mode, deliver: deliver)
+    }
+
+    /// The URL test in two waves (3.1.0, see `LatencyMode.firstTimeoutMs`). Results
+    /// of the first wave arrive as they come, except silence that gets a second
+    /// try; the second wave runs once the first is through.
+    private func urlWaves(_ targets: [Target], mode: LatencyMode, deliver: @escaping @Sendable ([String: ProbeResult]) async -> Void) async {
+        let later = SurvivorBox()
+        let first = min(mode.firstTimeoutMs, mode.urlTimeoutMs)
+        let twoWaves = first < mode.urlTimeoutMs
+        await pass(targets, concurrency: mode.urlConcurrency, deliver: { results in
+            var now = results
+            for tag in await later.tags { now[tag] = nil }
+            if !now.isEmpty { await deliver(now) }
+        }) { [probes] target in
+            let result = await LatencyRunner.urlTest(target, probes: probes, mode: mode, timeoutMs: first)
+            if LatencyRunner.worthRetry(result), !target.silentBefore, !Task.isCancelled {
+                // Not delivered: the second wave decides.
+                await later.add(target.tag)
+            }
+            return result
+        }
+        guard !Task.isCancelled else { return }
+        let silent = await later.tags
+        guard !silent.isEmpty else { return }
+        let retry = targets.filter { silent.contains($0.tag) }
+        await pass(retry, concurrency: max(mode.urlConcurrency, mode.retryConcurrency), deliver: deliver) { [probes] target in
+            // Warmed up by the first try; with one timeout only, the second wave
+            // is the same try once more.
+            await LatencyRunner.urlTest(target, probes: probes, mode: mode, timeoutMs: twoWaves ? mode.urlTimeoutMs : first)
         }
     }
 
@@ -211,32 +268,29 @@ public actor LatencyRunner {
         reason == .certificate || reason == .noAddress || reason == .unsupported
     }
 
-    /// One URL test, tried a second time when the first one ran out of time,
-    /// tripped on the lookup, or came back at once with any other error (3.0.5:
-    /// a pooled connection that was already dead answers «timeout» or «reset»
-    /// immediately, and the very next test opened a fresh one and answered).
-    /// After such a quick failure the second try waits a moment, so the server's
-    /// connection is renewed before it.
-    static func urlTest(_ target: Target, probes: LatencyProbes, mode: LatencyMode) async -> ProbeResult {
+    /// One URL test of `timeoutMs`, tried again at once when the connection was
+    /// cut, or when it came back immediately with an error (3.0.5–3.0.6: a pooled
+    /// connection that was already dead answers «reset» at once, and the very
+    /// next test opens a fresh one). Silence and a failed lookup are not retried
+    /// here: the second wave does that (3.1.0).
+    static func urlTest(_ target: Target, probes: LatencyProbes, mode: LatencyMode, timeoutMs: Int) async -> ProbeResult {
         let once: () async -> ProbeResult = {
-            await deadline(seconds: Double(mode.urlTimeoutMs) / 1000 + 1) {
-                await probes.url(tag: target.tag, link: mode.link, timeoutMs: mode.urlTimeoutMs)
+            await deadline(seconds: Double(timeoutMs) / 1000 + 1) {
+                await probes.url(tag: target.tag, link: mode.link, timeoutMs: timeoutMs)
             }
         }
         let start = Date()
         let first = await once()
         guard case let .failed(reason) = first, !isFinal(reason), !Task.isCancelled else { return first }
         let quick = Date().timeIntervalSince(start) < mode.quickFailure
-        guard quick || worthRetry(first) else { return first }
-        if quick || reason == .closed {
-            try? await Task.sleep(nanoseconds: 300_000_000)
-            guard !Task.isCancelled else { return first }
-        }
+        guard reason == .closed || (quick && reason != .timeout && reason != .dns) else { return first }
+        try? await Task.sleep(nanoseconds: 300_000_000)
+        guard !Task.isCancelled else { return first }
         return await once()
     }
 
     static func measure(_ target: Target, probes: LatencyProbes, mode: LatencyMode, tunnel: Bool) async -> ProbeResult {
-        if tunnel { return await urlTest(target, probes: probes, mode: mode) }
+        if tunnel { return await urlTest(target, probes: probes, mode: mode, timeoutMs: mode.urlTimeoutMs) }
         // Without the VPN: a quick TCP connect with one retry, as 1.5.0 did.
         guard !target.udp else { return .failed(.unsupported) }
         guard let host = target.host, let port = target.port else { return .failed(.noAddress) }

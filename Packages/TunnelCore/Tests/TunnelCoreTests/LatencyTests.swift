@@ -38,6 +38,11 @@ private final class ColdProbes: LatencyProbes, @unchecked Sendable {
     }
 }
 
+private actor Order {
+    var order: [(String, ProbeResult)] = []
+    func add(_ r: [String: ProbeResult]) { order.append(contentsOf: r.sorted { $0.key < $1.key }.map { ($0.key, $0.value) }) }
+}
+
 private actor Sink {
     var all: [String: ProbeResult] = [:]
     var batches = 0
@@ -117,6 +122,26 @@ final class LatencyTests: XCTestCase {
         XCTAssertEqual(probes.count("a"), 2)
     }
 
+    /// 3.1.0: silence gets its second try only after every server's first one,
+    /// and none when the server was silent in the previous test too.
+    func testSilentServersWaitForTheSecondWave() async {
+        let probes = ColdProbes(coldFor: 1)
+        let sink = Order()
+        let targets: [LatencyRunner.Target] = [
+            .init(tag: "cold", host: "h", port: 1, udp: false),
+            .init(tag: "dead", host: "h", port: 1, udp: false, silentBefore: true),
+        ]
+        await LatencyRunner(probes: probes).run(targets, mode: .localCore(link: "https://x"), tunnel: true) { await sink.add($0) }
+        let order = await sink.order
+        XCTAssertEqual(order.first?.0, "dead")
+        XCTAssertEqual(order.first?.1, .failed(.timeout))
+        XCTAssertEqual(order.last?.0, "cold")
+        XCTAssertEqual(order.last?.1, .delay(120))
+        XCTAssertEqual(order.count, 2)
+        XCTAssertEqual(probes.count("dead"), 1)
+        XCTAssertEqual(probes.count("cold"), 2)
+    }
+
     /// A certificate that is not accepted stays so: no second attempt.
     func testCertificateFailureIsNotRetried() async {
         let probes = ColdProbes(coldFor: 1, failure: .certificate)
@@ -189,7 +214,8 @@ final class LatencyTests: XCTestCase {
     func testClassify() {
         XCTAssertEqual(ProbeFailure.classify("dial tcp: lookup x: no such host"), .dns)
         XCTAssertEqual(ProbeFailure.classify("context deadline exceeded"), .timeout)
-        XCTAssertEqual(ProbeFailure.classify("reality verification failed"), .tls)
+        XCTAssertEqual(ProbeFailure.classify("reality verification failed"), .reality)
+        XCTAssertEqual(ProbeFailure.classify("remote error: tls: handshake failure"), .tls)
         XCTAssertEqual(ProbeFailure.classify("tls: failed to verify certificate: x509: \u{201C}a.internal\u{201D} certificate is not standards compliant"), .certificate)
         XCTAssertEqual(ProbeFailure.classify("certificate pin: unrecognized server certificate 00ff"), .certificate)
         XCTAssertEqual(ProbeFailure.classify("timeout: no recent network activity"), .timeout)

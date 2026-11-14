@@ -155,11 +155,11 @@ struct NetworkProbes: LatencyProbes {
                     if result.error.isEmpty {
                         continuation.resume(returning: .delay(max(1, Int(result.delay))))
                     } else {
-                        if samples.take() { report?(Lf("URL-тест «%@» через туннель: %@", tag, Redactor.hideAddresses(Redactor.redact(result.error)))) }
+                        if samples.take(ProbeFailure.classify(result.error)) { report?(Lf("URL-тест «%@» через туннель: %@", tag, Redactor.hideAddresses(Redactor.redact(result.error)))) }
                         continuation.resume(returning: .failed(ProbeFailure.classify(result.error)))
                     }
                 } catch {
-                    if samples.take() { report?(Lf("URL-тест «%@» через туннель: %@", tag, Redactor.hideAddresses(Redactor.redact(error.localizedDescription)))) }
+                    if samples.take(ProbeFailure.classify(error.localizedDescription)) { report?(Lf("URL-тест «%@» через туннель: %@", tag, Redactor.hideAddresses(Redactor.redact(error.localizedDescription)))) }
                     continuation.resume(returning: .failed(ProbeFailure.classify(error.localizedDescription)))
                 }
             }
@@ -252,7 +252,7 @@ final class LocalCoreProbes: LatencyProbes, @unchecked Sendable {
                 if result.error.isEmpty {
                     continuation.resume(returning: .delay(max(1, Int(result.delay))))
                 } else {
-                    if self.samples.take() { self.report?(Lf("URL-тест «%@» ядром приложения: %@", inner, Redactor.hideAddresses(Redactor.redact(result.error)))) }
+                    if self.samples.take(ProbeFailure.classify(result.error)) { self.report?(Lf("URL-тест «%@» ядром приложения: %@", inner, Redactor.hideAddresses(Redactor.redact(result.error)))) }
                     continuation.resume(returning: .failed(ProbeFailure.classify(result.error)))
                 }
             }
@@ -260,16 +260,24 @@ final class LocalCoreProbes: LatencyProbes, @unchecked Sendable {
     }
 }
 
-/// The first three failures of a run, so the log says why without filling up.
+/// The first failures of a run, so the log says why without filling up: three
+/// silent servers, and (3.1.0) up to eight that answered with an error — a
+/// certificate, a handshake — whose words say what to fix.
 final class FailureSamples: @unchecked Sendable {
     private let lock = NSLock()
-    private var left = 3
+    private var silent = 3
+    private var errors = 8
 
-    func take() -> Bool {
+    func take(_ failure: ProbeFailure = .other) -> Bool {
         lock.lock()
         defer { lock.unlock() }
-        guard left > 0 else { return false }
-        left -= 1
+        if failure == .timeout || failure == .dns {
+            guard silent > 0 else { return false }
+            silent -= 1
+        } else {
+            guard errors > 0 else { return false }
+            errors -= 1
+        }
         return true
     }
 }
@@ -392,12 +400,15 @@ final class LatencyService {
         // Servers of the subscription in the tunnel get the URL test; the rest a direct connect.
         var live: [LatencyRunner.Target] = []
         var direct: [LatencyRunner.Target] = []
+        // A server tested on its own (tapped) always gets its full second try.
+        let many = items.count > 10
         var owner: [String: Int64] = [:]
         var directSubscriptions: [Int64: Subscription] = [:]
         for item in items {
             let address = item.node.address
             let target = LatencyRunner.Target(tag: item.node.id, host: address?.host, port: address?.port, udp: item.node.isUDPBased,
-                                              label: item.node.name, tlsName: item.node.tlsServerName)
+                                              label: item.node.name, tlsName: item.node.tlsServerName,
+                                              silentBefore: many && silentBefore(item.subscription.id, item.node.id))
             owner[LatencyService.key(item.subscription.id, item.node.id)] = item.subscription.id
             if item.subscription.id == tunnelSubscription {
                 live.append(target)
@@ -480,6 +491,14 @@ final class LatencyService {
         }
     }
 
+    /// The server stayed silent in a test of the last six hours (3.1.0): a silent
+    /// first try is then its answer, without the second, longer one.
+    private func silentBefore(_ subscription: Int64, _ tag: String) -> Bool {
+        guard let entry = results[LatencyService.key(subscription, tag)], Date().timeIntervalSince(entry.date) < 6 * 3600,
+              case let .failed(reason) = entry.result else { return false }
+        return reason == .timeout || reason == .dns
+    }
+
     func cancel() {
         task?.cancel()
         task = nil
@@ -500,6 +519,7 @@ final class LatencyService {
 /// Direct targets carry their subscription in the tag so results map back.
 private enum TargetKeyed {
     static func wrap(_ target: LatencyRunner.Target, _ subscription: Int64) -> LatencyRunner.Target {
-        LatencyRunner.Target(tag: LatencyService.key(subscription, target.tag), host: target.host, port: target.port, udp: target.udp, label: target.label, tlsName: target.tlsName)
+        LatencyRunner.Target(tag: LatencyService.key(subscription, target.tag), host: target.host, port: target.port, udp: target.udp, label: target.label,
+                             tlsName: target.tlsName, silentBefore: target.silentBefore)
     }
 }
