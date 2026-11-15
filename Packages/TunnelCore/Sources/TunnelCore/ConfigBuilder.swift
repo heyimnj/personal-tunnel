@@ -491,6 +491,23 @@ public enum ConfigBuilder {
         return config
     }
 
+    /// The TUN stack for the system's «include all networks» (3.1.7). The kill
+    /// switch turns it on, and sing-tun refuses the `system` and `mixed` stacks
+    /// then (sing-tun issue 25): 3.1.6 asked for `mixed` and the tunnel stopped
+    /// right after «connecting» on every server. gVisor works either way; without
+    /// the kill switch the configuration keeps its own stack.
+    public static func stackForIncludeAllNetworks(in config: JSONValue, includeAllNetworks: Bool) -> JSONValue {
+        guard includeAllNetworks, let inbounds = config["inbounds"]?.arrayValue else { return config }
+        var config = config
+        config["inbounds"] = .array(inbounds.map { inbound in
+            guard inbound["type"]?.stringValue == "tun" else { return inbound }
+            var inbound = inbound
+            inbound["stack"] = "gvisor"
+            return inbound
+        })
+        return config
+    }
+
     /// The Xray configuration the tunnel runs beside sing-box, when the subscription
     /// has servers only Xray-core can run.
     public static func xrayRuntime(subscription: Subscription, portBase: Int = XrayBacked.tunnelPortBase) -> JSONValue? {

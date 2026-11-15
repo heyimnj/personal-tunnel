@@ -120,7 +120,9 @@ final class TunnelController {
         } else if next == .disconnected, connectedSince.value != nil {
             connectedSince.value = nil
         }
-        if next == .disconnected, state.value == .connecting || state.value == .connected {
+        // 3.1.7: a failed start goes «connecting» → «disconnecting» → «disconnected»;
+        // its error was only read from the first two and never shown.
+        if next == .disconnected, state.value != .disconnected {
             if let message = AppGroup.defaults.string(forKey: SharedKey.lastTunnelError), !message.isEmpty {
                 AppGroup.defaults.removeObject(forKey: SharedKey.lastTunnelError)
                 lastError.value = TunnelText.localize(message)

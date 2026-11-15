@@ -251,6 +251,19 @@ final class ConfigBuilderTests: XCTestCase {
         XCTAssertEqual(moved.at("route", "rule_set")?[6]?["path"], "/bundle/Rules/ru-ip.srs")
     }
 
+    /// 3.1.7: with the kill switch (include all networks) sing-tun accepts only
+    /// gVisor; without it the built stack stays.
+    func testKillSwitchTakesGVisorStack() throws {
+        let config = try ConfigBuilder.build(subscription: try subscription(), selected: nil, options: TunnelOptions())
+        XCTAssertEqual(config["inbounds"]?[0]?["stack"], "mixed")
+        let same = ConfigBuilder.stackForIncludeAllNetworks(in: config, includeAllNetworks: false)
+        XCTAssertEqual(same["inbounds"]?[0]?["stack"], "mixed")
+        let locked = ConfigBuilder.stackForIncludeAllNetworks(in: config, includeAllNetworks: true)
+        XCTAssertEqual(locked["inbounds"]?[0]?["stack"], "gvisor")
+        XCTAssertEqual(locked["inbounds"]?[0]?["type"], "tun")
+        XCTAssertEqual(locked["outbounds"], config["outbounds"])
+    }
+
     /// A configuration 1.x stored: locations are selectors over leaves, every leaf
     /// resolves through `dns-local`, some detour through outbounds that are gone.
     static let legacyConfig = """

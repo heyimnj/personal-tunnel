@@ -59,7 +59,8 @@ struct SwipeAction {
 /// One action on the plate: its symbol in the action's colour over a slot of
 /// the plate's full height.
 final class PlateButton: UIControl {
-    let action: SwipeAction
+    /// Replaced in place when the list hands the row the same actions again (3.1.7).
+    var action: SwipeAction
     private let icon = UIImageView()
     private let shade = UIView()
     static let width: CGFloat = 50
@@ -140,14 +141,27 @@ private final class ActionPlate: UIView {
 
     var fullWidth: CGFloat { CGFloat(buttons.count) * PlateButton.width + 8 }
 
+    /// 3.1.7: the same actions again (every ping or traffic update hands them
+    /// over) keep the buttons that are already built and drawn; only their
+    /// handlers change.
     func set(_ actions: [SwipeAction], tap: @escaping (SwipeAction) -> Void) {
+        if buttons.count == actions.count, zip(buttons, actions).allSatisfy({ Self.same($0.action, $1) }) {
+            for (button, action) in zip(buttons, actions) { button.action = action }
+            return
+        }
         buttons.forEach { $0.removeFromSuperview() }
         buttons = actions.map { action in
             let button = PlateButton(action)
-            button.addAction(UIAction { _ in tap(action) }, for: .touchUpInside)
+            button.addAction(UIAction { [weak button] _ in
+                if let button { tap(button.action) }
+            }, for: .touchUpInside)
             addSubview(button)
             return button
         }
+    }
+
+    private static func same(_ a: SwipeAction, _ b: SwipeAction) -> Bool {
+        a.symbol == b.symbol && a.title == b.title && a.color == b.color
     }
 
     /// The plate's frame for this frame of the swipe; the buttons keep their
@@ -252,7 +266,13 @@ class SwipeRow: UIView, UIGestureRecognizerDelegate {
         didSet {
             railStale = true
             if !plate.buttons.isEmpty || offset != 0 {
+                let built = plate.buttons
                 rebuildRail()
+                // New buttons (other actions) are drawn once before they are swiped.
+                if offset == 0, !plate.buttons.isEmpty, plate.buttons.map(ObjectIdentifier.init) != built.map(ObjectIdentifier.init) {
+                    prepared = false
+                    prepareSoon()
+                }
             } else if !actions.isEmpty {
                 prepareSoon()
             }
@@ -262,18 +282,38 @@ class SwipeRow: UIView, UIGestureRecognizerDelegate {
     /// 3.1.6: the plate is built just after the row appears, between frames of
     /// nothing, so the first swipe only moves views that already exist.
     private var preparing = false
+    /// The current buttons have been drawn once.
+    private var prepared = false
     private func prepareSoon() {
         guard !preparing else { return }
         preparing = true
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) { [weak self] in
             guard let self else { return }
             self.preparing = false
-            guard self.window != nil, self.railStale, !self.actions.isEmpty, self.offset == 0 else { return }
-            self.rebuildRail()
-            // Laid out and drawn once while hidden: the first drop has nothing to set up.
-            self.plate.place(CGRect(x: self.rail.bounds.width - self.railWidth, y: 0, width: self.railWidth, height: self.contentHeight), radius: self.tileRadius)
-            self.plate.layoutIfNeeded()
-            self.plate.place(.zero, radius: self.tileRadius)
+            guard self.window != nil, !self.actions.isEmpty, self.offset == 0, !self.panning else { return }
+            if self.railStale { self.rebuildRail() }
+            guard !self.prepared else { return }
+            self.prepared = true
+            self.warmPlate()
+        }
+    }
+
+    /// 3.1.7: the plate is really drawn once before the first swipe, at full width
+    /// and all but transparent, for one frame. 3.1.6 laid it out and hid it again
+    /// in the same transaction, so nothing reached the screen: the first swipe
+    /// still made Core Animation render the plate, its rounded clip and the
+    /// symbols for the first time, and the drop jumped. The second swipe was smooth.
+    private func warmPlate() {
+        plate.place(CGRect(x: rail.bounds.width - railWidth, y: 0, width: railWidth, height: contentHeight), radius: tileRadius)
+        plate.alpha = 0.012
+        plate.isUserInteractionEnabled = false
+        plate.layoutIfNeeded()
+        // A few frames later, unless a swipe has taken the plate meanwhile.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.08) { [weak self] in
+            guard let self else { return }
+            self.plate.isUserInteractionEnabled = true
+            guard !self.panning, !self.spring.isRunning else { return }
+            self.placeFront()
         }
     }
     private var railStale = false
@@ -392,9 +432,14 @@ class SwipeRow: UIView, UIGestureRecognizerDelegate {
         switch pan.state {
         case .began:
             if railStale { rebuildRail() }
+            Haptics.prepare()
             // Caught mid-way: the finger takes the row where it shows.
             spring.stop()
             panStart = offset
+            // 3.1.7: the pan is recognised only after the finger has gone some way
+            // (more on the first touch of a list); that distance used to land in one
+            // frame and the card jumped. The card now starts from where it is.
+            pan.setTranslation(.zero, in: self)
             panning = true
             onOpen?(self)
         case .changed:

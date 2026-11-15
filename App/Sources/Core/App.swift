@@ -353,6 +353,13 @@ enum Haptics {
     private static let picker = UISelectionFeedbackGenerator()
 
     static func tap() { if Prefs.hapticsEnabled { light.impactOccurred() } }
+    /// Wakes the haptic engine before a gesture that will tap (3.1.7): the first
+    /// tap of a cold engine cost the main thread a few frames mid-swipe.
+    static func prepare() {
+        guard Prefs.hapticsEnabled else { return }
+        light.prepare()
+        softGenerator.prepare()
+    }
     static func soft(_ intensity: CGFloat = 0.6) { if Prefs.hapticsEnabled { softGenerator.impactOccurred(intensity: intensity) } }
     static func selection() { if Prefs.hapticsEnabled { picker.selectionChanged() } }
     static func result(_ ok: Bool) {

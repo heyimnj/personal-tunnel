@@ -129,6 +129,7 @@ final class MinimalServersViewController: UIViewController, UIScrollViewDelegate
         view.tintColor = Theme.accent
         // 3.1.6: the swipe's symbols are ready before the first swipe.
         PlateButton.warmUp()
+        Haptics.prepare()
         buildList()
         buildHeader()
         buildSearch()

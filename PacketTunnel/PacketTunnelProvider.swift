@@ -152,7 +152,10 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
         guard let commandServer else { throw TunnelError("Командный сервер не запущен.") }
         let rules = Bundle.main.resourceURL?.appendingPathComponent("Rules", isDirectory: true).path ?? ""
         let document = try JSONValue.parse(configuration)
-        let relocated = ConfigBuilder.relocateRuleSets(in: document, directory: rules).serialized()
+        // 3.1.7: the kill switch («include all networks») takes gVisor; sing-tun
+        // refuses the `mixed` stack with it and the tunnel stopped at once.
+        let stacked = ConfigBuilder.stackForIncludeAllNetworks(in: document, includeAllNetworks: platform.includeAllNetworks())
+        let relocated = ConfigBuilder.relocateRuleSets(in: stacked, directory: rules).serialized()
         try commandServer.startOrReloadService(relocated, options: LibboxOverrideOptions())
     }
 
