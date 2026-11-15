@@ -113,3 +113,66 @@ final class SpringDriver {
         }
     }
 }
+
+/// Paces a finger-driven motion by the display (3.1.9).
+///
+/// A swipe used to move its views from the pan's touch events alone, and nothing
+/// asked ProMotion for a high rate: the screen, idle at a low rate, came up to
+/// 120 Hz only after the motion had begun, so the first swipe of a list looked
+/// abrupt while later ones (the display already fast) were smooth. A screen
+/// recording runs at 60 Hz and did not show it. The pacer starts at touch-down,
+/// asks for 120 Hz, and applies the latest finger position once per frame.
+final class FramePacer {
+    private var link: CADisplayLink?
+    private var idleSince: CFTimeInterval = 0
+    /// Called every frame while running; returns false when nothing is pending.
+    private let frame: () -> Bool
+    /// How long the pacer stays up with nothing to draw (the touch has not moved yet).
+    private let idleTimeout: CFTimeInterval
+
+    init(idleTimeout: CFTimeInterval = 0.5, frame: @escaping () -> Bool) {
+        self.idleTimeout = idleTimeout
+        self.frame = frame
+    }
+
+    deinit { link?.invalidate() }
+
+    var isRunning: Bool { link != nil }
+
+    /// Brings the display to its full rate now, before the first movement.
+    func start() {
+        idleSince = CACurrentMediaTime()
+        guard link == nil else { return }
+        let link = CADisplayLink(target: Proxy(self), selector: #selector(Proxy.tick(_:)))
+        if #available(iOS 15.0, *) {
+            link.preferredFrameRateRange = CAFrameRateRange(minimum: 80, maximum: 120, preferred: 120)
+        }
+        link.add(to: .main, forMode: .common)
+        self.link = link
+    }
+
+    func stop() {
+        link?.invalidate()
+        link = nil
+    }
+
+    fileprivate func tick(_ link: CADisplayLink) {
+        if frame() {
+            idleSince = link.timestamp
+        } else if link.timestamp - idleSince > idleTimeout {
+            stop()
+        }
+    }
+
+    private final class Proxy: NSObject {
+        weak var owner: FramePacer?
+        init(_ owner: FramePacer) {
+            self.owner = owner
+            super.init()
+        }
+        @objc func tick(_ link: CADisplayLink) {
+            guard let owner else { link.invalidate(); return }
+            owner.tick(link)
+        }
+    }
+}

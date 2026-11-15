@@ -404,6 +404,7 @@ class SwipeRow: UIView, UIGestureRecognizerDelegate {
     private var panning = false
 
     private func set(offset target: CGFloat, animated: Bool, velocity: CGFloat) {
+        pendingOffset = nil
         guard animated, window != nil else {
             spring.stop()
             offset = target
@@ -412,6 +413,27 @@ class SwipeRow: UIView, UIGestureRecognizerDelegate {
         }
         // Opening lands with a hint of give; closing glides home without it.
         spring.run(from: offset, to: target, velocity: velocity, feel: target < 0 ? .snappy : .smooth)
+    }
+
+    /// The finger's latest place, applied by the pacer on the next frame.
+    private var pendingOffset: CGFloat?
+    private lazy var pacer = FramePacer { [weak self] in
+        guard let self else { return false }
+        if let pending = self.pendingOffset {
+            self.pendingOffset = nil
+            self.offset = pending
+            self.placeFront()
+            return true
+        }
+        return self.panning
+    }
+
+    /// 3.1.9: the display is brought to 120 Hz as the finger lands on a row with
+    /// actions, before the swipe is even recognised; it falls back on its own
+    /// when the touch turns out to be a tap or a scroll.
+    func gestureRecognizer(_ gesture: UIGestureRecognizer, shouldReceive _: UITouch) -> Bool {
+        if gesture is UIPanGestureRecognizer, !actions.isEmpty, !UIAccessibility.isReduceMotionEnabled { pacer.start() }
+        return true
     }
 
     override func gestureRecognizerShouldBegin(_ gesture: UIGestureRecognizer) -> Bool {
@@ -447,10 +469,17 @@ class SwipeRow: UIView, UIGestureRecognizerDelegate {
             // Past the actions and past the resting place the row resists, softly.
             if next < -width { next = -width - rubber(-width - next, limit: 90) }
             if next > 0 { next = rubber(next, limit: 30) }
-            offset = next
-            placeFront()
+            // 3.1.9: placed on the display's next frame, at 120 Hz (`FramePacer`).
+            pendingOffset = next
+            pacer.start()
         case .ended, .cancelled:
             panning = false
+            if let pending = pendingOffset {
+                pendingOffset = nil
+                offset = pending
+                placeFront()
+            }
+            pacer.stop()
             let velocity = pan.velocity(in: self).x
             // Where a free flick would come to rest decides, as the system's lists do.
             let projected = offset + velocity * 0.1
