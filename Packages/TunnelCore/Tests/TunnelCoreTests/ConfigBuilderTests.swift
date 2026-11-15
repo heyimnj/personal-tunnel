@@ -169,7 +169,8 @@ final class ConfigBuilderTests: XCTestCase {
     func testRealityTakesChromeFingerprint() throws {
         let key = "frA_WzVIkA2NPG1EUvGDN8WoFAneqhPgaBGe9FvsaKc"
         let links = [
-            "vless://11111111-2222-3333-4444-555555555555@r.example.com:443?security=reality&pbk=\(key)&sid=ab&sni=www.example.com&fp=firefox&type=tcp#R",
+            "vless://11111111-2222-3333-4444-555555555555@r.example.com:443?security=reality&pbk=\(key)&sid=ab&sni=www.example.com&fp=ios&type=tcp#R",
+            "vless://11111111-2222-3333-4444-555555555555@f.example.com:443?security=reality&pbk=\(key)&sid=ab&sni=www.example.com&fp=firefox&type=tcp#F",
             "vless://11111111-2222-3333-4444-555555555555@t.example.com:443?security=tls&sni=t.example.com&fp=firefox&type=ws&path=%2F#T",
         ]
         let nodes = NodeAssembler.assemble(try links.map { try ShareLink.parse($0) })
@@ -179,6 +180,8 @@ final class ConfigBuilderTests: XCTestCase {
         let reality = try XCTUnwrap(outbounds.first { $0["tag"] == "R" })
         XCTAssertEqual(reality.at("tls", "utls", "fingerprint"), "chrome")
         XCTAssertEqual(reality.at("tls", "reality", "enabled"), true)
+        // Beta core: Firefox 148 carries the hybrid share and keeps its fingerprint.
+        XCTAssertEqual(outbounds.first { $0["tag"] == "F" }?.at("tls", "utls", "fingerprint"), "firefox")
         let tls = try XCTUnwrap(outbounds.first { $0["tag"] == "T" })
         XCTAssertEqual(tls.at("tls", "utls", "fingerprint"), "firefox")
         let probe = try ConfigBuilder.probe(subscription: subscription, options: TunnelOptions())
@@ -428,5 +431,23 @@ extension XrayBackedTests {
         XCTAssertEqual(tagged("n1-hop")?.at("streamSettings", "sockopt", "interface"), "en0")
         XCTAssertNil(tagged("pt-block")?["streamSettings"])
         XCTAssertEqual(XrayBacked.prepare(runtime, interface: nil, logPath: nil), runtime)
+    }
+}
+
+/// Beta: the app group is found in the signing profile when the declared one is not granted.
+final class AppGroupProfileTests: XCTestCase {
+    func testGroupsComeFromTheProfilePlist() {
+        let plist = """
+        <?xml version="1.0" encoding="UTF-8"?>
+        <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+        <plist version="1.0"><dict><key>Entitlements</key><dict>
+        <key>com.apple.security.application-groups</key><array><string>group.example.one</string><string>group.example.two</string></array>
+        </dict></dict></plist>
+        """
+        var data = Data([0x30, 0x82, 0x01, 0x00, 0xFF])
+        data.append(Data(plist.utf8))
+        data.append(Data([0x00, 0xA0, 0x82]))
+        XCTAssertEqual(AppGroup.groups(inProfile: data), ["group.example.one", "group.example.two"])
+        XCTAssertEqual(AppGroup.groups(inProfile: Data([1, 2, 3])), [])
     }
 }

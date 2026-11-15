@@ -3,9 +3,49 @@ import Foundation
 /// The App Group shared by the app and the packet tunnel.
 public enum AppGroup {
     /// The group the build was made for (`AppGroupIdentifier` in Info.plist).
-    public static var identifier: String {
+    /// Beta: when the signature does not grant that group (a signing tool gave the
+    /// app one of its own), the first group of the signing profile the app can open.
+    public static let identifier: String = resolve()
+
+    static var declared: String {
         let value = Bundle.main.object(forInfoDictionaryKey: "AppGroupIdentifier") as? String
         return (value?.isEmpty == false ? value : nil) ?? "group.com.personaltunnelapp"
+    }
+
+    static func resolve() -> String {
+        let declared = Self.declared
+        #if canImport(Darwin)
+        let files = FileManager.default
+        if files.containerURL(forSecurityApplicationGroupIdentifier: declared) != nil { return declared }
+        if let granted = provisionedGroups().first(where: { files.containerURL(forSecurityApplicationGroupIdentifier: $0) != nil }) {
+            return granted
+        }
+        #endif
+        return declared
+    }
+
+    /// App groups in the signing profile (`embedded.mobileprovision`) of this
+    /// bundle, or of the app around an extension.
+    static func provisionedGroups() -> [String] {
+        let here = Bundle.main.bundleURL
+        let candidates = [here, here.deletingLastPathComponent().deletingLastPathComponent()]
+        for bundle in candidates {
+            let url = bundle.appendingPathComponent("embedded.mobileprovision")
+            guard let data = try? Data(contentsOf: url) else { continue }
+            let groups = groups(inProfile: data)
+            if !groups.isEmpty { return groups }
+        }
+        return []
+    }
+
+    /// The plist inside a provisioning profile's signature: its entitlements' groups.
+    static func groups(inProfile data: Data) -> [String] {
+        guard let start = data.range(of: Data("<?xml".utf8)),
+              let end = data.range(of: Data("</plist>".utf8), in: start.lowerBound ..< data.endIndex) else { return [] }
+        let plist = data.subdata(in: start.lowerBound ..< end.upperBound)
+        guard let object = try? PropertyListSerialization.propertyList(from: plist, format: nil) as? [String: Any],
+              let entitlements = object["Entitlements"] as? [String: Any] else { return [] }
+        return entitlements["com.apple.security.application-groups"] as? [String] ?? []
     }
 
     public static var defaults: UserDefaults { UserDefaults(suiteName: identifier) ?? .standard }

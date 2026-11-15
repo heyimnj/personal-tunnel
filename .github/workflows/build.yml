@@ -16,8 +16,9 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  # App Group профиля, которым подписывается IPA (та же, что у 1.x: данные лежат в ней).
-  APP_GROUP_IDENTIFIER: group.a69e6dc9a612eb7d.1
+  # PTBeta: своя App Group, чтобы бета с новым ядром не делила данные (и кэш ядра) с Personal Tunnel.
+  # Если подпись выдаст другую группу, приложение возьмёт группу из профиля подписи (AppGroup.resolve).
+  APP_GROUP_IDENTIFIER: group.a69e6dc9a612eb7d.beta
 
 jobs:
   core:
@@ -182,7 +183,7 @@ jobs:
           set -euo pipefail
           VERSION="$(grep '^MARKETING_VERSION' Config/Base.xcconfig | cut -d= -f2 | tr -d ' ')"
           BUILD="$(grep '^CURRENT_PROJECT_VERSION' Config/Base.xcconfig | cut -d= -f2 | tr -d ' ')"
-          NAME="PersonalTunnel-${VERSION//./_}-${BUILD}-tunnel-${TUNNEL_CORE}-unsigned.ipa"
+          NAME="PTBeta-${VERSION//./_}-${BUILD}-tunnel-${TUNNEL_CORE}-unsigned.ipa"
           APP="build/DerivedData/Build/Products/Release-iphoneos/PersonalTunnel.app"
           test -d "$APP/PlugIns/PacketTunnel.appex"
           test -f "$APP/PlugIns/PacketTunnel.appex/Rules/ad-block.srs"

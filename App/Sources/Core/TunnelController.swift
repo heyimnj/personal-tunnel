@@ -167,7 +167,7 @@ final class TunnelController {
     private func configure(_ manager: NETunnelProviderManager) {
         let proto = (manager.protocolConfiguration as? NETunnelProviderProtocol) ?? NETunnelProviderProtocol()
         proto.providerBundleIdentifier = TunnelController.providerIdentifier
-        proto.serverAddress = "Personal Tunnel"
+        proto.serverAddress = TunnelController.appName
         // 3.1.6: the kill switch is the system's own: with «include all networks»
         // iOS sends nothing around the tunnel while it is not up. Push
         // notifications and the carrier's own services keep working.
@@ -179,7 +179,7 @@ final class TunnelController {
         proto.excludeLocalNetworks = Prefs.localNetwork
         proto.enforceRoutes = Prefs.secureDNS
         manager.protocolConfiguration = proto
-        manager.localizedDescription = "Personal Tunnel"
+        manager.localizedDescription = TunnelController.appName
         manager.isEnabled = true
         if Prefs.autoConnect {
             let wifi = NEOnDemandRuleConnect()
@@ -214,6 +214,12 @@ final class TunnelController {
                 }
             }
         }
+    }
+
+    /// The name iOS shows for the VPN (Settings → VPN): the app's own, so the beta
+    /// («PTBeta») and Personal Tunnel can be told apart.
+    static var appName: String {
+        (Bundle.main.object(forInfoDictionaryKey: "CFBundleDisplayName") as? String).flatMap { $0.isEmpty ? nil : $0 } ?? "Personal Tunnel"
     }
 
     /// How long a start may take to show up in the system's status (seconds).

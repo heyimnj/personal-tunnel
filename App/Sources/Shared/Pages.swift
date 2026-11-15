@@ -119,7 +119,7 @@ final class DiagnosticsViewController: UIViewController {
     @objc private func copyReport() {
         let library = App.shared.library
         let report = [
-            "Personal Tunnel \(AboutViewController.version)", tunnel.text ?? "", Lf("Прокси: %@", "\(proxyResult)"), Lf("Интернет: %@", "\(internetResult)"),
+            "\(TunnelController.appName) \(AboutViewController.version)", tunnel.text ?? "", Lf("Прокси: %@", "\(proxyResult)"), Lf("Интернет: %@", "\(internetResult)"),
             Lf("Протокол: %@", "\(library.activeNode?.facts.summary ?? "—")"), Lf("Режим пинга: %@", "\(Prefs.pingMode)"),
             L("Ядро туннеля") + ": " + CoreInfo.tunnelCore, memory.text ?? "",
         ].joined(separator: "\n")
@@ -258,7 +258,7 @@ final class ServiceLogViewController: UIViewController, UITableViewDataSource, U
     /// stops), which outlives the extension. Addresses and keys are removed.
     @objc private func copyAll() {
         let levels = ServiceLogViewController.levels
-        var text = ["Personal Tunnel \(AboutViewController.version), " + L("ядро туннеля") + ": \(CoreInfo.tunnelCore)", ""]
+        var text = ["\(TunnelController.appName) \(AboutViewController.version), " + L("ядро туннеля") + ": \(CoreInfo.tunnelCore)", ""]
         text += App.shared.core.logs.map { line in
             let level = levels.indices.contains(Int(line.level)) ? levels[Int(line.level)] : "LOG"
             return "\(level) \(line.text)"

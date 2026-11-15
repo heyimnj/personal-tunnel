@@ -25,7 +25,7 @@ fetch_core() {
   fi
   # Только подмодули, на которые ссылается go.mod; клиентские приложения не нужны.
   git -C "$CORE_CHECKOUT" submodule update --init --depth 1 \
-    submodules/wireguard-go submodules/sing-tun submodules/gvisor
+    submodules/wireguard-go submodules/sing-tun submodules/gvisor submodules/utls
   # Свои правки поверх закреплённого коммита (core/patches), каждая один раз.
   local patch
   for patch in "$CORE_ROOT"/core/patches/*.patch; do

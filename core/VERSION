@@ -3,8 +3,8 @@
 # (два фреймворка gomobile в одном процессе — два рантайма Go с одинаковыми символами).
 # Расширение: Libbox.xcframework — свой процесс, своя библиотека.
 SING_BOX_REMOTE=https://github.com/Leadaxe/sing-box-lx.git
-SING_BOX_TAG=v1.14.0-lx.36
-SING_BOX_COMMIT=cbcc7935f7230e67691155bd6f3da6a9cc2d3e0b
+SING_BOX_TAG=v1.14.4-lx.35
+SING_BOX_COMMIT=f1bac271853eaf13398ce1030c948aebc3aed2e1
 XRAY_REMOTE=https://github.com/XTLS/Xray-core.git
 XRAY_TAG=v26.11.9
 XRAY_COMMIT=676eaf66f8f05d4d558ee7a74b4736623d3feeb9

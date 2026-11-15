@@ -478,8 +478,9 @@ public enum ConfigBuilder {
         }
 
         /// uTLS fingerprints that carry the hybrid key share `X25519MLKEM768` in
-        /// the pinned core (metacubex/utls 1.8.x): only Chrome's.
-        static let hybridFingerprints: Set<String> = ["chrome"]
+        /// the pinned core. Beta (sing-box-lx 1.14.4-lx.35, utls-lx, SPEC 086):
+        /// Chrome's and Firefox 148; the others still go out as Chrome.
+        static let hybridFingerprints: Set<String> = ["chrome", "firefox"]
 
         /// 3.1.10: a REALITY server takes Chrome's fingerprint. Xray-core v26.9.8 and
         /// later (XTLS/REALITY@8cdf7bf) silently hand a ClientHello without the

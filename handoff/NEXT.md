@@ -24,6 +24,29 @@
   куски логов и сборок; видео — нарезать только нужные секунды.
 
 
+## PTBeta 3.2, beta 1 (237): отдельная бета с новым ядром (ветка `claude/personal-tunnel-beta`)
+
+Просьба владельца: отдельная ветка «Personal Tunnel Beta», другой Bundle ID, название PTBeta, новое ядро.
+Основная линия (3.1.x) остаётся в `claude/awesome-gauss-asvyzy`; изменения из неё переносятся в бету
+слиянием, бета в основную — только после проверки на устройстве.
+
+- Ядро: sing-box-lx v1.14.4-lx.35 (`f1bac27`, было v1.14.0-lx.36). Новое — сабмодуль `submodules/utls`
+  (utls-lx: Firefox 148 с гибридным `X25519MLKEM768`, SPEC 086), правки REALITY (время и корни из
+  конфигурации, `key_share`, вердикт), освобождение памяти uTLS после рукопожатия и др. (см.
+  `docs-lx/lx-changelog.md` форка). `core/bridge/go.mod`: replace на `submodules/utls`, `go mod tidy`
+  (Go 1.27.4). Патчи `core/patches` 0001–0003 легли без правок. API libbox для Swift совместим (убран
+  только `UseProcFS`, новые интерфейсы не реализуются). Локально: тесты моста и сборка проверочного ядра
+  прошли; iOS — в CI.
+- REALITY: `firefox` больше не подменяется на `chrome` (`hybridFingerprints` = chrome, firefox); прочие
+  отпечатки по-прежнему идут как chrome.
+- Отличия беты: `PT_BUNDLE_ID = com.personaltunnelapp.beta` (расширение — `.SingBoxPacketTunnel`),
+  `PT_DISPLAY_NAME = PTBeta`, URL-схема `ptbeta`, имя VPN в Настройках iOS — PTBeta
+  (`TunnelController.appName`), App Group в CI `group.a69e6dc9a612eb7d.beta`; если подпись её не дала —
+  первая группа из `embedded.mobileprovision` (`AppGroup.resolve`). Бета ставится рядом с Personal Tunnel и
+  начинает с пустыми данными: подписки добавить заново (или через резервную копию). HWID в Keychain у беты
+  свой — провайдер может посчитать её новым устройством.
+- Имя IPA: `PTBeta-3_2-237-…-unsigned.ipa`.
+
 ## 3.1.10 (236): отзыв на 3.1.9 (скриншоты списка и журнала)
 
 Владелец: «всё летает» (свайп и подключение в порядке). Осталось: часть серверов в пинге — «certificate»,
