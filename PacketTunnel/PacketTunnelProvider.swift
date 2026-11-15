@@ -39,6 +39,8 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
     override func startTunnel(options: [String: NSObject]?, completionHandler: @escaping (Error?) -> Void) {
         queue.async {
             let defaults = AppGroup.defaults
+            // 3.1.8: an error left by an earlier start is not this start's.
+            defaults.removeObject(forKey: SharedKey.lastTunnelError)
             do {
                 try self.start(options: options)
                 defaults.removeObject(forKey: SharedKey.lastTunnelError)

@@ -220,6 +220,9 @@ final class TunnelController {
     private static let startGrace: TimeInterval = 10
 
     func start(config: String) {
+        // 3.1.8: an error from an earlier start that was never shown (3.1.6 lost
+        // them all) would come up as this start's; only a new one counts.
+        AppGroup.defaults.removeObject(forKey: SharedKey.lastTunnelError)
         state.set(.connecting)
         startPending = Date()
         load { [weak self] existing in
