@@ -177,7 +177,22 @@ private final class ActionPlate: UIView {
         let height = min(full, max(0, frame.width))
         let shaped = CGRect(x: frame.minX, y: frame.minY + (full - height) / 2, width: frame.width, height: height)
         if self.frame != shaped { self.frame = shaped }
-        let corner = min(radius, shaped.width / 2, height / 2)
+        // 3.1.9: the rounding goes from the capsule's (half the height) to the
+        // card's over the rest of the opening. It used to drop to the card's at
+        // once when the drop reached full height: the plate's ends took their
+        // final corners while its left side was still growing, and the first
+        // opening looked as if the whole plate had appeared at once.
+        // (A plate of one action is narrower than the card is tall: it rounds
+        // off over its second half.)
+        let start = min(full, fullWidth / 2)
+        let corner: CGFloat
+        if frame.width <= start {
+            corner = height / 2
+        } else {
+            let t = max(0, min(1, (frame.width - start) / max(1, fullWidth - start)))
+            let eased = t * t * (3 - 2 * t)
+            corner = min(height / 2, height / 2 + (radius - height / 2) * eased)
+        }
         if layer.cornerRadius != corner { layer.cornerRadius = corner }
         // The first points come in as the drop grows, not as a hard-edged speck.
         let fade = max(0, min(1, frame.width / 14))
