@@ -10,10 +10,18 @@ final class ServerEditorViewController: FormViewController {
     private var draft: ServerDraft
     private let original: JSONValue?
     private let onSave: (JSONValue, String) -> Void
+    /// How the form becomes the server (3.1.6: a server Xray-core runs is written
+    /// back into its own Xray outbounds); by default over the original sing-box one.
+    var write: ((ServerDraft) throws -> JSONValue)?
+    /// Presented on its own (closes itself) or pushed inside another editor (goes back).
+    var dismissesItself = true
 
     static func wrapped(_ draft: ServerDraft = ServerDraft(), original: JSONValue? = nil, title: String,
+                        write: ((ServerDraft) throws -> JSONValue)? = nil,
                         onSave: @escaping (JSONValue, String) -> Void) -> UINavigationController {
-        let navigation = UINavigationController(rootViewController: ServerEditorViewController(draft, original: original, title: title, onSave: onSave))
+        let editor = ServerEditorViewController(draft, original: original, title: title, onSave: onSave)
+        editor.write = write
+        let navigation = UINavigationController(rootViewController: editor)
         navigation.overrideUserInterfaceStyle = Theme.userInterfaceStyle
         return navigation
     }
@@ -36,7 +44,7 @@ final class ServerEditorViewController: FormViewController {
             save.style = .prominent
             save.tintColor = Theme.accent
         }
-        navigationItem.leftBarButtonItem = close
+        if dismissesItself { navigationItem.leftBarButtonItem = close }
         navigationItem.rightBarButtonItem = save
         tableView.keyboardDismissMode = .interactive
     }
@@ -44,11 +52,11 @@ final class ServerEditorViewController: FormViewController {
     private func save() {
         view.endEditing(true)
         do {
-            let outbound = try original.map { try draft.outbound(updating: $0) } ?? draft.outbound()
+            let outbound = try write?(draft) ?? original.map { try draft.outbound(updating: $0) } ?? draft.outbound()
             let name = draft.name.trimmingCharacters(in: .whitespaces)
             onSave(outbound, name.isEmpty ? draft.host : name)
             Haptics.result(true)
-            dismiss(animated: true)
+            if dismissesItself { dismiss(animated: true) } else { navigationController?.popViewController(animated: true) }
         } catch {
             Haptics.result(false)
             App.shared.notice.value = (error as? ImportError)?.message ?? error.localizedDescription
@@ -177,5 +185,118 @@ final class ServerEditorViewController: FormViewController {
         case "randomized": return L("Случайный (каждый раз)")
         default: return value.prefix(1).uppercased() + value.dropFirst()
         }
+    }
+}
+
+/// «Редактировать» on a group of servers (3.1.6): which of its servers it holds,
+/// how often an automatic group tests them, and each server's own form.
+final class GroupEditorViewController: FormViewController {
+    private var outbound: JSONValue
+    private var members: [JSONValue]
+    private var name: String
+    private let onSave: (JSONValue, [JSONValue], String) -> Void
+
+    static func wrapped(node: ServerNode, onSave: @escaping (JSONValue, [JSONValue], String) -> Void) -> UINavigationController {
+        let navigation = UINavigationController(rootViewController: GroupEditorViewController(node: node, onSave: onSave))
+        navigation.overrideUserInterfaceStyle = Theme.userInterfaceStyle
+        return navigation
+    }
+
+    init(node: ServerNode, onSave: @escaping (JSONValue, [JSONValue], String) -> Void) {
+        outbound = node.outbound
+        members = node.members
+        name = node.name
+        self.onSave = onSave
+        super.init(title: L("Группа серверов"))
+    }
+
+    override func viewDidLoad() {
+        super.viewDidLoad()
+        let close = UIBarButtonItem(image: UIImage(systemName: "xmark"), primaryAction: UIAction { [weak self] _ in self?.dismiss(animated: true) })
+        close.accessibilityLabel = L("Отмена")
+        close.tintColor = .label
+        let save = UIBarButtonItem(image: UIImage(systemName: "checkmark"), primaryAction: UIAction { [weak self] _ in self?.save() })
+        save.accessibilityLabel = L("Сохранить")
+        if #available(iOS 26.0, *) {
+            save.style = .prominent
+            save.tintColor = Theme.accent
+        }
+        navigationItem.leftBarButtonItem = close
+        navigationItem.rightBarButtonItem = save
+    }
+
+    private var included: [String] { outbound["outbounds"]?.stringList ?? [] }
+    private var isAutomatic: Bool { outbound["type"]?.stringValue == "urltest" }
+
+    /// A member as a person reads it: protocol and address, or its tag.
+    private func label(_ member: JSONValue) -> String {
+        let kind = (member["type"]?.stringValue ?? "").uppercased()
+        if let server = member["server"]?.stringValue {
+            let port = member["server_port"]?.intValue.map { ":\($0)" } ?? ""
+            return "\(kind) · \(server)\(port)"
+        }
+        return member["tag"]?.stringValue ?? kind
+    }
+
+    override func build() -> [FormSection] {
+        var sections = [FormSection([
+            .symbol("tag", .field(title: L("Название"), placeholder: "", get: { [weak self] in self?.name ?? "" },
+                                  set: { [weak self] in self?.name = $0 }, keyboard: .default)),
+        ])]
+        let tags = members.compactMap { $0["tag"]?.stringValue }
+        let rows: [FormRow] = members.compactMap { member in
+            guard let tag = member["tag"]?.stringValue else { return nil }
+            return .toggle(title: label(member), get: { [weak self] in self?.included.contains(tag) ?? false }, set: { [weak self] on in
+                guard let self else { return }
+                var list = self.included.filter { $0 != tag }
+                if on { list = tags.filter { list.contains($0) || $0 == tag } }
+                self.outbound["outbounds"] = JSONValue(list)
+            })
+        }
+        sections.append(FormSection(L("Серверы группы"), rows + [.note(isAutomatic
+                ? L("Группа сама выбирает из включённых серверов тот, что отвечает быстрее.")
+                : L("Группа использует первый включённый сервер."))]))
+        if isAutomatic {
+            let intervals = ["1m", "3m", "5m", "10m", "30m"]
+            sections.append(FormSection(L("Проверка"), [
+                .symbol("timer", .picker(title: L("Интервал проверки"), options: intervals.map { ($0, $0.replacingOccurrences(of: "m", with: " " + L("мин"))) },
+                                         get: { [weak self] in self?.outbound["interval"]?.stringValue ?? "3m" },
+                                         set: { [weak self] in self?.outbound["interval"] = .string($0) })),
+            ]))
+        }
+        let editable: [FormRow] = members.indices.compactMap { index in
+            let member = members[index]
+            guard ServerDraft(outbound: member, name: "") != nil else { return nil }
+            return .symbol("pencil", .link(symbol: nil, title: label(member)) { [weak self] in self?.editMember(index) })
+        }
+        if !editable.isEmpty { sections.append(FormSection(L("Настройки серверов"), editable)) }
+        return sections
+    }
+
+    private func editMember(_ index: Int) {
+        let member = members[index]
+        guard let draft = ServerDraft(outbound: member, name: label(member)) else { return }
+        let editor = ServerEditorViewController(draft, original: member, title: L("Редактировать")) { [weak self] edited, _ in
+            guard let self else { return }
+            var object = edited
+            object["tag"] = member["tag"]
+            if let detour = member["detour"] { object["detour"] = detour }
+            self.members[index] = object
+            self.rebuild()
+        }
+        editor.dismissesItself = false
+        navigationController?.pushViewController(editor, animated: true)
+    }
+
+    private func save() {
+        view.endEditing(true)
+        guard !included.isEmpty else {
+            Haptics.result(false)
+            App.shared.notice.value = L("В группе должен остаться хотя бы один сервер.")
+            return
+        }
+        onSave(outbound, members, name.trimmingCharacters(in: .whitespaces))
+        Haptics.result(true)
+        dismiss(animated: true)
     }
 }

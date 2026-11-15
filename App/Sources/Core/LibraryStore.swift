@@ -93,13 +93,21 @@ final class LibraryStore {
         var options = Prefs.tunnelOptions
         // 3.1.2: the app's own tests of every server go outside the tunnel.
         options.serverHosts = ConfigBuilder.serverHosts(of: current.subscriptions)
-        let config = try ConfigBuilder.build(subscription: subscription, selected: current.selectedNodeID(in: subscription), options: options)
+        // 3.1.6: subscription panels through the VPN (not the ones that are servers too).
+        let servers = Set(options.serverHosts)
+        options.subscriptionHosts = Array(Set(current.subscriptions.filter(\.isRemote).compactMap { subscription in
+            subscription.url.flatMap { URL(string: $0.trimmingCharacters(in: .whitespacesAndNewlines))?.host?.lowercased() }
+        }).subtracting(servers)).sorted()
+        let selected = current.selectedNodeID(in: subscription)
+        // 3.1.6: only what the tunnel runs (the chosen server, or all with automatic selection).
+        let running = ConfigBuilder.tunnelSubscription(subscription, selected: selected, options: options)
+        let config = try ConfigBuilder.build(subscription: running, selected: selected, options: options)
         let text = config.serialized()
         if let paths {
             try Data(text.utf8).write(to: paths.activeConfig, options: .atomic)
             try? FileManager.default.setAttributes([.protectionKey: FileProtectionType.completeUntilFirstUserAuthentication], ofItemAtPath: paths.activeConfig.path)
             // Written first and read by the extension before sing-box starts.
-            if let xray = ConfigBuilder.xrayRuntime(subscription: subscription) {
+            if let xray = ConfigBuilder.xrayRuntime(subscription: running) {
                 try Data(xray.serialized().utf8).write(to: paths.activeXrayConfig, options: .atomic)
                 try? FileManager.default.setAttributes([.protectionKey: FileProtectionType.completeUntilFirstUserAuthentication], ofItemAtPath: paths.activeXrayConfig.path)
             } else {

@@ -210,6 +210,24 @@ final class App {
         }
     }
 
+    /// 3.1.6: a server edited with what it is made of (a group's servers, an Xray
+    /// server's outbounds) kept.
+    func update(node tag: String, in id: Int64, outbound: JSONValue, members: [JSONValue], name: String) {
+        store.update { library in
+            guard var subscription = library.subscription(id), let index = subscription.nodes.firstIndex(where: { $0.id == tag }) else { return }
+            var object = outbound
+            object["tag"] = .string(tag)
+            subscription.nodes[index].outbound = object
+            subscription.nodes[index].members = members
+            if !name.isEmpty { subscription.nodes[index].name = name }
+            subscription.nodes[index].link = nil
+            library.replace(subscription)
+        }
+        if let active = library.activeSubscription, active.id == id {
+            if library.selectedNodeID(in: active) == tag { reconnect() } else { reloadTunnel() }
+        }
+    }
+
     func refresh(_ id: Int64) {
         guard let subscription = library.subscription(id), let url = subscription.url, !refreshing.value.contains(id) else { return }
         refreshing.value.insert(id)

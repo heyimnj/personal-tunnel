@@ -58,11 +58,29 @@ struct SwipeAction {
 
 /// One action on the plate: its symbol in the action's colour over a slot of
 /// the plate's full height.
-private final class PlateButton: UIControl {
+final class PlateButton: UIControl {
     let action: SwipeAction
     private let icon = UIImageView()
     private let shade = UIView()
     static let width: CGFloat = 50
+
+    /// 3.1.6: symbols are drawn once and kept. The first swipe built them while
+    /// the finger moved and the drop stuttered; the list warms them up front.
+    private static var symbols: [String: UIImage] = [:]
+    /// Draws the list's action symbols once, off screen (the sheet calls it as it opens).
+    static func warmUp(_ names: [String] = ["pencil", "arrow.clockwise", "trash", "waveform.path.ecg"]) {
+        let renderer = UIGraphicsImageRenderer(size: CGSize(width: 24, height: 24))
+        _ = renderer.image { _ in
+            for name in names { symbol(name)?.withTintColor(.label).draw(in: CGRect(x: 0, y: 0, width: 24, height: 24)) }
+        }
+    }
+
+    static func symbol(_ name: String) -> UIImage? {
+        if let image = symbols[name] { return image }
+        let image = UIImage(systemName: name, withConfiguration: UIImage.SymbolConfiguration(pointSize: 17, weight: .semibold))
+        symbols[name] = image
+        return image
+    }
 
     init(_ action: SwipeAction) {
         self.action = action
@@ -72,7 +90,7 @@ private final class PlateButton: UIControl {
         shade.layer.cornerCurve = .continuous
         shade.alpha = 0
         addSubview(shade)
-        icon.image = UIImage(systemName: action.symbol, withConfiguration: UIImage.SymbolConfiguration(pointSize: 17, weight: .semibold))
+        icon.image = Self.symbol(action.symbol)
         icon.contentMode = .center
         icon.tintColor = action.color
         icon.isUserInteractionEnabled = false
@@ -233,7 +251,29 @@ class SwipeRow: UIView, UIGestureRecognizerDelegate {
     var actions: [SwipeAction] = [] {
         didSet {
             railStale = true
-            if !plate.buttons.isEmpty || offset != 0 { rebuildRail() }
+            if !plate.buttons.isEmpty || offset != 0 {
+                rebuildRail()
+            } else if !actions.isEmpty {
+                prepareSoon()
+            }
+        }
+    }
+
+    /// 3.1.6: the plate is built just after the row appears, between frames of
+    /// nothing, so the first swipe only moves views that already exist.
+    private var preparing = false
+    private func prepareSoon() {
+        guard !preparing else { return }
+        preparing = true
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) { [weak self] in
+            guard let self else { return }
+            self.preparing = false
+            guard self.window != nil, self.railStale, !self.actions.isEmpty, self.offset == 0 else { return }
+            self.rebuildRail()
+            // Laid out and drawn once while hidden: the first drop has nothing to set up.
+            self.plate.place(CGRect(x: self.rail.bounds.width - self.railWidth, y: 0, width: self.railWidth, height: self.contentHeight), radius: self.tileRadius)
+            self.plate.layoutIfNeeded()
+            self.plate.place(.zero, radius: self.tileRadius)
         }
     }
     private var railStale = false

@@ -117,6 +117,8 @@ final class NetworkSettingsViewController: FormViewController {
                 .toggle(title: L("Автоподключение"), get: { Prefs.autoConnect }, set: { Prefs.autoConnect = $0; App.shared.tunnel.applySettings() }),
                 .toggle(title: L("Неизвестные Wi-Fi"), get: { Prefs.unknownWiFi }, set: { Prefs.unknownWiFi = $0; App.shared.tunnel.applySettings() }),
                 .toggle(title: L("Автоматический failover"), get: { Prefs.autoFailover }, set: { Prefs.autoFailover = $0 }),
+                .toggle(title: L("Kill switch"), get: { Prefs.killSwitch }, set: { Prefs.killSwitch = $0; App.shared.tunnel.applySettings() }),
+                .note(L("Пока VPN включён, но не подключён (переподключение, сбой), приложения не выходят в интернет напрямую. Действует со следующего подключения.")),
             ]),
             FormSection(L("Маршрутизация"), [
                 .link(symbol: nil, title: L("Блокировка рекламы")) { [weak self] in self?.navigationController?.pushViewController(AdBlockViewController(), animated: true) },

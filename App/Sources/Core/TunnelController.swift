@@ -166,7 +166,14 @@ final class TunnelController {
         let proto = (manager.protocolConfiguration as? NETunnelProviderProtocol) ?? NETunnelProviderProtocol()
         proto.providerBundleIdentifier = TunnelController.providerIdentifier
         proto.serverAddress = "Personal Tunnel"
-        proto.includeAllNetworks = false
+        // 3.1.6: the kill switch is the system's own: with «include all networks»
+        // iOS sends nothing around the tunnel while it is not up. Push
+        // notifications and the carrier's own services keep working.
+        proto.includeAllNetworks = Prefs.killSwitch
+        if #available(iOS 16.4, *) {
+            proto.excludeAPNs = true
+            proto.excludeCellularServices = true
+        }
         proto.excludeLocalNetworks = Prefs.localNetwork
         proto.enforceRoutes = Prefs.secureDNS
         manager.protocolConfiguration = proto

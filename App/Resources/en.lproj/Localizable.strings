@@ -541,3 +541,14 @@
 "Сервер добавляет UDP-шум (noises): он работает через Xray-core." = "The server adds UDP noise (noises): it runs through Xray-core.";
 "Как сервер пришёл от провайдера" = "The server as the provider gave it";
 "VLESS с TLS работает через Xray-core, как в Happ." = "VLESS over TLS runs through Xray-core, as in Happ.";
+"Kill switch" = "Kill switch";
+"Пока VPN включён, но не подключён (переподключение, сбой), приложения не выходят в интернет напрямую. Действует со следующего подключения." = "While the VPN is on but not connected (reconnecting, a failure), apps do not reach the internet directly. Takes effect from the next connection.";
+"Группа серверов" = "Server group";
+"Серверы группы" = "Servers in the group";
+"Группа сама выбирает из включённых серверов тот, что отвечает быстрее." = "The group picks whichever of the servers turned on answers fastest.";
+"Группа использует первый включённый сервер." = "The group uses the first server turned on.";
+"Проверка" = "Testing";
+"Интервал проверки" = "Test interval";
+"мин" = "min";
+"Настройки серверов" = "Server settings";
+"В группе должен остаться хотя бы один сервер." = "At least one server must stay in the group.";

@@ -8,13 +8,49 @@ final class ConfigBuilderTests: XCTestCase {
         return Subscription(id: 7, name: "Тест", nodes: NodeAssembler.assemble(parsed))
     }
 
+    /// 3.1.6: without automatic selection the tunnel runs the chosen server alone,
+    /// with no `auto` group testing the rest in the background.
+    func testTunnelRunsOnlyTheChosenServer() throws {
+        let subscription = try subscription()
+        let options = TunnelOptions()
+        let running = ConfigBuilder.tunnelSubscription(subscription, selected: "Hy2", options: options)
+        XCTAssertEqual(running.nodes.map(\.id), ["Hy2"])
+        let config = try ConfigBuilder.build(subscription: running, selected: "Hy2", options: options)
+        let outbounds = config["outbounds"]?.arrayValue ?? []
+        XCTAssertEqual(outbounds.first { $0["tag"] == "proxy" }?["outbounds"], ["Hy2"])
+        XCTAssertNil(outbounds.first { $0["tag"] == "auto" })
+        XCTAssertEqual(config["inbounds"]?.arrayValue?.first?["stack"], "mixed")
+        // A provider group keeps the servers it is made of.
+        let group = ConfigBuilder.tunnelSubscription(subscription, selected: "Самый быстрый | Авто", options: options)
+        XCTAssertEqual(group.nodes.map(\.id), ["Самый быстрый | Авто"])
+        XCTAssertNoThrow(try ConfigBuilder.build(subscription: group, selected: "Самый быстрый | Авто", options: options))
+        var auto = options
+        auto.autoSelect = true
+        XCTAssertEqual(ConfigBuilder.tunnelSubscription(subscription, selected: "Hy2", options: auto).nodes.count, subscription.nodes.count)
+    }
+
+    /// 3.1.6: a subscription's panel goes through the VPN, ahead of every bypass.
+    func testSubscriptionPanelsGoThroughTheVPN() throws {
+        var options = TunnelOptions()
+        options.subscriptionHosts = ["panel.example.su", "203.0.113.9"]
+        let config = try ConfigBuilder.build(subscription: try subscription(), selected: "Hy2", options: options)
+        let first = config.at("route", "rules")?.arrayValue?.first
+        XCTAssertEqual(first?["outbound"], "proxy")
+        XCTAssertEqual(first?["domain"], ["panel.example.su"])
+        XCTAssertEqual(first?["ip_cidr"], ["203.0.113.9/32"])
+        XCTAssertEqual(config.at("dns", "rules")?.arrayValue?.first?["server"], "dns-remote")
+        XCTAssertEqual(config.at("dns", "reverse_mapping"), true)
+    }
+
     func testSelectorHoldsEveryServerAndStartsOnTheChosenOne() throws {
         let subscription = try subscription()
-        let config = try ConfigBuilder.build(subscription: subscription, selected: "Hy2", options: TunnelOptions())
+        var auto = TunnelOptions()
+        auto.autoSelect = true
+        let config = try ConfigBuilder.build(subscription: subscription, selected: "Hy2", options: auto)
         let outbounds = config["outbounds"]?.arrayValue ?? []
         let selector = outbounds.first { $0["tag"] == "proxy" }
         XCTAssertEqual(selector?["type"], "selector")
-        XCTAssertEqual(selector?["default"], "Hy2")
+        XCTAssertEqual(selector?["default"], "auto")
         XCTAssertEqual(selector?["outbounds"], ["auto", "🇺🇸 США-2", "Самый быстрый | Авто", "XHTTP", "Hy2", "Сломанный", "WG"])
         // Provider groups are servers, not members of the app's own auto group.
         XCTAssertEqual(outbounds.first { $0["tag"] == "auto" }?["outbounds"], ["🇺🇸 США-2", "XHTTP", "Hy2", "Сломанный", "WG"])
@@ -244,7 +280,7 @@ final class ConfigBuilderTests: XCTestCase {
         XCTAssertEqual(subscription.nodes[2].address?.host, "us.example.net")
         XCTAssertEqual(subscription.nodes[1].address?.host, "ee.example.net")
         var options = TunnelOptions()
-        options.autoSelect = false
+        options.autoSelect = true
         let config = try ConfigBuilder.build(subscription: subscription, selected: "Эстония", options: options)
         let text = config.serialized(pretty: false)
         XCTAssertFalse(text.contains("dns-local"))
@@ -257,7 +293,7 @@ final class ConfigBuilderTests: XCTestCase {
         let tags = objects.compactMap { $0["tag"]?.stringValue }
         XCTAssertEqual(tags.count, Set(tags).count)
         XCTAssertEqual(object("proxy")?["outbounds"], ["auto", "США", "Эстония", "Лучший"])
-        XCTAssertEqual(object("proxy")?["default"], "Эстония")
+        XCTAssertEqual(object("proxy")?["default"], "auto")
         // Location groups of one server become that server, so «auto» has them.
         XCTAssertEqual(object("auto")?["outbounds"], ["США", "Эстония"])
         XCTAssertEqual(object("США")?["type"], "vless")

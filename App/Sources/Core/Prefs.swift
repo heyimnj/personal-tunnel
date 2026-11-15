@@ -190,6 +190,13 @@ enum Prefs {
         set { defaults.set(newValue, forKey: "pt.net.localNetwork") }
     }
 
+    /// «Kill switch» (3.1.6): while the VPN is on but not connected (reconnecting,
+    /// or ended by the system) nothing goes to the internet around it.
+    static var killSwitch: Bool {
+        get { bool("pt.net.killSwitch", false) }
+        set { defaults.set(newValue, forKey: "pt.net.killSwitch") }
+    }
+
     /// «Защищённый DNS»: the system enforces the tunnel's routes.
     static var secureDNS: Bool {
         get { bool("pt.net.secureDNS", false) }

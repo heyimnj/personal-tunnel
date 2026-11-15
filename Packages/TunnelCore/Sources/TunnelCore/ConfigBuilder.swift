@@ -28,6 +28,11 @@ public struct TunnelOptions: Codable, Equatable, Sendable {
     /// and not the server the tunnel happens to use (a dead one made every test
     /// time out).
     public var serverHosts: [String] = []
+    /// Hosts of the subscriptions' addresses (3.1.6): fetched through the VPN even
+    /// when the Russian bypass would send them outside it. A panel blocked from
+    /// the local network (lvi.su, say) timed out there, so a subscription could
+    /// not be updated with the VPN on.
+    public var subscriptionHosts: [String] = []
 
     public init() {}
 }
@@ -184,7 +189,9 @@ public enum ConfigBuilder {
         guard !selectable.isEmpty else { throw ImportError(CoreText.f("В подписке «%@» нет рабочих серверов.", "\(subscription.name)")) }
 
         let chosen = selected.flatMap { id in selectable.contains(id) ? id : nil } ?? selectable[0]
-        let hasAuto = leaves.count > 1
+        // 3.1.6: the `auto` group only with automatic selection: otherwise it tested
+        // every server in the background for nothing.
+        let hasAuto = options.autoSelect && leaves.count > 1
         var groups: [JSONValue] = [[
             "type": "selector",
             "tag": .string(selectorTag),
@@ -221,6 +228,15 @@ public enum ConfigBuilder {
         }
         if !probe.addresses.isEmpty {
             routeRules.insert(["ip_cidr": JSONValue(probe.addresses), "outbound": "direct"], at: probe.domains.isEmpty ? 0 : 1)
+        }
+        let panels = Self.splitHosts(options.subscriptionHosts)
+        if !panels.domains.isEmpty || !panels.addresses.isEmpty {
+            var rule: [String: JSONValue] = ["outbound": .string(selectorTag)]
+            if !panels.domains.isEmpty { rule["domain"] = JSONValue(panels.domains) }
+            if !panels.addresses.isEmpty { rule["ip_cidr"] = JSONValue(panels.addresses) }
+            // First of all: before the servers' own direct rules and any bypass.
+            routeRules.insert(.object(rule), at: 0)
+            if !panels.domains.isEmpty { dnsRules.insert(["domain": JSONValue(panels.domains), "server": "dns-remote"], at: 0) }
         }
         func local(_ tag: String) -> JSONValue {
             ["tag": .string(tag), "type": "local", "format": "binary", "path": .string(RuleSet.pathPrefix + (RuleSet.files[tag] ?? tag))]
@@ -289,7 +305,7 @@ public enum ConfigBuilder {
         if !dnsRules.isEmpty { dns["rules"] = .array(dnsRules) }
         // Which name each address was given for, so connections to a server's
         // address are known by the server's name (see `serverHosts`).
-        if !probe.domains.isEmpty { dns["reverse_mapping"] = true }
+        if !probe.domains.isEmpty || !panels.domains.isEmpty { dns["reverse_mapping"] = true }
 
         var config: [String: JSONValue] = [
             "log": ["level": .string(options.logLevel), "timestamp": true],
@@ -308,13 +324,41 @@ public enum ConfigBuilder {
                 "mtu": .int(Int64(mtus.min() ?? 1500)),
                 "auto_route": true,
                 "strict_route": true,
-                "stack": "gvisor",
+                // 3.1.6: the core's default — TCP through the system's own stack, UDP
+                // through gVisor. gVisor for everything cost much more CPU (battery).
+                "stack": "mixed",
             ]],
             "outbounds": .array(groups + outbounds + [["type": "direct", "tag": "direct"]]),
             "route": .object(route),
         ]
         if !endpoints.isEmpty { config["endpoints"] = .array(endpoints) }
         return .object(config)
+    }
+
+    /// What the tunnel runs (3.1.6): the chosen server alone (with any servers it
+    /// is made of), unless automatic selection is on. A server is changed by
+    /// reconnecting anyway; keeping every server of a 200-server subscription in
+    /// the tunnel cost memory (each outbound, and Xray-core's) and battery (the
+    /// `auto` group tested them all in the background). The app tests servers
+    /// with its own core.
+    public static func tunnelSubscription(_ subscription: Subscription, selected: String?, options: TunnelOptions) -> Subscription {
+        guard !options.autoSelect, subscription.nodes.count > 1 else { return subscription }
+        let chosen = selected.flatMap { id in subscription.nodes.contains { $0.id == id } ? id : nil } ?? subscription.nodes[0].id
+        let byID = Dictionary(subscription.nodes.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+        // A 1.x group refers to other servers by their tags: those come along.
+        var keep: [String] = []
+        var queue = [chosen]
+        while let id = queue.popLast() {
+            guard !keep.contains(id), let node = byID[id] else { continue }
+            keep.append(id)
+            for object in [node.outbound] + node.members {
+                let refs = (object["outbounds"]?.stringList ?? []) + [object["detour"]?.stringValue, object["default"]?.stringValue].compactMap { $0 }
+                queue.append(contentsOf: refs.filter { byID[$0] != nil })
+            }
+        }
+        var trimmed = subscription
+        trimmed.nodes = subscription.nodes.filter { keep.contains($0.id) }
+        return trimmed
     }
 
     /// Every server address of the subscriptions, without repeats (3.1.2).

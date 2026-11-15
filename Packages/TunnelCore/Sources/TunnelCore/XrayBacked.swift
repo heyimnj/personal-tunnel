@@ -140,3 +140,125 @@ public extension XrayBacked {
         return config
     }
 }
+
+// MARK: Editing (3.1.6)
+
+public extension XrayBacked {
+    /// The form for a server Xray-core runs: its main proxy read as the editor's
+    /// fields. Nil when the editor has no form for it (mKCP, say).
+    static func draft(_ outbound: JSONValue, name: String) -> ServerDraft? {
+        guard outbound["type"]?.stringValue == type, let proxy = main(outbound),
+              let converted = try? XrayImport.outbound(from: proxy) else { return nil }
+        return ServerDraft(outbound: converted, name: name)
+    }
+
+    /// The edited form written back into the Xray outbounds, so the server stays
+    /// in Xray-core with everything the form does not show (its `freedom` helper,
+    /// sockopt, mux…). A different protocol makes it an ordinary server.
+    static func apply(_ draft: ServerDraft, to outbound: JSONValue) throws -> JSONValue {
+        let made = try draft.outbound()
+        guard var proxy = main(outbound) else { return made }
+        let kind = proxy["protocol"]?.stringValue?.lowercased() ?? ""
+        let same = kind == draft.proto.rawValue || (kind == "hysteria" && draft.proto == .hysteria2)
+        guard same, [.vless, .vmess, .trojan, .shadowsocks, .hysteria2].contains(draft.proto) else { return made }
+        let host = draft.host.trimmingCharacters(in: .whitespaces)
+        let port = Int(draft.port.trimmingCharacters(in: .whitespaces)) ?? 0
+        let secret = draft.secret.trimmingCharacters(in: .whitespaces)
+
+        var settings = proxy["settings"] ?? .object([:])
+        let list = ["vless", "vmess"].contains(kind) ? "vnext" : "servers"
+        func patchServer(_ body: (inout JSONValue) -> Void) {
+            if var servers = settings[list]?.arrayValue, !servers.isEmpty {
+                body(&servers[0])
+                settings[list] = .array(servers)
+            } else {
+                body(&settings)
+            }
+        }
+        patchServer { server in
+            server["address"] = .string(host)
+            server["port"] = .int(Int64(port))
+            switch draft.proto {
+            case .vless, .vmess:
+                func patchUser(_ user: inout JSONValue) {
+                    user["id"] = .string(secret)
+                    if draft.proto == .vless {
+                        user["flow"] = draft.vision && draft.transport == .tcp ? "xtls-rprx-vision" : nil
+                    }
+                }
+                if var users = server["users"]?.arrayValue, !users.isEmpty {
+                    patchUser(&users[0])
+                    server["users"] = .array(users)
+                } else {
+                    patchUser(&server)
+                }
+            case .trojan:
+                server["password"] = .string(secret)
+            case .shadowsocks:
+                server["password"] = .string(secret)
+                server["method"] = .string(draft.method)
+            default:
+                break
+            }
+        }
+        proxy["settings"] = settings
+
+        var stream = proxy["streamSettings"] ?? .object([:])
+        if draft.proto == .hysteria2 {
+            var hy = stream["hysteriaSettings"] ?? .object([:])
+            hy["auth"] = .string(secret)
+            stream["hysteriaSettings"] = hy
+            var tls = stream["tlsSettings"] ?? .object([:])
+            tls["serverName"] = draft.sni.isEmpty ? nil : .string(draft.sni)
+            tls["allowInsecure"] = draft.insecure ? true : nil
+            stream["tlsSettings"] = tls
+        } else if draft.proto != .shadowsocks {
+            let network = draft.transport.rawValue
+            stream["network"] = .string(network == "tcp" ? (stream["network"]?.stringValue == "raw" ? "raw" : "tcp") : network)
+            stream["security"] = .string(draft.security.rawValue)
+            let alpn = draft.alpn.split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }
+            switch draft.security {
+            case .tls:
+                var tls = stream["tlsSettings"] ?? .object([:])
+                tls["serverName"] = draft.sni.isEmpty ? nil : .string(draft.sni)
+                tls["fingerprint"] = draft.fingerprint.isEmpty ? nil : .string(draft.fingerprint)
+                tls["alpn"] = alpn.isEmpty ? nil : JSONValue(alpn)
+                tls["allowInsecure"] = draft.insecure ? true : nil
+                stream["tlsSettings"] = tls
+            case .reality:
+                var reality = stream["realitySettings"] ?? .object([:])
+                reality["serverName"] = .string(draft.sni)
+                reality["publicKey"] = .string(draft.publicKey)
+                reality["shortId"] = .string(draft.shortID)
+                reality["fingerprint"] = .string(draft.fingerprint.isEmpty ? "chrome" : draft.fingerprint)
+                stream["realitySettings"] = reality
+            case .none:
+                break
+            }
+            func patch(_ key: String, _ fields: [String: String]) {
+                var object = stream[key] ?? .object([:])
+                for (field, value) in fields { object[field] = value.isEmpty ? nil : .string(value) }
+                stream[key] = object
+            }
+            switch draft.transport {
+            case .ws: patch("wsSettings", ["path": draft.path, "host": draft.hostHeader])
+            case .httpupgrade: patch("httpupgradeSettings", ["path": draft.path, "host": draft.hostHeader])
+            case .xhttp: patch(stream["splithttpSettings"] != nil ? "splithttpSettings" : "xhttpSettings", ["path": draft.path, "host": draft.hostHeader])
+            case .grpc: patch("grpcSettings", ["serviceName": draft.serviceName])
+            case .tcp: break
+            }
+        }
+        proxy["streamSettings"] = stream
+
+        // The check sing-box runs at import: the edited server must still convert.
+        _ = try XrayImport.outbound(from: proxy)
+        var result = outbound
+        let mainTag = proxy["tag"]
+        result["xray"] = ["outbounds": .array((outbound.at("xray", "outbounds")?.arrayValue ?? []).map { item in
+            proxyProtocols.contains(item["protocol"]?.stringValue?.lowercased() ?? "") && item["tag"] == mainTag ? proxy : item
+        })]
+        result["server"] = .string(host)
+        result["server_port"] = .int(Int64(port))
+        return result
+    }
+}

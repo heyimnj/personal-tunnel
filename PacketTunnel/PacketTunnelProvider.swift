@@ -32,6 +32,7 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
     /// every 15 s, written when it moves by a megabyte or every ten minutes).
     private var memoryLogged: MemorySample?
     private var memoryFreedAt: Date?
+    private var memoryStartedAt: Date?
 
     // MARK: Lifecycle
 
@@ -264,9 +265,12 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
         memoryTimer?.cancel()
         memoryPeak = 0
         memoryLogged = nil
+        memoryStartedAt = Date()
         sampleMemory()
         let timer = DispatchSource.makeTimerSource(queue: queue)
-        timer.schedule(deadline: .now() + 15, repeating: 15, leeway: .seconds(3))
+        // 3.1.6: once a minute with a generous leeway, so the system can fold the
+        // wake-up into others (battery); it was every 15 s.
+        timer.schedule(deadline: .now() + 60, repeating: 60, leeway: .seconds(20))
         timer.setEventHandler { [weak self] in self?.sampleMemory() }
         timer.resume()
         memoryTimer = timer
@@ -286,9 +290,16 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
         let available = Double(os_proc_available_memory()) / mib
         let sample = MemorySample(used: used, peak: memoryPeak, available: available)
         // Kept for the app at every sample: if the system ends the extension, the
-        // last one is at most 15 s old.
+        // last one is at most a minute old.
         AppGroup.defaults.set(sample.encoded(), forKey: SharedKey.tunnelMemory)
-        if available > 0, available < 10 { relieveMemory(sample) }
+        // 3.1.6: memory is handed back to the system before the limit is near
+        // (iOS warns of pressure at about 40 MiB used), and every quarter of an
+        // hour in a long session, so a night left on does not keep it.
+        if available > 0, available < 13 {
+            relieveMemory(sample, every: 120)
+        } else if let last = memoryFreedAt ?? memoryStartedAt, Date().timeIntervalSince(last) > 900 {
+            relieveMemory(sample, every: 900, quiet: true)
+        }
         guard memoryLogged.map({ sample.differs(from: $0) }) ?? true else { return }
         memoryLogged = sample
         commandServer?.writeMessage(4, message: sample.line)
@@ -297,12 +308,13 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
 
     /// Close to the limit: the core returns what it can to the system at once,
     /// at most once a minute, and the log says so.
-    private func relieveMemory(_ sample: MemorySample) {
-        if let last = memoryFreedAt, Date().timeIntervalSince(last) < 60 { return }
+    private func relieveMemory(_ sample: MemorySample, every interval: TimeInterval, quiet: Bool = false) {
+        if let last = memoryFreedAt, Date().timeIntervalSince(last) < interval { return }
         memoryFreedAt = Date()
         #if TUNNEL_XRAY
         PtbridgeFreeMemory()
         #endif
+        guard !quiet else { return }
         log(sample.line, level: .warn)
         event(sample.line)
     }

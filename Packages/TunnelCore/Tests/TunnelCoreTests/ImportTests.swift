@@ -341,4 +341,39 @@ final class ImportTests: XCTestCase {
         subscription.url = "happ://crypt/abc"
         XCTAssertFalse(subscription.isRemote)
     }
+
+    /// 3.1.6: a server Xray-core runs is edited field by field and stays in Xray-core.
+    func testXrayBackedServerIsEditedInPlace() throws {
+        let json = #"""
+        {"remarks": "Vision", "outbounds": [
+          {"tag": "proxy", "protocol": "vless", "settings": {"vnext": [{"address": "v.example.net", "port": 443, "users": [{"id": "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee", "flow": "xtls-rprx-vision", "encryption": "none"}]}]},
+           "streamSettings": {"network": "tcp", "security": "tls", "tlsSettings": {"serverName": "v.example.net", "fingerprint": "chrome"}, "sockopt": {"dialerProxy": "frag"}}},
+          {"tag": "frag", "protocol": "freedom", "settings": {"fragment": {"packets": "tlshello", "length": "100-200"}}}]}
+        """#
+        let node = try XCTUnwrap(XrayImport.parse(try JSONValue.parse(json)).nodes.first)
+        XCTAssertEqual(node.outbound["type"], .string(XrayBacked.type))
+        var draft = try XCTUnwrap(XrayBacked.draft(node.outbound, name: node.name))
+        XCTAssertEqual(draft.host, "v.example.net")
+        XCTAssertTrue(draft.vision)
+        draft.host = "w.example.net"
+        draft.port = "8443"
+        draft.sni = "front.example.net"
+        draft.secret = "bbbbbbbb-bbbb-cccc-dddd-eeeeeeeeeeee"
+        let edited = try XrayBacked.apply(draft, to: node.outbound)
+        XCTAssertEqual(edited["type"], .string(XrayBacked.type))
+        XCTAssertEqual(edited["server"], "w.example.net")
+        XCTAssertEqual(edited["server_port"], .int(8443))
+        let proxy = try XCTUnwrap(edited.at("xray", "outbounds")?.arrayValue?.first)
+        let user = proxy.at("settings", "vnext")?[0]?["users"]?[0]
+        XCTAssertEqual(user?["id"], "bbbbbbbb-bbbb-cccc-dddd-eeeeeeeeeeee")
+        XCTAssertEqual(user?["flow"], "xtls-rprx-vision")
+        XCTAssertEqual(user?["encryption"], "none")
+        XCTAssertEqual(proxy.at("settings", "vnext")?[0]?["port"], .int(8443))
+        XCTAssertEqual(proxy.at("streamSettings", "tlsSettings", "serverName"), "front.example.net")
+        XCTAssertEqual(proxy.at("streamSettings", "sockopt", "dialerProxy"), "frag")
+        XCTAssertEqual(edited.at("xray", "outbounds")?.arrayValue?.count, 2)
+        // Another protocol: an ordinary server.
+        draft.proto = .trojan
+        XCTAssertEqual(try XrayBacked.apply(draft, to: node.outbound)["type"], "trojan")
+    }
 }

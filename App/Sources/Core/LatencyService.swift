@@ -435,13 +435,20 @@ final class LatencyService {
         let many = items.count > 10
         var owner: [String: Int64] = [:]
         var directSubscriptions: [Int64: Subscription] = [:]
+        // 3.1.6: the tunnel runs only the chosen server (all with automatic selection):
+        // the others of its subscription are measured by the app's core like the rest.
+        var inTunnel: Set<String>?
+        if let tunnelSubscription, let subscription = App.shared.library.subscription(tunnelSubscription) {
+            let running = ConfigBuilder.tunnelSubscription(subscription, selected: App.shared.library.selectedNodeID(in: subscription), options: Prefs.tunnelOptions)
+            inTunnel = Set(running.nodes.map(\.id))
+        }
         for item in items {
             let address = item.node.address
             let target = LatencyRunner.Target(tag: item.node.id, host: address?.host, port: address?.port, udp: item.node.isUDPBased,
                                               label: item.node.name, tlsName: item.node.tlsServerName,
                                               silentBefore: many && silentBefore(item.subscription.id, item.node.id))
             owner[LatencyService.key(item.subscription.id, item.node.id)] = item.subscription.id
-            if item.subscription.id == tunnelSubscription {
+            if item.subscription.id == tunnelSubscription, inTunnel?.contains(item.node.id) ?? true {
                 live.append(target)
             } else {
                 direct.append(TargetKeyed.wrap(target, item.subscription.id))

@@ -127,6 +127,8 @@ final class MinimalServersViewController: UIViewController, UIScrollViewDelegate
         super.viewDidLoad()
         view.backgroundColor = .systemGroupedBackground
         view.tintColor = Theme.accent
+        // 3.1.6: the swipe's symbols are ready before the first swipe.
+        PlateButton.warmUp()
         buildList()
         buildHeader()
         buildSearch()
@@ -908,10 +910,25 @@ final class MinimalServersViewController: UIViewController, UIScrollViewDelegate
         present(SubscriptionEditorViewController.wrapped(subscription) { [weak self] in self?.reload() }, animated: true)
     }
 
-    /// «Редактировать»: the full form for servers it can describe; a name otherwise
-    /// (groups, servers Xray runs).
+    /// «Редактировать»: the full form. 3.1.6: a server Xray-core runs gets it too
+    /// (written back into its Xray outbounds), a group its own editor; only what
+    /// no form describes is renamed.
     private func edit(node tag: String, in id: Int64) {
         guard let node = App.shared.library.subscription(id)?.node(tag) else { return }
+        if node.isGroup {
+            present(GroupEditorViewController.wrapped(node: node) { outbound, members, name in
+                App.shared.update(node: tag, in: id, outbound: outbound, members: members, name: name)
+            }, animated: true)
+            return
+        }
+        if node.type == XrayBacked.type, let draft = XrayBacked.draft(node.outbound, name: node.name) {
+            let original = node.outbound
+            present(ServerEditorViewController.wrapped(draft, original: original, title: L("Редактировать"),
+                                                      write: { try XrayBacked.apply($0, to: original) }) { outbound, name in
+                App.shared.update(node: tag, in: id, outbound: outbound, members: [], name: name)
+            }, animated: true)
+            return
+        }
         guard let draft = ServerDraft(outbound: node.outbound, name: node.name) else {
             rename(node: tag, in: id)
             return

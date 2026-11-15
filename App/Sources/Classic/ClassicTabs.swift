@@ -422,6 +422,8 @@ final class ClassicSettingsViewController: ClassicPage {
             toggle(L("Автоподключение"), Prefs.autoConnect) { Prefs.autoConnect = $0; App.shared.tunnel.applySettings() },
             toggle(L("Неизвестные Wi-Fi"), Prefs.unknownWiFi) { Prefs.unknownWiFi = $0; App.shared.tunnel.applySettings() },
             toggle(L("Автоматический failover"), Prefs.autoFailover) { Prefs.autoFailover = $0 },
+            toggle(L("Kill switch"), Prefs.killSwitch) { Prefs.killSwitch = $0; App.shared.tunnel.applySettings() },
+            Classic.body(L("Пока VPN включён, но не подключён (переподключение, сбой), приложения не выходят в интернет напрямую. Действует со следующего подключения."), 12, .regular, .secondaryLabel, lines: 0),
         ], spacing: 14))
         content.addArrangedSubview(section(L("МАРШРУТИЗАЦИЯ"), [
             link(L("Блокировка рекламы")) { AdBlockViewController() },
