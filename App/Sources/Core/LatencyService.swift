@@ -385,12 +385,76 @@ final class LatencyService {
     /// `tunnelUp`: the VPN is on, so direct connects must go around it.
     func test(_ items: [(subscription: Subscription, node: ServerNode)], tunnelSubscription: Int64?, tunnelUp: Bool) {
         cancel()
+        if Self.tunnelSettling {
+            waitForTunnel(items)
+            return
+        }
         run(items, tunnelSubscription: tunnelSubscription, tunnelUp: tunnelUp, continuing: false)
+    }
+
+    // MARK: Waiting for the tunnel (3.1.10)
+
+    /// Servers asked for while the VPN connects, reconnects or stops: tested once
+    /// it has settled. With the kill switch iOS lets nothing out around the
+    /// tunnel in between, and the app's own tests read «write udp …:53: no route
+    /// to host», shown as a DNS failure, until the new server was up.
+    private var deferred: [(subscription: Subscription, node: ServerNode)] = []
+    private var waitingForTunnel = false
+    private var waitGeneration = 0
+
+    private static var tunnelSettling: Bool {
+        let state = App.shared.tunnel.state.value
+        return state.isBusy || state == .connecting
+    }
+
+    private func waitForTunnel(_ items: [(subscription: Subscription, node: ServerNode)]) {
+        var keys = Set<String>()
+        for item in items {
+            let key = LatencyService.key(item.subscription.id, item.node.id)
+            guard !testing.contains(key), !keys.contains(key) else { continue }
+            keys.insert(key)
+            deferred.append(item)
+        }
+        if !keys.isEmpty {
+            testing.formUnion(keys)
+            var progress = self.progress.value
+            if progress.running {
+                progress.total += keys.count
+            } else {
+                progress = LatencyProgress(running: true, done: 0, total: keys.count)
+            }
+            self.progress.value = progress
+            changed.value = keys
+        }
+        guard !waitingForTunnel else { return }
+        waitingForTunnel = true
+        waitGeneration += 1
+        let generation = waitGeneration
+        App.shared.tunnel.state.observe(self, fireNow: false) { [weak self] _ in self?.tunnelSettled(force: false) }
+        // A tunnel that never settles does not hold the test forever.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 20) { [weak self] in
+            guard let self, self.waitGeneration == generation else { return }
+            self.tunnelSettled(force: true)
+        }
+    }
+
+    private func tunnelSettled(force: Bool) {
+        guard waitingForTunnel, force || !Self.tunnelSettling else { return }
+        waitingForTunnel = false
+        App.shared.tunnel.state.removeObserver(self)
+        let items = deferred
+        deferred = []
+        guard !items.isEmpty else { return }
+        run(items, tunnelSubscription: App.shared.tunnelSubscription, tunnelUp: App.shared.tunnel.state.value != .disconnected, continuing: true)
     }
 
     /// A server tapped (or swiped) for its ping. A running test is not stopped: the
     /// server joins it and shows its spinner at once, so several can be tapped in a row.
     func add(_ items: [(subscription: Subscription, node: ServerNode)], tunnelSubscription: Int64?, tunnelUp: Bool) {
+        if waitingForTunnel || (task == nil && Self.tunnelSettling) {
+            waitForTunnel(items)
+            return
+        }
         guard task != nil else {
             test(items, tunnelSubscription: tunnelSubscription, tunnelUp: tunnelUp)
             return
@@ -541,6 +605,11 @@ final class LatencyService {
         task?.cancel()
         task = nil
         pending = []
+        deferred = []
+        if waitingForTunnel {
+            waitingForTunnel = false
+            App.shared.tunnel.state.removeObserver(self)
+        }
         local?.close()
         local = nil
         if progress.value.running { finish() }

@@ -466,6 +466,8 @@ public enum ConfigBuilder {
                 if target.isEmpty || target == tag || !known.contains(target) { fields["detour"] = nil }
             }
 
+            if let tls = fields["tls"] { fields["tls"] = realityFingerprint(tls) }
+
             let type = fields["type"]?.stringValue?.lowercased() ?? ""
             if type == "selector" || type == "urltest", let members = fields["outbounds"] {
                 let kept = members.stringList.filter { $0 != tag && known.contains($0) }
@@ -473,6 +475,30 @@ public enum ConfigBuilder {
                 if let preferred = fields["default"]?.stringValue, !kept.contains(preferred) { fields["default"] = nil }
             }
             return .object(fields)
+        }
+
+        /// uTLS fingerprints that carry the hybrid key share `X25519MLKEM768` in
+        /// the pinned core (metacubex/utls 1.8.x): only Chrome's.
+        static let hybridFingerprints: Set<String> = ["chrome"]
+
+        /// 3.1.10: a REALITY server takes Chrome's fingerprint. Xray-core v26.9.8 and
+        /// later (XTLS/REALITY@8cdf7bf) silently hand a ClientHello without the
+        /// hybrid key share to the cover site; in the pinned core `firefox` is
+        /// Firefox 120 without it (sing-box-lx SPEC 086 fixes it in a later core).
+        /// The client then got the cover site's certificate: «x509: … certificate
+        /// is not standards compliant» or «reality verification failed», while
+        /// Happ (Xray-core, its Firefox has the share) connected. The fingerprint
+        /// only shapes the ClientHello: the server accepts any browser's.
+        static func realityFingerprint(_ tls: JSONValue) -> JSONValue {
+            guard tls["reality"]?["enabled"]?.boolValue == true else { return tls }
+            let current = tls["utls"]?["fingerprint"]?.stringValue?.lowercased() ?? ""
+            guard !hybridFingerprints.contains(current) else { return tls }
+            var tls = tls
+            var utls = tls["utls"]?.objectValue ?? [:]
+            utls["enabled"] = true
+            utls["fingerprint"] = "chrome"
+            tls["utls"] = .object(utls)
+            return tls
         }
     }
 

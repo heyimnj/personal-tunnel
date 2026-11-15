@@ -164,6 +164,27 @@ final class ConfigBuilderTests: XCTestCase {
         XCTAssertEqual(auto["outbounds"]?.arrayValue?.first?["default"], "auto")
     }
 
+    /// 3.1.10: REALITY servers go out with Chrome's fingerprint (the pinned core's
+    /// Firefox lacks the hybrid key share new Xray servers require); plain TLS keeps its own.
+    func testRealityTakesChromeFingerprint() throws {
+        let key = "frA_WzVIkA2NPG1EUvGDN8WoFAneqhPgaBGe9FvsaKc"
+        let links = [
+            "vless://11111111-2222-3333-4444-555555555555@r.example.com:443?security=reality&pbk=\(key)&sid=ab&sni=www.example.com&fp=firefox&type=tcp#R",
+            "vless://11111111-2222-3333-4444-555555555555@t.example.com:443?security=tls&sni=t.example.com&fp=firefox&type=ws&path=%2F#T",
+        ]
+        let nodes = NodeAssembler.assemble(try links.map { try ShareLink.parse($0) })
+        let subscription = Subscription(id: 1, name: "R", nodes: nodes)
+        let config = try ConfigBuilder.build(subscription: subscription, selected: nil, options: TunnelOptions())
+        let outbounds = config["outbounds"]?.arrayValue ?? []
+        let reality = try XCTUnwrap(outbounds.first { $0["tag"] == "R" })
+        XCTAssertEqual(reality.at("tls", "utls", "fingerprint"), "chrome")
+        XCTAssertEqual(reality.at("tls", "reality", "enabled"), true)
+        let tls = try XCTUnwrap(outbounds.first { $0["tag"] == "T" })
+        XCTAssertEqual(tls.at("tls", "utls", "fingerprint"), "firefox")
+        let probe = try ConfigBuilder.probe(subscription: subscription, options: TunnelOptions())
+        XCTAssertEqual(probe["outbounds"]?.arrayValue?.first { $0["tag"] == "R" }?.at("tls", "utls", "fingerprint"), "chrome")
+    }
+
     func testSingleServerHasNoAutoGroup() throws {
         let node = NodeAssembler.assemble([try ShareLink.parse("trojan://pw@b.example.com:443#B")])
         let config = try ConfigBuilder.build(subscription: Subscription(id: 1, name: "B", nodes: node), selected: nil, options: TunnelOptions())
