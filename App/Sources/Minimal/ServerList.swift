@@ -1055,8 +1055,30 @@ final class ServerListView: UIScrollView {
 
     func isOpen(_ id: Int64) -> Bool { (springs[id]?.target ?? 0) > 0.5 }
 
-    /// New content without animation; open subscriptions stay open.
+    /// The same subscriptions and servers in another order (3.3 beta 3: the
+    /// connected server rises and goes back, a connected subscription rises).
+    static func isReorder(_ old: [Section], _ new: [Section]) -> Bool {
+        guard old.count == new.count, old.map(\.id) != new.map(\.id) || zip(old, new).contains(where: { $0.nodes != $1.nodes }) else { return false }
+        let before = Dictionary(old.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+        return new.allSatisfy { section in
+            guard let previous = before[section.id] else { return false }
+            return previous.standalone == section.standalone && previous.nodes.count == section.nodes.count && Set(previous.nodes) == Set(section.nodes)
+        }
+    }
+
+    /// New content; open subscriptions stay open. 3.3 beta 3: when only the order
+    /// changes, subscriptions and servers glide from where they were (a short
+    /// spring); anything else is shown at once.
     func set(_ next: [Section], open: Set<Int64>) {
+        let reorder = window != nil && link == nil && !UIAccessibility.isReduceMotionEnabled && Self.isReorder(sections, next)
+        let oldSurfaceY = surfaces.mapValues(\.frame.minY)
+        var oldRowY: [String: CGFloat] = [:]
+        if reorder {
+            for section in sections where !section.standalone {
+                let top = rowsTop(section) + 3
+                for (index, node) in section.nodes.enumerated() { oldRowY[Self.key(section.id, node)] = top + CGFloat(index) * Self.rowPitch }
+            }
+        }
         sections = next
         let ids = Set(next.map(\.id))
         for id in Array(surfaces.keys) where !ids.contains(id) {
@@ -1082,11 +1104,29 @@ final class ServerListView: UIScrollView {
                 surfaces[section.id] = surface
             }
         }
-        for (key, row) in rows { recycle(row); rows[key] = nil }
+        if !reorder {
+            for (key, row) in rows { recycle(row); rows[key] = nil }
+        }
         // Rows are built ahead, so the first frames of a disclosure only place them.
         while pool.count < 16 { pool.append(makeRow()) }
         reconfigureHeaders()
         layoutList()
+        guard reorder else { return }
+        // Everything is in its new place: put it back where it was and let it glide.
+        reconfigureRows()
+        let surfaceTargets = surfaces.mapValues(\.frame)
+        let rowTargets = rows.mapValues(\.frame)
+        for (id, surface) in surfaces {
+            if let y = oldSurfaceY[id], y != surface.frame.minY { surface.frame.origin.y = y }
+        }
+        for (key, row) in rows {
+            if let y = oldRowY[key], y != row.frame.minY { row.frame.origin.y = y }
+        }
+        UIView.animate(withDuration: 0.32, delay: 0, usingSpringWithDamping: 0.9, initialSpringVelocity: 0,
+                       options: [.allowUserInteraction, .beginFromCurrentState]) {
+            for (id, frame) in surfaceTargets { self.surfaces[id]?.frame = frame }
+            for (key, frame) in rowTargets { self.rows[key]?.frame = frame }
+        }
     }
 
     /// Opens or closes a subscription with the spring.

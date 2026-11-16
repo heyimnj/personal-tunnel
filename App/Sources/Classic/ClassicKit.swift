@@ -149,10 +149,49 @@ class ClassicPage: UIViewController {
         }
     }
 
+    /// 3.3 beta 3: views marked with `orderKey` glide from where they were when a
+    /// rebuild moves them (a connected subscription rising, a connected server
+    /// rising and going back).
+    var animatesOrder = false
+    static let orderPrefix = "order:"
+
     /// Clears and builds the page again; pages are small, so this is cheap.
     func rebuild() {
+        let before = animatesOrder && view.window != nil && !UIAccessibility.isReduceMotionEnabled ? orderFrames() : [:]
         content.arrangedSubviews.forEach { $0.removeFromSuperview() }
         build()
+        guard !before.isEmpty else { return }
+        content.layoutIfNeeded()
+        var moving: [UIView] = []
+        for (key, view) in orderViews() {
+            guard let old = before[key] else { continue }
+            let now = view.convert(view.bounds, to: content)
+            let dy = old.minY - now.minY
+            guard abs(dy) > 0.5 else { continue }
+            view.transform = CGAffineTransform(translationX: 0, y: dy)
+            moving.append(view)
+        }
+        guard !moving.isEmpty else { return }
+        UIView.animate(withDuration: 0.32, delay: 0, usingSpringWithDamping: 0.9, initialSpringVelocity: 0, options: [.allowUserInteraction]) {
+            for view in moving { view.transform = .identity }
+        }
+    }
+
+    private func orderViews() -> [String: UIView] {
+        var result: [String: UIView] = [:]
+        func walk(_ view: UIView) {
+            if let key = view.accessibilityIdentifier, key.hasPrefix(Self.orderPrefix) {
+                result[key] = view
+                return
+            }
+            view.subviews.forEach(walk)
+        }
+        walk(content)
+        return result
+    }
+
+    private func orderFrames() -> [String: CGRect] {
+        orderViews().mapValues { $0.convert($0.bounds, to: content) }
     }
 
     func build() {}

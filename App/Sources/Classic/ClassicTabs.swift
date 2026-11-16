@@ -113,6 +113,7 @@ final class ClassicServersViewController: UIViewController, UITableViewDataSourc
         app.store.library.observe(self) { [weak self] _ in self?.reload() }
         app.latency.progress.observe(self) { [weak self] in self?.show($0) }
         app.latency.changed.observe(self, fireNow: false) { [weak self] _ in self?.reload() }
+        app.orderChanged.observe(self) { [weak self] in self?.reload() }
         Prefs.appearanceChanged.observe(self) { [weak self] in self?.view.backgroundColor = Theme.background; self?.reload() }
     }
 
@@ -135,7 +136,9 @@ final class ClassicServersViewController: UIViewController, UITableViewDataSourc
         let favorites = Prefs.favorites
         let recent = Prefs.arrangement.recent
         let limited = subscription.info.isLimited
-        let all = Prefs.arrangement.sorted(subscription.nodes, key: { Arrangement.server(subscription.id, $0.id) }, name: { self.labels[$0.id]?.text ?? $0.name })
+        // 3.3 beta 3: the server the VPN is connected to rises under the pinned ones.
+        let all = Prefs.arrangement.sorted(subscription.nodes, key: { Arrangement.server(subscription.id, $0.id) }, name: { self.labels[$0.id]?.text ?? $0.name },
+                                           lifted: App.shared.liftedServer)
         let favoriteNodes = all.filter { favorites.contains($0.id) }
         let recentNodes = recent.compactMap { key in all.first { Arrangement.server(subscription.id, $0.id) == key } }
         let sets: [(String, [ServerNode], String)] = [
@@ -172,13 +175,27 @@ final class ClassicServersViewController: UIViewController, UITableViewDataSourc
             })
         }
         let needle = (search.text ?? "").lowercased()
+        let previous = rows.map(\.id)
         rows = sets[filter].1.filter { needle.isEmpty || (labels[$0.id]?.text ?? $0.name).lowercased().contains(needle) || $0.name.lowercased().contains(needle) }
         heading.text = Lf("ЛОКАЦИИ / %@", "\(subscription.nodes.count)")
         groupKicker.text = "02 / " + subscription.name.uppercased()
         groupKicker.textColor = Theme.accent
         groupTitle.text = sets[filter].2
         groupCount.text = String(format: "%02d", rows.count)
-        table.reloadData()
+        // 3.3 beta 3: the same servers in another order glide to their places.
+        let next = rows.map(\.id)
+        guard previous != next, previous.count == next.count, Set(previous) == Set(next), table.window != nil,
+              !UIAccessibility.isReduceMotionEnabled else {
+            table.reloadData()
+            return
+        }
+        let from = Dictionary(previous.enumerated().map { ($1, $0) }, uniquingKeysWith: { first, _ in first })
+        table.performBatchUpdates({
+            for (index, id) in next.enumerated() {
+                guard let old = from[id], old != index else { continue }
+                self.table.moveRow(at: IndexPath(row: old, section: 0), to: IndexPath(row: index, section: 0))
+            }
+        }, completion: { [weak self] _ in self?.table.reloadData() })
     }
 
     func tableView(_: UITableView, numberOfRowsInSection _: Int) -> Int { rows.count }
@@ -252,8 +269,10 @@ final class ClassicManageViewController: ClassicPage {
 
     override func viewDidLoad() {
         super.viewDidLoad()
+        animatesOrder = true
         App.shared.store.library.observe(self, fireNow: false) { [weak self] _ in self?.rebuild() }
         App.shared.refreshing.observe(self, fireNow: false) { [weak self] _ in self?.rebuild() }
+        App.shared.orderChanged.observe(self) { [weak self] in self?.rebuild() }
     }
 
     override func build() {
@@ -335,15 +354,22 @@ final class ClassicManageViewController: ClassicPage {
             })
             more.menu = UIMenu(children: actions)
             more.widthAnchor.constraint(equalToConstant: 44).isActive = true
-            frame.add(UIStackView(.horizontal, spacing: 8, alignment: .center, [head, more]), insets: UIEdgeInsets(top: 22, left: 18, bottom: 22, right: 8))
+            let headRow = UIStackView(.horizontal, spacing: 8, alignment: .center, [head, more])
+            headRow.accessibilityIdentifier = ClassicPage.orderPrefix + "subscription:\(id)"
+            frame.add(headRow, insets: UIEdgeInsets(top: 22, left: 18, bottom: 22, right: 8))
             guard open else { continue }
             let labels = App.shared.store.labels(for: subscription)
             var lines: [UIView] = [Classic.body(Format.plural(subscription.nodes.count, L("сервер"), L("сервера"), L("серверов")) + L(" · обновлена ") + Format.ago(subscription.updatedAt), 13, .regular, .secondaryLabel)]
             if library.activeSubscription?.id == id { lines.append(Classic.body(L("На главном экране"), 13, .regular, Theme.accent)) }
-            for node in subscription.nodes {
-                lines.append(UIStackView(.vertical, spacing: 3, alignment: .leading, [
+            // 3.3 beta 3: in the list's order, the connected server under the pinned ones.
+            let nodes = Prefs.arrangement.sorted(subscription.nodes, key: { Arrangement.server(id, $0.id) }, name: { labels[$0.id]?.text ?? $0.name },
+                                                 lifted: App.shared.liftedServer)
+            for node in nodes {
+                let line = UIStackView(.vertical, spacing: 3, alignment: .leading, [
                     Classic.body(labels[node.id]?.text ?? node.name, 13), Classic.body(node.facts.summary, 12, .regular, .secondaryLabel),
-                ]))
+                ])
+                line.accessibilityIdentifier = ClassicPage.orderPrefix + "server:\(id):\(node.id)"
+                lines.append(line)
             }
             let list = UIStackView(.vertical, spacing: 10, alignment: .leading, lines)
             list.setCustomSpacing(2, after: lines[0])

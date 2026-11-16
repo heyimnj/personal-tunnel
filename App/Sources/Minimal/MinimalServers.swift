@@ -154,6 +154,8 @@ final class MinimalServersViewController: UIViewController, UIScrollViewDelegate
         App.shared.latency.progress.observe(self) { [weak self] in self?.show($0) }
         App.shared.refreshing.observe(self, fireNow: false) { [weak self] _ in self?.list.reconfigureHeaders() }
         App.shared.tunnel.state.observe(self, fireNow: false) { [weak self] _ in self?.list.reconfigureRows() }
+        // 3.3 beta 3: the connected server and subscription move (the list animates a reorder).
+        App.shared.orderChanged.observe(self) { [weak self] in self?.reload() }
     }
 
     // MARK: Header
@@ -731,13 +733,17 @@ final class MinimalServersViewController: UIViewController, UIScrollViewDelegate
 
     private func sortedNodes(_ subscription: Subscription) -> [ServerNode] {
         let labels = App.shared.store.labels(for: subscription)
-        var nodes = Prefs.arrangement.sorted(subscription.nodes, key: { Arrangement.server(subscription.id, $0.id) }, name: { labels[$0.id]?.text ?? $0.name })
+        // 3.3 beta 3: the server the VPN is connected to rises under the pinned ones.
+        let lifted = App.shared.liftedServer
+        var nodes = Prefs.arrangement.sorted(subscription.nodes, key: { Arrangement.server(subscription.id, $0.id) }, name: { labels[$0.id]?.text ?? $0.name }, lifted: lifted)
         if Prefs.sortByLatency {
             let latency = App.shared.latency
             let pinned = Set(Prefs.arrangement.pinned)
             nodes = nodes.enumerated().sorted { left, right in
-                let lp = pinned.contains(Arrangement.server(subscription.id, left.element.id)), rp = pinned.contains(Arrangement.server(subscription.id, right.element.id))
+                let lk = Arrangement.server(subscription.id, left.element.id), rk = Arrangement.server(subscription.id, right.element.id)
+                let lp = pinned.contains(lk), rp = pinned.contains(rk)
                 if lp != rp { return lp }
+                if let lifted, (lk == lifted) != (rk == lifted) { return lk == lifted }
                 let l = latency.entry(subscription.id, left.element.id)?.result.milliseconds ?? Int.max
                 let r = latency.entry(subscription.id, right.element.id)?.result.milliseconds ?? Int.max
                 return l != r ? l < r : left.offset < right.offset

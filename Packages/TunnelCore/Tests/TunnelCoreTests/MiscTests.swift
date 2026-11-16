@@ -254,3 +254,44 @@ final class ServerDraftTests: XCTestCase {
         XCTAssertEqual(Redactor.hideAddresses("context deadline exceeded"), "context deadline exceeded")
     }
 }
+
+/// 3.3 beta 3: the connected server rises while connected; a connected
+/// subscription rises and stays.
+final class ArrangementRaiseTests: XCTestCase {
+    func testTheConnectedServerRisesUnderThePinnedOnlyWhileConnected() {
+        var arrangement = Arrangement()
+        let servers = ["a", "b", "c", "d", "e"]
+        let key = { (tag: String) in Arrangement.server(1, tag) }
+        arrangement.setManualOrder(["e", "d", "c", "b", "a"].map(key), replacing: [])
+        arrangement.togglePin(key("b"))
+        let base = arrangement.sorted(servers, key: key, name: { $0 })
+        XCTAssertEqual(base, ["b", "e", "d", "c", "a"])
+        // Connected to «c»: under the pinned «b», above everything else.
+        XCTAssertEqual(arrangement.sorted(servers, key: key, name: { $0 }, lifted: key("c")), ["b", "c", "e", "d", "a"])
+        // A pinned server stays among the pinned.
+        XCTAssertEqual(arrangement.sorted(servers, key: key, name: { $0 }, lifted: key("b")), base)
+        // Disconnected: back to its own place, nothing remembered.
+        XCTAssertEqual(arrangement.sorted(servers, key: key, name: { $0 }), base)
+        arrangement.byName = true
+        XCTAssertEqual(arrangement.sorted(servers, key: key, name: { $0 }, lifted: key("e")), ["b", "e", "a", "c", "d"])
+    }
+
+    func testAConnectedSubscriptionRisesAndStays() throws {
+        var arrangement = Arrangement()
+        let ids: [Int64] = [1, 2, 3, 4]
+        arrangement.togglePin(Arrangement.subscription(4))
+        XCTAssertEqual(arrangement.sorted(ids, key: Arrangement.subscription, name: { "\($0)" }), [4, 1, 2, 3])
+        arrangement.raise(Arrangement.subscription(3))
+        XCTAssertEqual(arrangement.sorted(ids, key: Arrangement.subscription, name: { "\($0)" }), [4, 3, 1, 2])
+        arrangement.raise(Arrangement.subscription(2))
+        XCTAssertEqual(arrangement.sorted(ids, key: Arrangement.subscription, name: { "\($0)" }), [4, 2, 3, 1])
+        // It stays across saving (no connection needed).
+        let saved = Arrangement.decode(arrangement.encoded)
+        XCTAssertEqual(saved.sorted(ids, key: Arrangement.subscription, name: { "\($0)" }), [4, 2, 3, 1])
+        // An order set by hand wins.
+        arrangement.setManualOrder([1, 3, 2].map(Arrangement.subscription), replacing: [2, 3, 1].map(Arrangement.subscription))
+        XCTAssertEqual(arrangement.sorted(ids, key: Arrangement.subscription, name: { "\($0)" }), [4, 1, 3, 2])
+        // 1.x's JSON has no raised list.
+        XCTAssertEqual(Arrangement.decode(#"{"pinned":[],"manual":[],"recent":[],"byName":false}"#).raised, [])
+    }
+}

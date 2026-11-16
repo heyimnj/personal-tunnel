@@ -16,6 +16,40 @@ final class App {
     let refreshing = Observable<Set<Int64>>([])
     /// A short message for the user (errors, results of actions).
     let notice = Observable<String?>(nil)
+    /// 3.3 beta 3: the order of servers or subscriptions changed because of the
+    /// connection (a server rose or went back, a subscription rose).
+    let orderChanged = Signal()
+    private var lastLifted: String?
+
+    /// The server the VPN is connected (or connecting) to: it rises in its
+    /// subscription's list under the pinned ones, and goes back when the VPN is off.
+    var liftedServer: String? {
+        let state = tunnel.state.value
+        guard state.isOn || state == .connecting, let subscription = library.activeSubscription,
+              let node = library.selectedNodeID(in: subscription) else { return nil }
+        return Arrangement.server(subscription.id, node)
+    }
+
+    /// Tells the lists when the connected server changed; a connected subscription
+    /// rises for good (`Arrangement.raised`).
+    private func connectionOrderChanged() {
+        var changed = false
+        let lifted = liftedServer
+        if lifted != lastLifted {
+            lastLifted = lifted
+            changed = true
+        }
+        if tunnel.state.value == .connected, let subscription = library.activeSubscription {
+            let key = Arrangement.subscription(subscription.id)
+            var arrangement = Prefs.arrangement
+            if arrangement.raised.first != key {
+                arrangement.raise(key)
+                Prefs.arrangement = arrangement
+                changed = true
+            }
+        }
+        if changed { orderChanged.fire() }
+    }
 
     private init() {
         #if canImport(Darwin)
@@ -30,6 +64,7 @@ final class App {
         if let paths { CoreClient.setUp(paths: paths) }
         tunnel.state.observe(self) { [weak self] state in
             guard let self else { return }
+            self.connectionOrderChanged()
             if state == .connected {
                 self.core.start()
                 self.retryAfterConnecting()
@@ -151,6 +186,7 @@ final class App {
             return
         }
         if changed { switchServer() }
+        connectionOrderChanged()
     }
 
     /// 3.3 (PT-16): «Подробный журнал для диагностики» — the core logs at «info»
