@@ -42,3 +42,13 @@
 - Предрелиз: `MARKETING_VERSION` не меняется (3.0), метка в `PRERELEASE` («beta 3», «RC 1») и номер
   сборки растут: «3.0, beta 3 (215)», «3.0, RC 1 (216)». Релиз — `PRERELEASE` пустой: «3.0 (217)».
   Диагностическая сборка между предрелизами — та же метка, новый номер сборки.
+
+## Бета (PTBeta) — правило владельца
+
+Каждая новая бета ставится рядом с основным приложением, поэтому при запуске беты всегда меняются:
+- `Config/Base.xcconfig`: `PT_BUNDLE_ID = com.personaltunnelapp.beta`, `PT_DISPLAY_NAME = PTBeta`,
+  `PT_URL_SCHEME = ptbeta`, `PRERELEASE = beta N`;
+- `.github/workflows/build.yml`: имя IPA `PTBeta-…` вместо `PersonalTunnel-…`.
+App Group НЕ меняется: всегда `group.a69e6dc9a612eb7d.1` (своя группа беты не выдана подписью — с ней
+расширение не запускалось, PTBeta 1–5). При релизе — обратно: `com.personaltunnelapp`, `Personal Tunnel`,
+`personaltunnel`, `PRERELEASE` пустой, имя IPA `PersonalTunnel-…` (так сделан релиз 3.2 (248)).
