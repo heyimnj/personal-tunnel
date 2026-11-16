@@ -77,7 +77,10 @@ final class LibraryStore {
     static func protectStoredData(_ paths: SharedPaths) {
         let files = FileManager.default
         try? paths.prepare()
-        for url in [paths.data, paths.container.appendingPathComponent("configuration.json")] where files.fileExists(atPath: url.path) {
+        // 3.3 beta 2: 1.x data (kept on the device for a way back, as the owner
+        // decided) leaves the backups too: it holds 1.x's subscriptions and keys.
+        let legacy = [paths.legacyDatabase, paths.legacyConfigs] + ["-wal", "-shm", "-journal"].map { URL(fileURLWithPath: paths.legacyDatabase.path + $0) }
+        for url in [paths.data, paths.container.appendingPathComponent("configuration.json")] + legacy where files.fileExists(atPath: url.path) {
             var url = url
             var values = URLResourceValues()
             values.isExcludedFromBackup = true
