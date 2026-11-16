@@ -172,19 +172,23 @@ final class App {
 
     // MARK: Subscriptions
 
-    func add(text: String, completion: @escaping (String?) -> Void) {
+    /// Adds what the import confirmation showed (PT-14). `sendsDeviceData`: the
+    /// switch on that screen for a subscription address.
+    func add(text: String, sendsDeviceData: Bool = Prefs.deviceDataForNewSubscriptions, completion: @escaping (String?) -> Void) {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         if let url = URL(string: trimmed), let scheme = url.scheme?.lowercased(), scheme == "http" || scheme == "https", !trimmed.contains("\n") {
             Task { @MainActor in
                 do {
-                    let sendsDeviceData = Prefs.deviceDataForNewSubscriptions
-                    let fetched = try await SubscriptionService.fetch(url: trimmed, sendIdentity: sendsDeviceData)
+                    // 3.3: a new subscription's panel gets an HWID of its own (HMAC with its host).
+                    let probe = Subscription(id: 0, name: "", url: trimmed, hwidPerHost: true)
+                    let device = sendsDeviceData ? SubscriptionService.device(hwid: probe.hwid(device: DeviceIdentity.hwid)) : nil
+                    let fetched = try await SubscriptionService.fetch(url: trimmed, device: device)
                     self.logImport(fetched, name: fetched.title ?? SubscriptionHeaders.fallbackName(url: trimmed))
                     self.store.update { library in
                         let id = library.allocateID()
                         library.subscriptions.append(Subscription(id: id, name: fetched.title ?? SubscriptionHeaders.fallbackName(url: trimmed), url: trimmed,
                                                                   nodes: fetched.nodes, updatedAt: Date(), info: fetched.info,
-                                                                  sendsDeviceIdentity: sendsDeviceData))
+                                                                  sendsDeviceIdentity: sendsDeviceData, hwidPerHost: true))
                         if library.activeSubscriptionID == nil { library.activeSubscriptionID = id }
                     }
                     completion(App.joined(fetched.summary, CertificateCheck.summary(fetched.nodes)))
@@ -269,7 +273,8 @@ final class App {
         Task { @MainActor in
             defer { self.refreshing.value.remove(id) }
             do {
-                let fetched = try await SubscriptionService.fetch(url: url, sendIdentity: subscription.sendsDeviceIdentity)
+                let device = subscription.sendsDeviceIdentity ? SubscriptionService.device(hwid: subscription.hwid(device: DeviceIdentity.hwid)) : nil
+                let fetched = try await SubscriptionService.fetch(url: url, device: device)
                 self.logImport(fetched, name: subscription.name)
                 self.store.update { library in
                     guard var current = library.subscription(id) else { return }

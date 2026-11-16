@@ -100,7 +100,10 @@ public enum CertificateCheck {
     }
 
     public static func summary(_ nodes: [ServerNode]) -> String? {
-        let count = unchecked(nodes)
+        summary(count: unchecked(nodes))
+    }
+
+    public static func summary(count: Int) -> String? {
         guard count > 0 else { return nil }
         return CoreText.f("Сертификат не проверяется у серверов: %@. Соединение с ними можно перехватить.", "\(count)")
     }

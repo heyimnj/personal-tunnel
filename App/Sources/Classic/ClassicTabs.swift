@@ -312,7 +312,7 @@ final class ClassicManageViewController: ClassicPage {
             var actions: [UIMenuElement] = [UIAction(title: subscription.name, attributes: .disabled) { _ in }]
             if subscription.isRemote {
                 actions.append(UIAction(title: L("Обновить"), image: UIImage(systemName: "arrow.clockwise")) { _ in App.shared.refresh(id) })
-                actions.append(UIAction(title: L("Скопировать ссылку"), image: UIImage(systemName: "doc.on.doc")) { _ in UIPasteboard.general.string = subscription.url })
+                actions.append(UIAction(title: L("Скопировать ссылку"), image: UIImage(systemName: "doc.on.doc")) { _ in if let url = subscription.url { Clipboard.copySecret(url) } })
                 // 3.2.1: the panel's device data could not be turned off in «Классика».
                 let sends = subscription.sendsDeviceIdentity
                 let deviceData = UIAction(title: L("Передавать данные устройства провайдеру"), image: UIImage(systemName: "iphone"),

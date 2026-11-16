@@ -151,10 +151,14 @@ public struct Subscription: Codable, Hashable, Identifiable, Sendable {
     public var isDisabled: Bool
     /// Device headers (HWID, OS, model) are sent when refreshing.
     public var sendsDeviceIdentity: Bool
+    /// 3.3: this subscription's HWID is the device's one hashed with the panel's
+    /// host (`SubscriptionRequest.hwid`). On for subscriptions added from 3.3;
+    /// those added before keep sending the device's own HWID.
+    public var hwidPerHost: Bool
 
     public init(id: Int64, name: String, url: String? = nil, nodes: [ServerNode] = [], updatedAt: Date? = nil,
                 info: SubscriptionInfo = SubscriptionInfo(), warnings: [String] = [], isDisabled: Bool = false,
-                sendsDeviceIdentity: Bool = true)
+                sendsDeviceIdentity: Bool = true, hwidPerHost: Bool = false)
     {
         self.id = id
         self.name = name
@@ -165,10 +169,11 @@ public struct Subscription: Codable, Hashable, Identifiable, Sendable {
         self.warnings = warnings
         self.isDisabled = isDisabled
         self.sendsDeviceIdentity = sendsDeviceIdentity
+        self.hwidPerHost = hwidPerHost
     }
 
     private enum CodingKeys: String, CodingKey {
-        case id, name, url, nodes, updatedAt, info, warnings, isDisabled, sendsDeviceIdentity
+        case id, name, url, nodes, updatedAt, info, warnings, isDisabled, sendsDeviceIdentity, hwidPerHost
     }
 
     public init(from decoder: Decoder) throws {
@@ -182,6 +187,13 @@ public struct Subscription: Codable, Hashable, Identifiable, Sendable {
         warnings = try container.decodeIfPresent([String].self, forKey: .warnings) ?? []
         isDisabled = try container.decodeIfPresent(Bool.self, forKey: .isDisabled) ?? false
         sendsDeviceIdentity = try container.decodeIfPresent(Bool.self, forKey: .sendsDeviceIdentity) ?? true
+        hwidPerHost = try container.decodeIfPresent(Bool.self, forKey: .hwidPerHost) ?? false
+    }
+
+    /// The HWID this subscription's panel gets (3.3).
+    public func hwid(device: String) -> String {
+        guard hwidPerHost, let host = url.flatMap({ URL(string: $0.trimmingCharacters(in: .whitespacesAndNewlines))?.host }) else { return device }
+        return SubscriptionRequest.hwid(device, host: host)
     }
 
     /// 3.1.4: only an http(s) address can be fetched again; a subscription kept

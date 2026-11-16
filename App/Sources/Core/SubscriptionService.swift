@@ -18,32 +18,34 @@ enum SubscriptionService {
         var added = 0
     }
 
+    /// 3.3 (PT-13): the device data a panel gets: the HWID (`hwid`: the
+    /// subscription's own, see `Subscription.hwid(device:)`), model, iOS version
+    /// and language. The last two go only when a panel gave no servers without them.
+    static func device(hwid: String) -> SubscriptionRequest.Device {
+        SubscriptionRequest.Device(hwid: hwid, model: DeviceIdentity.model, osVersion: UIDevice.current.systemVersion, locale: Locale.current.identifier)
+    }
+
     /// Panels pick the answer by the client's name: Incy gets the full Xray JSON
     /// (Hysteria servers included, which some panels leave out for Happ), Happ the
     /// next, a plain client the list of links. A panel's "unsupported client" stub
-    /// moves on to the next name.
-    private static let userAgents = ["INCY/2.7.2", "Happ/3.13.0", "PersonalTunnel/2.0"]
-    private static func sendsIdentity(_ agent: String) -> Bool { agent.hasPrefix("Happ/") || agent.hasPrefix("INCY/") }
-
-    static func fetch(url text: String, sendIdentity: Bool) async throws -> Fetched {
-        guard let url = URL(string: text.trimmingCharacters(in: .whitespacesAndNewlines)), let scheme = url.scheme?.lowercased(),
-              scheme == "https" || scheme == "http"
-        else { throw ImportError(L("Это не адрес подписки.")) }
+    /// (or no servers, or an error code) moves on to the next try
+    /// (`SubscriptionRequest.attempts`). `device`: nil sends no device data.
+    static func fetch(url text: String, device: SubscriptionRequest.Device?) async throws -> Fetched {
+        let url = try SubscriptionRequest.address(text)
         var lastError: Error = ImportError(L("Подписка не загрузилась."))
-        for agent in userAgents {
+        for attempt in SubscriptionRequest.attempts(device: device) {
+            let agent = attempt.agent
             var request = URLRequest(url: url, cachePolicy: .reloadIgnoringLocalCacheData, timeoutInterval: 20)
             request.setValue(agent, forHTTPHeaderField: "User-Agent")
             request.setValue("text/plain, application/json, */*", forHTTPHeaderField: "Accept")
-            if sendIdentity, sendsIdentity(agent) {
-                request.setValue(DeviceIdentity.hwid, forHTTPHeaderField: "X-HWID")
-                request.setValue("iOS", forHTTPHeaderField: "X-Device-OS")
-                request.setValue(UIDevice.current.systemVersion, forHTTPHeaderField: "X-Ver-OS")
-                request.setValue(DeviceIdentity.model, forHTTPHeaderField: "X-Device-Model")
-                request.setValue(Locale.current.identifier, forHTTPHeaderField: "X-Device-Locale")
-            }
+            for (key, value) in attempt.headers { request.setValue(value, forHTTPHeaderField: key) }
             do {
-                let (data, response) = try await URLSession.shared.data(for: request)
+                let (data, response) = try await URLSession.shared.data(for: request, delegate: RedirectGuard())
                 guard let http = response as? HTTPURLResponse else { throw ImportError(L("Сервер подписки не ответил.")) }
+                if (300 ..< 400).contains(http.statusCode) {
+                    // RedirectGuard refused it: from https to http.
+                    throw RedirectGuard.Refused()
+                }
                 guard (200 ..< 300).contains(http.statusCode) else {
                     throw ImportError(Lf("Сервер подписки ответил кодом %@.", "\(http.statusCode)"))
                 }
@@ -57,13 +59,15 @@ enum SubscriptionService {
                 }
                 var nodes = result.nodes
                 var added = 0
-                if result.format == .xray, agent != userAgents.last, let plain = await plainList(url) {
+                if result.format == .xray, agent != SubscriptionRequest.plainAgent, let plain = await plainList(url) {
                     let extra = SubscriptionMerge.missing(from: plain, in: nodes)
                     nodes += extra
                     added = extra.count
                 }
                 return Fetched(nodes: NodeAssembler.assemble(nodes), title: title, info: info, summary: result.summary,
                                format: result.format.rawValue, agent: agent, issues: result.issues, added: added)
+            } catch let error as RedirectGuard.Refused {
+                throw error
             } catch let error as URLError {
                 // The network did not get through: another client name will not help,
                 // and would only add another wait.
@@ -75,13 +79,39 @@ enum SubscriptionService {
         throw lastError
     }
 
+    /// 3.3 (PT-13): a redirect to plain http is not followed; one to another host
+    /// loses the device headers.
+    final class RedirectGuard: NSObject, URLSessionTaskDelegate {
+        struct Refused: LocalizedError {
+            var errorDescription: String? { L("Сервер подписки перенаправил на незащищённый адрес http://: загрузка остановлена.") }
+        }
+
+        func urlSession(_: URLSession, task: URLSessionTask, willPerformHTTPRedirection _: HTTPURLResponse, newRequest request: URLRequest,
+                        completionHandler: @escaping (URLRequest?) -> Void)
+        {
+            guard let from = task.originalRequest?.url ?? task.currentRequest?.url, let to = request.url else {
+                completionHandler(nil)
+                return
+            }
+            var headers: [String: String] = [:]
+            for (key, value) in request.allHTTPHeaderFields ?? [:] { headers[key] = value }
+            guard let allowed = SubscriptionRequest.redirected(headers, from: from, to: to) else {
+                completionHandler(nil)
+                return
+            }
+            var next = request
+            next.allHTTPHeaderFields = allowed
+            completionHandler(next)
+        }
+    }
+
     /// The same subscription as a plain client sees it (no Happ identity): some
     /// panels leave servers out of the Xray JSON they give Happ.
     private static func plainList(_ url: URL) async -> [ParsedNode]? {
         var request = URLRequest(url: url, cachePolicy: .reloadIgnoringLocalCacheData, timeoutInterval: 20)
-        request.setValue(userAgents.last, forHTTPHeaderField: "User-Agent")
+        request.setValue(SubscriptionRequest.plainAgent, forHTTPHeaderField: "User-Agent")
         request.setValue("text/plain, application/json, */*", forHTTPHeaderField: "Accept")
-        guard let (data, response) = try? await URLSession.shared.data(for: request),
+        guard let (data, response) = try? await URLSession.shared.data(for: request, delegate: RedirectGuard()),
               let http = response as? HTTPURLResponse, (200 ..< 300).contains(http.statusCode),
               let result = try? ContentImporter.parse(String(decoding: data, as: UTF8.self)),
               !SubscriptionStub.isStub(result.nodes.map(\.name)) else { return nil }

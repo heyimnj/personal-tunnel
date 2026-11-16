@@ -586,7 +586,7 @@ final class MinimalServersViewController: UIViewController, UIScrollViewDelegate
             App.shared.notice.value = L("У выбранного нет исходных ссылок: серверы добавлены из файла или из подписки в формате JSON.")
             return
         }
-        UIPasteboard.general.string = links.joined(separator: "\n")
+        Clipboard.copySecret(links.joined(separator: "\n"))
         Haptics.result(true)
         App.shared.notice.value = Lf("Скопировано ссылок: %@.", "\(links.count)")
     }
@@ -905,7 +905,7 @@ final class MinimalServersViewController: UIViewController, UIScrollViewDelegate
             App.shared.notice.value = L("У этого сервера нет исходной ссылки: он добавлен из файла или из подписки в формате JSON.")
             return
         }
-        UIPasteboard.general.string = text
+        Clipboard.copySecret(text)
         Haptics.result(true)
     }
 

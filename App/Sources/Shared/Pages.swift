@@ -502,10 +502,24 @@ enum AddServerFlow {
         host.present(AddSheetViewController(title: L("Добавить сервер или подписку"), options: options), animated: true)
     }
 
+    /// 3.3 (PT-14): the clipboard, a QR code, a file or typed text is shown on the
+    /// confirmation first; nothing is fetched before «Добавить».
     private static func add(_ text: String, from host: UIViewController) {
+        // A moment for a sheet that is closing (the file picker, the QR scanner) to go.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
+            var top = host
+            while let presented = top.presentedViewController, !presented.isBeingDismissed { top = presented }
+            let presenter = top
+            presenter.present(ImportConfirmViewController.wrapped(text) { text, sendsDeviceData in
+                added(text, sendsDeviceData: sendsDeviceData, from: presenter)
+            }, animated: true)
+        }
+    }
+
+    private static func added(_ text: String, sendsDeviceData: Bool, from host: UIViewController) {
         let progress = UIAlertController(title: nil, message: L("Добавление…"), preferredStyle: .alert)
         host.present(progress, animated: true)
-        App.shared.add(text: text) { message in
+        App.shared.add(text: text, sendsDeviceData: sendsDeviceData) { message in
             progress.dismiss(animated: true) {
                 Haptics.result(message == nil)
                 if let message { App.shared.notice.value = message }
@@ -832,13 +846,24 @@ final class BackupViewController: FormViewController {
     }
 
     private func restore() {
-        picker.pick(from: self) { text in
+        picker.pick(from: self) { [weak self] text in
             if let library = try? JSONDecoder().decode(Library.self, from: Data(text.utf8)), !library.subscriptions.isEmpty {
-                App.shared.store.update { $0 = library }
-                App.shared.notice.value = Lf("Восстановлено подписок: %@.", "\(library.subscriptions.count)")
-            } else {
-                // Not a 2.0 backup: try it as servers or a configuration.
-                App.shared.add(text: text) { message in App.shared.notice.value = message ?? L("Серверы из файла добавлены.") }
+                // 3.3 (PT-14): a backup replaces everything; it is asked first.
+                let servers = library.subscriptions.reduce(0) { $0 + $1.nodes.count }
+                let alert = UIAlertController(title: L("Восстановить из копии?"),
+                                              message: Lf("Все подписки и серверы заменятся копией из файла: подписок %@, серверов %@.", "\(library.subscriptions.count)", "\(servers)"),
+                                              preferredStyle: .alert)
+                alert.addAction(UIAlertAction(title: L("Отмена"), style: .cancel))
+                alert.addAction(UIAlertAction(title: L("Восстановить"), style: .destructive) { _ in
+                    App.shared.store.update { $0 = library }
+                    App.shared.notice.value = Lf("Восстановлено подписок: %@.", "\(library.subscriptions.count)")
+                })
+                self?.present(alert, animated: true)
+            } else if let self {
+                // Not a 2.0 backup: servers or a configuration, shown on the confirmation first.
+                self.present(ImportConfirmViewController.wrapped(text) { text, sendsDeviceData in
+                    App.shared.add(text: text, sendsDeviceData: sendsDeviceData) { message in App.shared.notice.value = message ?? L("Серверы из файла добавлены.") }
+                }, animated: true)
             }
         }
     }

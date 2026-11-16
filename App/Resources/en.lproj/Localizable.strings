@@ -592,3 +592,17 @@
 "Сервер не сменился без перезапуска (%@): VPN перезапускается." = "The server did not change without a restart (%@): the VPN restarts.";
 "VPN не запущен, трафик не защищён" = "The VPN is not running: traffic is not protected";
 "Повторить" = "Try again";
+"Адрес подписки начинается с http://: он и данные устройства ушли бы без шифрования. Нужен адрес https://." = "The subscription address starts with http://: it and the device data would travel unencrypted. An https:// address is needed.";
+"Восстановить" = "Restore";
+"Восстановить из копии?" = "Restore from the backup?";
+"Все подписки и серверы заменятся копией из файла: подписок %@, серверов %@." = "All subscriptions and servers will be replaced by the backup in the file: %@ subscriptions, %@ servers.";
+"Добавить?" = "Add?";
+"Нечего добавить" = "Nothing to add";
+"Передаются HWID (свой для этого провайдера), модель iPhone; версия iOS и язык — только если без них панель не отдаёт серверы. Без этих данных некоторые панели не отдают серверы." = "Shared: an HWID of its own for this provider and the iPhone model; the iOS version and language only if the panel gives no servers without them. Without this data some panels give no servers.";
+"Приложение загрузит подписку с этого адреса. Путь и токен адреса здесь не показаны." = "The app will download the subscription from this address. The address's path and token are not shown here.";
+"Протоколы" = "Protocols";
+"Сервер подписки перенаправил на незащищённый адрес http://: загрузка остановлена." = "The subscription server redirected to an unencrypted http:// address: the download was stopped.";
+"Серверов" = "Servers";
+"Серверов не найдено." = "No servers found.";
+"Серверы добавятся отдельной подпиской. По сети ничего не загружается." = "The servers are added as a subscription of their own. Nothing is downloaded.";
+"Серверы из текста" = "Servers from the text";

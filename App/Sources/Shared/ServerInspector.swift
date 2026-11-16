@@ -81,7 +81,7 @@ final class ServerInspectorViewController: FormViewController {
             App.shared.notice.value = L("У этого сервера нет исходной ссылки: он добавлен из файла или из подписки в формате JSON.")
             return
         }
-        UIPasteboard.general.string = text
+        Clipboard.copySecret(text)
         Haptics.result(true)
         App.shared.notice.value = done
     }
