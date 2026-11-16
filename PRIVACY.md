@@ -44,7 +44,8 @@ Personal Tunnel — VPN-клиент для iPhone. Серверы и подпи
 туннеля разрешаются только адреса ваших серверов — по DNS over HTTPS через резолверы из настройки «DNS вне туннеля»
 (по умолчанию Cloudflare и Google; можно выбрать Cloudflare, Google, Quad9 или Яндекс). При включённом «Обходе
 российских сайтов» российские домены разрешаются через Яндекс, тоже по HTTPS. Провайдер интернета видит, что вы
-обращаетесь к этим резолверам, но не видит имён.
+обращаетесь к этим резолверам, но не видит имён. Если сеть не пропускает DNS over HTTPS, те же резолверы
+спрашиваются обычным DNS — тогда провайдер видит имена серверов; DNS over HTTPS пробуется снова через 2 минуты.
 
 Сам по себе, без вашего действия или подключения VPN, приложение в сеть не выходит.
 
@@ -179,7 +180,7 @@ VPN прячет ваш трафик от провайдера интернет�
 
 ---
 
-Действует для **Personal Tunnel 3.3 (PTBeta, beta 2, сборка 251)**. Дата: **16 ноября 2026 г.** При изменении
+Действует для **Personal Tunnel 3.3 (PTBeta, beta 3, сборка 252)**. Дата: **16 ноября 2026 г.** При изменении
 поведения приложения политика обновляется вместе с ним.
 
 ---
@@ -228,7 +229,8 @@ lets nothing around the tunnel, and then ping goes through it.
 only your servers' addresses are resolved, over DNS over HTTPS by the resolvers of the “DNS outside the tunnel” setting
 (Cloudflare and Google by default; Cloudflare, Google, Quad9 or Yandex can be chosen). With “Bypass Russian sites” on,
 Russian domains are resolved by Yandex, over HTTPS too. Your internet provider sees that you talk to these resolvers,
-not the names.
+not the names. If the network blocks DNS over HTTPS, the same resolvers are asked over plain DNS, and the provider
+then sees your servers' names; DNS over HTTPS is tried again after 2 minutes.
 
 The app does not go online on its own without an action of yours or the VPN connecting.
 
@@ -364,5 +366,5 @@ Left as it is on purpose (details in `audit/security-2026-11.md`):
 
 ---
 
-Applies to **Personal Tunnel 3.3 (PTBeta, beta 2, build 251)**. Date: **16 November 2026**. The policy is updated
+Applies to **Personal Tunnel 3.3 (PTBeta, beta 3, build 252)**. Date: **16 November 2026**. The policy is updated
 whenever the app's behaviour changes.
