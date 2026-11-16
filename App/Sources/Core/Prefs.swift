@@ -232,6 +232,23 @@ enum Prefs {
         set { defaults.set(newValue, forKey: "pt.appLock") }
     }
 
+    /// 3.3 (PT-09): «DNS вне туннеля» — which resolvers find server addresses
+    /// (a `DirectResolvers.presets` id).
+    static var directResolvers: String {
+        get { defaults.string(forKey: "pt.net.directResolvers") ?? DirectResolvers.defaultPreset }
+        set { defaults.set(newValue, forKey: "pt.net.directResolvers") }
+    }
+
+    static func resolverTitle(_ preset: String) -> String {
+        switch preset {
+        case "cloudflare": return "Cloudflare"
+        case "google": return "Google"
+        case "quad9": return "Quad9"
+        case "yandex": return L("Яндекс")
+        default: return L("Cloudflare и Google")
+        }
+    }
+
     /// «Автовыбор» instead of the manually chosen server.
     static var autoSelect: Bool {
         get { bool("pt.autoSelect", false) }
@@ -254,6 +271,7 @@ enum Prefs {
         options.bypassRussia = bypassRussia
         options.bypassPrivate = localNetwork
         options.autoSelect = autoSelect
+        options.directResolvers = DirectResolvers.addresses(directResolvers)
         return options
     }
 

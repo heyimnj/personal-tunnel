@@ -147,7 +147,7 @@ final class ConfigBuilderTests: XCTestCase {
         XCTAssertEqual(config.at("certificate", "store"), "mozilla")
         XCTAssertNil(config.at("route", "rule_set"))
         XCTAssertNil(config.at("route", "rules"))
-        XCTAssertEqual(config.at("dns", "servers")?.arrayValue?.map { $0["tag"] }, ["dns-direct", "dns-direct-1", "dns-direct-2", "dns-direct-3"])
+        XCTAssertEqual(config.at("dns", "servers")?.arrayValue?.map { $0["tag"] }, ["dns-direct", "dns-direct-1", "dns-direct-2"])
         // Nothing points at what was removed.
         let text = config.serialized(pretty: false)
         XCTAssertFalse(text.contains("dns-remote"))
@@ -222,6 +222,15 @@ final class ConfigBuilderTests: XCTestCase {
         XCTAssertEqual(plain.at("route", "rules")?[0]?["action"], "sniff")
     }
 
+    /// 3.3 (PT-09): the presets of the resolver setting.
+    func testResolverPresets() {
+        XCTAssertEqual(DirectResolvers.addresses("quad9"), ["9.9.9.9", "149.112.112.112"])
+        XCTAssertEqual(DirectResolvers.addresses("unknown"), DirectResolvers.defaultAddresses)
+        XCTAssertEqual(DirectResolvers.presets.first?.id, DirectResolvers.defaultPreset)
+        XCTAssertEqual(DirectResolvers.https(tag: "x", address: "77.88.8.1").at("tls", "server_name"), "common.dot.dns.yandex.net")
+        XCTAssertNil(DirectResolvers.https(tag: "x", address: "1.1.1.1")["tls"])
+    }
+
     /// 3.3 (PT-06): the tunnel the app writes sends no server's address around
     /// the VPN — no rule outside the bypasses goes `direct` — and the app's own
     /// core is bound to the physical interface instead.
@@ -275,22 +284,35 @@ final class ConfigBuilderTests: XCTestCase {
         XCTAssertEqual(full.at("dns", "servers")?[1]?["detour"], "proxy")
         XCTAssertEqual(full.at("dns", "servers")?[2]?["type"], "tcp")
         XCTAssertEqual(full.at("dns", "servers")?[2]?["detour"], "proxy")
-        // 3.0.6: outside the tunnel, the chosen resolver and two fallbacks at once.
+        // 3.3 (PT-09): outside the tunnel, the setting's resolvers at once, over HTTPS by address.
         XCTAssertEqual(full.at("dns", "servers")?[3]?["tag"], "dns-direct")
         XCTAssertEqual(full.at("dns", "servers")?[3]?["type"], "group")
-        XCTAssertEqual(full.at("dns", "servers")?[3]?["servers"], ["dns-direct-1", "dns-direct-2", "dns-direct-3"])
+        XCTAssertEqual(full.at("dns", "servers")?[3]?["servers"], ["dns-direct-1", "dns-direct-2"])
         XCTAssertEqual(full.at("dns", "servers")?[4]?["server"], "1.1.1.1")
-        XCTAssertEqual(full.at("dns", "servers")?[5]?["server"], "77.88.8.8")
+        XCTAssertEqual(full.at("dns", "servers")?[4]?["type"], "https")
+        XCTAssertEqual(full.at("dns", "servers")?[5]?["server"], "8.8.8.8")
         XCTAssertNil(full.at("dns", "servers")?[4]?["detour"])
         XCTAssertEqual(full.at("route", "default_domain_resolver", "server"), "dns-direct")
+        // Yandex only for the Russian names of the bypass, over HTTPS with its certificate's name.
+        let russian = try XCTUnwrap(full.at("dns", "servers")?.arrayValue?.first { $0["tag"] == "dns-ru" })
+        XCTAssertEqual(russian["type"], "https")
+        XCTAssertEqual(russian["server"], "77.88.8.8")
+        XCTAssertEqual(russian.at("tls", "server_name"), "common.dot.dns.yandex.net")
+        XCTAssertNil(russian["detour"])
+        XCTAssertTrue(full.at("dns", "rules")?.arrayValue?.contains { $0["server"] == "dns-ru" && $0["rule_set"] == ["pt-ru-domains", "pt-ru-inside"] } ?? false)
+        let names = (full.at("dns", "servers")?.arrayValue ?? []).filter { $0["tag"]?.stringValue?.hasPrefix("dns-direct-") ?? false }
+        XCTAssertFalse(names.contains { $0["server"] == "77.88.8.8" })
+        XCTAssertFalse(full.serialized().contains("\"udp\""))
 
         options.adBlocking = false
         options.bypassRussia = false
         options.bypassPrivate = false
-        options.dnsServer = "8.8.8.8"
+        options.directResolvers = ["9.9.9.9", "9.9.9.9", "149.112.112.112"]
         let bare = try ConfigBuilder.build(subscription: subscription, selected: nil, options: options)
-        // A fallback that is already the chosen resolver is not asked twice.
+        // The setting's resolvers, each once; no Yandex without the bypass.
         XCTAssertEqual(bare.at("dns", "servers")?[3]?["servers"], ["dns-direct-1", "dns-direct-2"])
+        XCTAssertEqual(bare.at("dns", "servers")?[4]?["server"], "9.9.9.9")
+        XCTAssertNil(bare.at("dns", "servers")?.arrayValue?.first { $0["tag"] == "dns-ru" })
         XCTAssertEqual(bare.at("route", "rules")?.arrayValue?.count, 2)
         XCTAssertNil(bare.at("route", "rule_set"))
         XCTAssertNil(bare.at("dns", "rules"))

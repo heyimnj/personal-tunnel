@@ -441,6 +441,13 @@ final class ClassicSettingsViewController: ClassicPage {
             toggle(L("Локальная сеть"), Prefs.localNetwork) { Prefs.localNetwork = $0; changed() },
             Classic.body(L("Серверы DNS берутся из конфигурации. После изменения системных маршрутов переподключите VPN."), 12, .regular, .secondaryLabel, lines: 0),
         ], spacing: 14))
+        content.addArrangedSubview(section(L("DNS ВНЕ ТУННЕЛЯ"), DirectResolvers.presets.map { preset -> UIView in
+            option(Prefs.resolverTitle(preset.id), selected: Prefs.directResolvers == preset.id) { [weak self] in
+                Prefs.directResolvers = preset.id
+                changed()
+                self?.rebuild()
+            }
+        } + [Classic.body(L("Адреса серверов находятся вне туннеля, по DNS over HTTPS через выбранные резолверы. Российские сайты при обходе — через Яндекс."), 12, .regular, .secondaryLabel, lines: 0) as UIView]))
         content.addArrangedSubview(section(L("БЕЗОПАСНОСТЬ"), [toggle(L("Блокировка приложения"), Prefs.appLock) { Prefs.appLock = $0 }]))
         content.addArrangedSubview(section(L("ДАННЫЕ"), [
             link(L("Порядок серверов")) { ServerOrderViewController() },

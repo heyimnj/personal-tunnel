@@ -612,3 +612,9 @@
 "Подробный журнал для диагностики" = "Diagnostic log";
 "Сам выключится через %@ мин" = "Turns itself off in %@ min";
 "Каждое соединение на 30 минут" = "Every connection, for 30 minutes";
+"Яндекс" = "Yandex";
+"Cloudflare и Google" = "Cloudflare and Google";
+"DNS вне туннеля" = "DNS outside the tunnel";
+"DNS ВНЕ ТУННЕЛЯ" = "DNS OUTSIDE THE TUNNEL";
+"Резолверы" = "Resolvers";
+"Адреса серверов находятся вне туннеля, по DNS over HTTPS через выбранные резолверы. Российские сайты при обходе — через Яндекс." = "Server addresses are looked up outside the tunnel over DNS over HTTPS by the chosen resolvers. Russian sites, with the bypass on, through Yandex.";

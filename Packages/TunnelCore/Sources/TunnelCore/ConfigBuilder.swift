@@ -18,6 +18,9 @@ public struct TunnelOptions: Codable, Equatable, Sendable {
     public var bypassPrivate = true
     /// Resolver for everything that goes through the VPN.
     public var dnsServer = "1.1.1.1"
+    /// 3.3 (PT-09): resolvers outside the tunnel (server addresses), asked over
+    /// DNS over HTTPS by address: a setting (`DirectResolvers.presets`).
+    public var directResolvers = DirectResolvers.defaultAddresses
     public var dnsStrategy = "prefer_ipv4"
     /// 3.3 (PT-16): «warn» by default — at «info» the core writes every
     /// connection with its destination. «info» only for a diagnostic half hour
@@ -279,8 +282,9 @@ public enum ConfigBuilder {
         if options.bypassRussia {
             ruleSets.append(contentsOf: RuleSet.russia.map(local))
             routeRules.append(["rule_set": JSONValue(RuleSet.russia), "outbound": "direct"])
-            // Names that leave the tunnel are resolved outside it as well.
-            dnsRules.append(["rule_set": ["pt-ru-domains", "pt-ru-inside"], "server": "dns-direct"])
+            // Names that leave the tunnel are resolved outside it as well: 3.3 (PT-09)
+            // by Yandex over DNS over HTTPS, only for these names.
+            dnsRules.append(["rule_set": ["pt-ru-domains", "pt-ru-inside"], "server": .string(DirectResolvers.russianTag)])
         }
 
         var route: [String: JSONValue] = [
@@ -305,7 +309,7 @@ public enum ConfigBuilder {
                 ["type": "group", "tag": "dns-remote", "servers": ["dns-remote-https", "dns-remote-tcp"], "mode": "parallel"],
                 ["type": "https", "tag": "dns-remote-https", "server": .string(options.dnsServer), "detour": .string(selectorTag)],
                 ["type": "tcp", "tag": "dns-remote-tcp", "server": .string(options.dnsServer), "detour": .string(selectorTag)],
-            ] + directResolvers(options)),
+            ] + directResolvers(options) + (options.bypassRussia ? [DirectResolvers.russian] : [])),
             "final": "dns-remote",
             "strategy": .string(options.dnsStrategy),
         ]
@@ -425,20 +429,18 @@ public enum ConfigBuilder {
         return config
     }
 
-    /// Public resolvers tried next to the chosen one for server addresses and
-    /// names that stay outside the tunnel (3.0.6): Yandex answers where 1.1.1.1
-    /// is slowed down or cut, and Google where neither does.
-    static let fallbackResolvers = ["77.88.8.8", "8.8.8.8"]
-
-    /// `dns-direct`: the resolver outside the tunnel. 3.0.6: a group asking the
-    /// chosen resolver and the fallbacks at once over UDP — with one resolver a
-    /// lost answer left a server's address unknown and its ping read
-    /// «lookup …: context deadline exceeded».
+    /// `dns-direct`: the resolver outside the tunnel, for server addresses. 3.0.6:
+    /// a group asking several at once — with one resolver a lost answer left a
+    /// server's address unknown and its ping read «lookup …: context deadline
+    /// exceeded». 3.3 (PT-09): over DNS over HTTPS by address, without a detour
+    /// (plain UDP showed the network which VPN servers the device used), and only
+    /// the resolvers of the setting: Yandex no longer sees every server name.
     static func directResolvers(_ options: TunnelOptions) -> [JSONValue] {
-        var addresses = [options.dnsServer]
-        for address in fallbackResolvers where !addresses.contains(address) { addresses.append(address) }
+        var addresses: [String] = []
+        for address in options.directResolvers where !address.isEmpty && !addresses.contains(address) { addresses.append(address) }
+        if addresses.isEmpty { addresses = DirectResolvers.defaultAddresses }
         let members = addresses.enumerated().map { index, address -> JSONValue in
-            ["type": "udp", "tag": .string("dns-direct-\(index + 1)"), "server": .string(address)]
+            DirectResolvers.https(tag: "dns-direct-\(index + 1)", address: address)
         }
         let group: JSONValue = ["type": "group", "tag": "dns-direct", "servers": .array(members.map { $0["tag"] ?? .null }), "mode": "parallel"]
         return [group] + members
@@ -584,4 +586,35 @@ public enum ConfigBuilder {
     public static func selectableTags(of subscription: Subscription) -> [String] {
         subscription.nodes.map(\.id)
     }
+}
+
+/// 3.3 (PT-09): the resolvers outside the tunnel, as a setting.
+public enum DirectResolvers {
+    public static let defaultPreset = "cloudflare-google"
+    public static let defaultAddresses = ["1.1.1.1", "8.8.8.8"]
+    /// Preset id → addresses, in the order the setting lists them.
+    public static let presets: [(id: String, addresses: [String])] = [
+        ("cloudflare-google", defaultAddresses),
+        ("cloudflare", ["1.1.1.1", "1.0.0.1"]),
+        ("google", ["8.8.8.8", "8.8.4.4"]),
+        ("quad9", ["9.9.9.9", "149.112.112.112"]),
+        ("yandex", ["77.88.8.8", "77.88.8.1"]),
+    ]
+
+    public static func addresses(_ preset: String) -> [String] {
+        presets.first { $0.id == preset }?.addresses ?? defaultAddresses
+    }
+
+    /// Resolvers whose certificate names a host, not the address.
+    static let certificateNames = ["77.88.8.8": "common.dot.dns.yandex.net", "77.88.8.1": "common.dot.dns.yandex.net"]
+
+    static func https(tag: String, address: String) -> JSONValue {
+        var server: [String: JSONValue] = ["type": "https", "tag": .string(tag), "server": .string(address)]
+        if let name = certificateNames[address] { server["tls"] = ["enabled": true, "server_name": .string(name)] }
+        return .object(server)
+    }
+
+    /// Russian names that leave the tunnel (the bypass): Yandex, over HTTPS.
+    static let russianTag = "dns-ru"
+    static var russian: JSONValue { https(tag: russianTag, address: "77.88.8.8") }
 }
