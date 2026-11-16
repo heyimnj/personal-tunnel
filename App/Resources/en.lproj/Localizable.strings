@@ -589,3 +589,4 @@
 "Xray-core: локальные порты не сопоставились, используются сохранённые" = "Xray-core: the local ports did not match, the saved ones are used";
 "сертификат не проверяется" = "certificate not checked";
 "Сертификат не проверяется у серверов: %@. Соединение с ними можно перехватить." = "Certificate not checked on servers: %@. Connections to them can be intercepted.";
+"Сервер не сменился без перезапуска (%@): VPN перезапускается." = "The server did not change without a restart (%@): the VPN restarts.";

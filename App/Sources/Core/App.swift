@@ -102,6 +102,23 @@ final class App {
         tunnel.stop()
     }
 
+    /// 3.3 (PT-07): another server (or the chosen one changed) with the VPN on:
+    /// the running tunnel loads the new configuration (startOrReloadService)
+    /// without going down, so nothing leaves around it in between. Only if that
+    /// fails does it stop and start again as before. Call after writing the configuration.
+    func switchServer() {
+        guard tunnel.state.value.isOn else {
+            reconnect()
+            return
+        }
+        latency.cancel()
+        tunnel.reload { [weak self] error in
+            guard let self, let error, !error.isEmpty else { return }
+            self.core.note(Lf("Сервер не сменился без перезапуска (%@): VPN перезапускается.", error), level: 3)
+            self.reconnect()
+        }
+    }
+
     func connect() {
         do {
             let config = try store.writeActiveConfig()
@@ -134,7 +151,7 @@ final class App {
             notice.value = error.localizedDescription
             return
         }
-        if changed { reconnect() }
+        if changed { switchServer() }
     }
 
     func reloadTunnel() {
@@ -222,7 +239,7 @@ final class App {
         }
         // The server in use changed: the tunnel comes back on its new settings.
         if let active = library.activeSubscription, active.id == id {
-            if library.selectedNodeID(in: active) == tag { reconnect() } else { reloadTunnel() }
+            if library.selectedNodeID(in: active) == tag { _ = try? store.writeActiveConfig(); switchServer() } else { reloadTunnel() }
         }
     }
 
@@ -240,7 +257,7 @@ final class App {
             library.replace(subscription)
         }
         if let active = library.activeSubscription, active.id == id {
-            if library.selectedNodeID(in: active) == tag { reconnect() } else { reloadTunnel() }
+            if library.selectedNodeID(in: active) == tag { _ = try? store.writeActiveConfig(); switchServer() } else { reloadTunnel() }
         }
     }
 
