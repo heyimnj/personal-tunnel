@@ -7,6 +7,9 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 source "$ROOT/scripts/core-env.sh"
 fetch_core
 fetch_xray
+# Personal Tunnel's own patches to the core carry their tests (core/patches):
+# the certificate pin (PT-03) in both TLS engines.
+(cd "$CORE_CHECKOUT" && go test -count=1 -trimpath -tags "$CHECK_TAGS" -ldflags "-checklinkname=0" -run 'CertificateSHA256' ./common/tls/)
 cd "$BRIDGE_DIR"
 go vet -tags "$CHECK_TAGS" ./...
 # Конфигурации проверки серверов из tunnelcore-fixtures, если они уже записаны.

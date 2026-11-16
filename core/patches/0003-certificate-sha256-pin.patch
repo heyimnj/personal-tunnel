@@ -1,9 +1,9 @@
 diff --git a/common/tls/certificate_pin_lx.go b/common/tls/certificate_pin_lx.go
 new file mode 100644
-index 0000000..d1639c5
+index 0000000..554c69b
 --- /dev/null
 +++ b/common/tls/certificate_pin_lx.go
-@@ -0,0 +1,52 @@
+@@ -0,0 +1,100 @@
 +package tls
 +
 +// lx:begin certificate-sha256
@@ -11,14 +11,22 @@ index 0000000..d1639c5
 +// `pinnedPeerCertSha256` / share-link `pcs`). Providers without a domain run
 +// self-signed certificates and give clients this hash instead of `insecure`;
 +// on iOS the system verifier rejects such a certificate outright ("not standards
-+// compliant"), so without the pin the server could not be used at all. Any
-+// certificate of the presented chain may match, as in Hysteria and Xray.
++// compliant"), so without the pin the server could not be used at all.
++//
++// As Xray-core's verifyChain: the pin matching the leaf is enough. A pin matching
++// a certificate further up the chain counts only when that certificate is a CA
++// and the leaf verifies with it as the only root (and for the server's name).
++// Personal Tunnel 3.2 accepted any certificate of the chain: the pinned one is
++// public (the server sends it in every handshake), so a man in the middle could
++// present its own leaf followed by it (audit PT-03).
 +
 +import (
 +	"bytes"
 +	"crypto/sha256"
++	"crypto/x509"
 +	"encoding/hex"
 +	"strings"
++	"time"
 +
 +	E "github.com/sagernet/sing/common/exceptions"
 +)
@@ -37,55 +45,144 @@ index 0000000..d1639c5
 +	return hashes, nil
 +}
 +
-+// VerifyCertificateSHA256 accepts the connection when one of the presented
-+// certificates has one of the known hashes.
-+func VerifyCertificateSHA256(known [][]byte, rawCerts [][]byte) error {
-+	for _, raw := range rawCerts {
-+		hash := sha256.Sum256(raw)
-+		for _, value := range known {
-+			if bytes.Equal(value, hash[:]) {
-+				return nil
-+			}
++func pinned(known [][]byte, raw []byte) bool {
++	hash := sha256.Sum256(raw)
++	for _, value := range known {
++		if bytes.Equal(value, hash[:]) {
++			return true
 +		}
 +	}
++	return false
++}
++
++// VerifyCertificateSHA256 accepts the connection when the leaf has one of the
++// known hashes, or when a pinned CA of the presented chain issued the leaf for
++// serverName (no name check when serverName is empty).
++func VerifyCertificateSHA256(known [][]byte, rawCerts [][]byte, serverName string, now time.Time) error {
 +	if len(rawCerts) == 0 {
 +		return E.New("certificate pin: the server sent no certificate")
 +	}
-+	leaf := sha256.Sum256(rawCerts[0])
-+	return E.New("certificate pin: unrecognized server certificate ", hex.EncodeToString(leaf[:]))
++	if pinned(known, rawCerts[0]) {
++		return nil
++	}
++	leafHash := sha256.Sum256(rawCerts[0])
++	unrecognized := E.New("certificate pin: unrecognized server certificate ", hex.EncodeToString(leafHash[:]))
++	leaf, err := x509.ParseCertificate(rawCerts[0])
++	if err != nil {
++		return unrecognized
++	}
++	for index, raw := range rawCerts[1:] {
++		if !pinned(known, raw) {
++			continue
++		}
++		authority, err := x509.ParseCertificate(raw)
++		if err != nil || !authority.IsCA {
++			continue
++		}
++		roots := x509.NewCertPool()
++		roots.AddCert(authority)
++		intermediates := x509.NewCertPool()
++		for other, item := range rawCerts[1:] {
++			if other == index {
++				continue
++			}
++			if certificate, err := x509.ParseCertificate(item); err == nil {
++				intermediates.AddCert(certificate)
++			}
++		}
++		if now.IsZero() {
++			now = time.Now()
++		}
++		options := x509.VerifyOptions{Roots: roots, Intermediates: intermediates, CurrentTime: now, DNSName: serverName, KeyUsages: []x509.ExtKeyUsage{x509.ExtKeyUsageAny}}
++		if _, err := leaf.Verify(options); err == nil {
++			return nil
++		} else {
++			return E.Cause(err, "certificate pin: the pinned CA did not issue the server certificate")
++		}
++	}
++	return unrecognized
 +}
 +
 +// lx:end
 diff --git a/common/tls/certificate_pin_lx_test.go b/common/tls/certificate_pin_lx_test.go
 new file mode 100644
-index 0000000..74f1372
+index 0000000..56bec2b
 --- /dev/null
 +++ b/common/tls/certificate_pin_lx_test.go
-@@ -0,0 +1,106 @@
+@@ -0,0 +1,212 @@
 +package tls
 +
 +import (
 +	"context"
++	"crypto/ecdsa"
++	"crypto/elliptic"
++	"crypto/rand"
 +	"crypto/sha256"
++	stdtls "crypto/tls"
++	"crypto/x509"
++	"crypto/x509/pkix"
 +	"encoding/hex"
++	"math/big"
 +	"net"
-+	"net/http"
-+	"net/http/httptest"
 +	"strings"
 +	"testing"
++	"time"
 +
 +	"github.com/sagernet/sing-box/log"
 +	"github.com/sagernet/sing-box/option"
 +)
 +
-+func TestCertificateSHA256Pin(t *testing.T) {
-+	leaf := []byte("leaf certificate bytes")
-+	issuer := []byte("issuer certificate bytes")
-+	leafHash := sha256.Sum256(leaf)
-+	issuerHash := sha256.Sum256(issuer)
++type testCert struct {
++	der  []byte
++	cert *x509.Certificate
++	key  *ecdsa.PrivateKey
++}
 +
++// newTestCert makes a certificate for name, signed by parent (self-signed when nil).
++func newTestCert(t *testing.T, name string, isCA bool, parent *testCert) testCert {
++	t.Helper()
++	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
++	if err != nil {
++		t.Fatal(err)
++	}
++	serial, _ := rand.Int(rand.Reader, big.NewInt(1<<62))
++	template := &x509.Certificate{
++		SerialNumber: serial, Subject: pkix.Name{CommonName: name},
++		NotBefore: time.Now().Add(-time.Hour), NotAfter: time.Now().Add(24 * time.Hour),
++		KeyUsage: x509.KeyUsageDigitalSignature | x509.KeyUsageCertSign, ExtKeyUsage: []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
++		BasicConstraintsValid: true, IsCA: isCA,
++	}
++	if !isCA {
++		template.DNSNames = []string{name}
++	}
++	signer, signerKey := template, key
++	if parent != nil {
++		signer, signerKey = parent.cert, parent.key
++	}
++	der, err := x509.CreateCertificate(rand.Reader, template, signer, &key.PublicKey, signerKey)
++	if err != nil {
++		t.Fatal(err)
++	}
++	cert, _ := x509.ParseCertificate(der)
++	return testCert{der: der, cert: cert, key: key}
++}
++
++func pinOf(der []byte) [][]byte {
++	hash := sha256.Sum256(der)
++	return [][]byte{hash[:]}
++}
++
++func TestCertificateSHA256Pin(t *testing.T) {
++	genuine := newTestCert(t, "example.internal", false, nil)
++	attacker := newTestCert(t, "example.internal", false, nil)
++	authority := newTestCert(t, "Panel CA", true, nil)
++	issued := newTestCert(t, "example.internal", false, &authority)
++	otherCA := newTestCert(t, "Other CA", true, nil)
++	now := time.Now()
++
++	hash := sha256.Sum256(genuine.der)
 +	colons := ""
-+	for i, b := range leafHash {
++	for i, b := range hash {
 +		if i > 0 {
 +			colons += ":"
 +		}
@@ -95,20 +192,32 @@ index 0000000..74f1372
 +	if err != nil {
 +		t.Fatal(err)
 +	}
-+	if err := VerifyCertificateSHA256(known, [][]byte{leaf, issuer}); err != nil {
++	if err := VerifyCertificateSHA256(known, [][]byte{genuine.der}, "example.internal", now); err != nil {
 +		t.Fatal("leaf pin rejected:", err)
 +	}
-+	known, err = ParseCertificateSHA256([]string{hex.EncodeToString(issuerHash[:])})
-+	if err != nil {
-+		t.Fatal(err)
++	// PT-03: someone else's leaf followed by the pinned certificate.
++	if err := VerifyCertificateSHA256(known, [][]byte{attacker.der, genuine.der}, "example.internal", now); err == nil {
++		t.Fatal("a chain [someone else's leaf, pinned certificate] was accepted")
 +	}
-+	if err := VerifyCertificateSHA256(known, [][]byte{leaf, issuer}); err != nil {
-+		t.Fatal("chain pin rejected:", err)
++	// A pinned CA counts only for a leaf it issued, for the server's name.
++	caPin := pinOf(authority.der)
++	if err := VerifyCertificateSHA256(caPin, [][]byte{issued.der, authority.der}, "example.internal", now); err != nil {
++		t.Fatal("leaf issued by the pinned CA rejected:", err)
 +	}
-+	if err := VerifyCertificateSHA256(known, [][]byte{leaf}); err == nil {
-+		t.Fatal("wrong certificate accepted")
++	if err := VerifyCertificateSHA256(caPin, [][]byte{attacker.der, authority.der}, "example.internal", now); err == nil {
++		t.Fatal("a leaf the pinned CA did not issue was accepted")
 +	}
-+	if err := VerifyCertificateSHA256(known, nil); err == nil {
++	if err := VerifyCertificateSHA256(caPin, [][]byte{issued.der, authority.der}, "other.internal", now); err == nil {
++		t.Fatal("the pinned CA's leaf was accepted for another name")
++	}
++	if err := VerifyCertificateSHA256(caPin, [][]byte{issued.der, otherCA.der}, "example.internal", now); err == nil {
++		t.Fatal("a chain without the pinned CA was accepted")
++	}
++	// A pinned certificate that is not a CA does not vouch for another leaf.
++	if err := VerifyCertificateSHA256(pinOf(genuine.der), [][]byte{issued.der, genuine.der}, "example.internal", now); err == nil {
++		t.Fatal("a non-CA pinned certificate vouched for another leaf")
++	}
++	if err := VerifyCertificateSHA256(known, nil, "", now); err == nil {
 +		t.Fatal("empty chain accepted")
 +	}
 +	if _, err := ParseCertificateSHA256([]string{"abcd"}); err == nil {
@@ -119,35 +228,64 @@ index 0000000..74f1372
 +	}
 +}
 +
-+// A real handshake with a self-signed server: the pinned hash lets it through
-+// (standard and uTLS engines), a wrong hash does not, and without a pin the
-+// ordinary verification still refuses it.
-+func TestCertificateSHA256PinHandshake(t *testing.T) {
-+	server := httptest.NewUnstartedServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}))
-+	server.StartTLS()
-+	defer server.Close()
-+	raw := server.Certificate().Raw
-+	hash := sha256.Sum256(raw)
-+	good := hex.EncodeToString(hash[:])
-+	bad := strings.Repeat("00", 32)
-+	address := server.Listener.Addr().String()
-+
-+	handshake := func(options option.OutboundTLSOptions) error {
-+		config, err := NewClient(context.Background(), log.NewNOPFactory().Logger(), "example.internal", options)
-+		if err != nil {
-+			return err
-+		}
-+		conn, err := net.Dial("tcp", address)
-+		if err != nil {
-+			t.Fatal(err)
-+		}
-+		defer conn.Close()
-+		tlsConn, err := ClientHandshake(context.Background(), conn, config)
-+		if err != nil {
-+			return err
-+		}
-+		return tlsConn.Close()
++// startTLSServer serves TLS with the given chain (leaf first) and key, once per connection.
++func startTLSServer(t *testing.T, chain [][]byte, key *ecdsa.PrivateKey) string {
++	t.Helper()
++	listener, err := stdtls.Listen("tcp", "127.0.0.1:0", &stdtls.Config{Certificates: []stdtls.Certificate{{Certificate: chain, PrivateKey: key}}})
++	if err != nil {
++		t.Fatal(err)
 +	}
++	t.Cleanup(func() { listener.Close() })
++	go func() {
++		for {
++			conn, err := listener.Accept()
++			if err != nil {
++				return
++			}
++			go func() {
++				defer conn.Close()
++				_ = conn.(*stdtls.Conn).Handshake()
++			}()
++		}
++	}()
++	return listener.Addr().String()
++}
++
++func pinHandshake(t *testing.T, address string, options option.OutboundTLSOptions) error {
++	t.Helper()
++	config, err := NewClient(context.Background(), log.NewNOPFactory().Logger(), "example.internal", options)
++	if err != nil {
++		return err
++	}
++	conn, err := net.Dial("tcp", address)
++	if err != nil {
++		t.Fatal(err)
++	}
++	defer conn.Close()
++	tlsConn, err := ClientHandshake(context.Background(), conn, config)
++	if err != nil {
++		return err
++	}
++	return tlsConn.Close()
++}
++
++// Real handshakes, standard and uTLS engines: the pinned server gets through, a
++// man in the middle that appends the pinned certificate to its own does not
++// (PT-03), a wrong hash does not, `insecure` does not switch the pin off, and
++// without a pin the ordinary verification still refuses a self-signed server.
++func TestCertificateSHA256PinHandshake(t *testing.T) {
++	genuine := newTestCert(t, "example.internal", false, nil)
++	attacker := newTestCert(t, "example.internal", false, nil)
++	authority := newTestCert(t, "Panel CA", true, nil)
++	issued := newTestCert(t, "example.internal", false, &authority)
++	server := startTLSServer(t, [][]byte{genuine.der}, genuine.key)
++	middle := startTLSServer(t, [][]byte{attacker.der, genuine.der}, attacker.key)
++	panel := startTLSServer(t, [][]byte{issued.der, authority.der}, issued.key)
++	forged := startTLSServer(t, [][]byte{attacker.der, authority.der}, attacker.key)
++	good := hex.EncodeToString(pinOf(genuine.der)[0])
++	caPin := hex.EncodeToString(pinOf(authority.der)[0])
++	bad := strings.Repeat("00", 32)
++
 +	for _, fingerprint := range []string{"", "chrome"} {
 +		base := option.OutboundTLSOptions{Enabled: true, ServerName: "example.internal"}
 +		if fingerprint != "" {
@@ -155,24 +293,40 @@ index 0000000..74f1372
 +		}
 +		pinned := base
 +		pinned.CertificateSHA256 = []string{good}
-+		if err := handshake(pinned); err != nil {
++		if err := pinHandshake(t, server, pinned); err != nil {
 +			t.Fatalf("pinned handshake (%q) failed: %v", fingerprint, err)
++		}
++		if err := pinHandshake(t, middle, pinned); err == nil {
++			t.Fatalf("(%q) a man in the middle with the pinned certificate appended was accepted", fingerprint)
++		}
++		withCA := base
++		withCA.CertificateSHA256 = []string{caPin}
++		if err := pinHandshake(t, panel, withCA); err != nil {
++			t.Fatalf("(%q) leaf of the pinned CA rejected: %v", fingerprint, err)
++		}
++		if err := pinHandshake(t, forged, withCA); err == nil {
++			t.Fatalf("(%q) a leaf the pinned CA did not issue was accepted", fingerprint)
 +		}
 +		wrong := base
 +		wrong.CertificateSHA256 = []string{bad}
-+		if err := handshake(wrong); err == nil {
++		if err := pinHandshake(t, server, wrong); err == nil {
 +			t.Fatalf("wrong pin (%q) accepted", fingerprint)
 +		}
-+		if err := handshake(base); err == nil {
++		insecure := wrong
++		insecure.Insecure = true
++		if err := pinHandshake(t, server, insecure); err == nil {
++			t.Fatalf("(%q) insecure switched the pin off", fingerprint)
++		}
++		if err := pinHandshake(t, server, base); err == nil {
 +			t.Fatalf("unpinned self-signed server (%q) accepted", fingerprint)
 +		}
 +	}
 +}
 diff --git a/common/tls/std_client.go b/common/tls/std_client.go
-index 80fa6cb..21edf67 100644
+index 99e2427..a8b46ad 100644
 --- a/common/tls/std_client.go
 +++ b/common/tls/std_client.go
-@@ -143,6 +143,21 @@ func newSTDClient(ctx context.Context, logger logger.ContextLogger, serverAddres
+@@ -145,6 +145,21 @@ func newSTDClient(ctx context.Context, logger logger.ContextLogger, serverAddres
  			return VerifyPublicKeySHA256(options.CertificatePublicKeySHA256, rawCerts)
  		}
  	}
@@ -187,14 +341,14 @@ index 80fa6cb..21edf67 100644
 +		}
 +		tlsConfig.InsecureSkipVerify = true
 +		tlsConfig.VerifyPeerCertificate = func(rawCerts [][]byte, verifiedChains [][]*x509.Certificate) error {
-+			return VerifyCertificateSHA256(pins, rawCerts)
++			return VerifyCertificateSHA256(pins, rawCerts, serverName, time.Now()) // lx: certificate-sha256 (PT-03)
 +		}
 +	}
 +	// lx:end
  	if len(options.ALPN) > 0 {
  		tlsConfig.NextProtos = options.ALPN
  	}
-@@ -236,7 +251,7 @@ func newSTDClient(ctx context.Context, logger logger.ContextLogger, serverAddres
+@@ -238,7 +253,7 @@ func newSTDClient(ctx context.Context, logger logger.ContextLogger, serverAddres
  		config:                &tlsConfig,
  		serverName:            serverName,
  		disableSNI:            options.DisableSNI,
@@ -204,10 +358,10 @@ index 80fa6cb..21edf67 100644
  		fragment:              options.Fragment,
  		fragmentFallbackDelay: time.Duration(options.FragmentFallbackDelay),
 diff --git a/common/tls/utls_client.go b/common/tls/utls_client.go
-index 16d0352..87d5d37 100644
+index c6bf5dc..5e33a43 100644
 --- a/common/tls/utls_client.go
 +++ b/common/tls/utls_client.go
-@@ -218,6 +218,21 @@ func newUTLSClient(ctx context.Context, logger logger.ContextLogger, serverAddre
+@@ -229,6 +229,21 @@ func newUTLSClient(ctx context.Context, logger logger.ContextLogger, serverAddre
  			return VerifyPublicKeySHA256(options.CertificatePublicKeySHA256, rawCerts)
  		}
  	}
@@ -222,14 +376,14 @@ index 16d0352..87d5d37 100644
 +		}
 +		tlsConfig.InsecureSkipVerify = true
 +		tlsConfig.VerifyPeerCertificate = func(rawCerts [][]byte, verifiedChains [][]*x509.Certificate) error {
-+			return VerifyCertificateSHA256(pins, rawCerts)
++			return VerifyCertificateSHA256(pins, rawCerts, serverName, time.Now()) // lx: certificate-sha256 (PT-03)
 +		}
 +	}
 +	// lx:end
  	if len(options.ALPN) > 0 {
  		tlsConfig.NextProtos = options.ALPN
  	}
-@@ -312,7 +327,7 @@ func newUTLSClient(ctx context.Context, logger logger.ContextLogger, serverAddre
+@@ -323,7 +338,7 @@ func newUTLSClient(ctx context.Context, logger logger.ContextLogger, serverAddre
  		config:                &tlsConfig,
  		serverName:            serverName,
  		disableSNI:            options.DisableSNI,
@@ -239,7 +393,7 @@ index 16d0352..87d5d37 100644
  		id:                    id,
  		fragment:              options.Fragment,
 diff --git a/option/tls.go b/option/tls.go
-index 5c807d6..cad8757 100644
+index 6349ee6..90033a6 100644
 --- a/option/tls.go
 +++ b/option/tls.go
 @@ -133,6 +133,10 @@ type OutboundTLSOptions struct {
