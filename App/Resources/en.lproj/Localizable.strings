@@ -618,3 +618,10 @@
 "Резолверы" = "Resolvers";
 "Адреса серверов находятся вне туннеля, по DNS over HTTPS через выбранные резолверы. Российские сайты при обходе — через Яндекс." = "Server addresses are looked up outside the tunnel over DNS over HTTPS by the chosen resolvers. Russian sites, with the bypass on, through Yandex.";
 "Российские сайты открываются мимо VPN, с вашим настоящим IP. Сайт, который подгружает что-то с российского адреса, может увидеть настоящий IP рядом с IP VPN." = "Russian sites open around the VPN, with your real IP. A site that loads something from a Russian address can see your real IP next to the VPN's.";
+
+/* 3.3 beta 3 */
+"туннель не готов к перезагрузке" = "the tunnel is not ready to reload";
+"расширение не ответило за 10 с" = "the extension did not answer in 10 s";
+"расширение не ответило" = "the extension did not answer";
+"Сервер сменён без перезапуска VPN." = "Server changed without restarting the VPN.";
+"Настройки не применились без перезапуска (%@): VPN перезапускается." = "The settings did not apply without a restart (%@): the VPN restarts.";

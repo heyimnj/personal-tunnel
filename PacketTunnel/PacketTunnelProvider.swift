@@ -117,7 +117,7 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
                 try self.reload()
                 self.event("перезагрузка конфигурации")
                 self.sampleMemory()
-                completionHandler?(nil)
+                completionHandler?(Data(TunnelIPC.reloadDone.utf8))
             } catch {
                 let message = Redactor.redact(error.localizedDescription)
                 AppGroup.defaults.set(message, forKey: SharedKey.lastTunnelError)

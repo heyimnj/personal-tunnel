@@ -116,4 +116,9 @@ public enum TunnelIPC {
     public static let configOption = "config"
     /// App message: read the stored configuration again and reload the service.
     public static let reloadMessage = "reload"
+    /// 3.3 beta 3: the extension's answer to a reload that took effect. Anything
+    /// else — no answer, an error — means it did not (the app then restarts the
+    /// tunnel). An empty answer used to count as success, so a reload that never
+    /// reached the extension left the tunnel on the previous server.
+    public static let reloadDone = "ok"
 }

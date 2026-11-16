@@ -108,7 +108,11 @@ final class App {
         }
         latency.cancel()
         tunnel.reload { [weak self] error in
-            guard let self, let error, !error.isEmpty else { return }
+            guard let self else { return }
+            guard let error else {
+                self.core.note(L("Сервер сменён без перезапуска VPN."))
+                return
+            }
             self.core.note(Lf("Сервер не сменился без перезапуска (%@): VPN перезапускается.", error), level: 3)
             self.reconnect()
         }
@@ -170,8 +174,12 @@ final class App {
     func reloadTunnel() {
         guard tunnel.state.value.isOn else { return }
         _ = try? store.writeActiveConfig()
+        // 3.3 beta 3: a reload that did not take effect leaves the old configuration
+        // running; the tunnel is restarted then, as when the server changes.
         tunnel.reload { [weak self] error in
-            if let error, !error.isEmpty { self?.notice.value = error }
+            guard let self, let error else { return }
+            self.core.note(Lf("Настройки не применились без перезапуска (%@): VPN перезапускается.", error), level: 3)
+            self.reconnect()
         }
     }
 

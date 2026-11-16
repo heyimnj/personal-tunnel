@@ -399,19 +399,34 @@ final class TunnelController {
     }
 
     /// Asks the running tunnel to load the stored configuration again.
+    /// `completion(nil)` only when the extension answered that the new
+    /// configuration runs (3.3 beta 3); otherwise the reason. No answer within 10
+    /// seconds counts as a failure.
     func reload(_ completion: @escaping (String?) -> Void) {
         guard let session = manager?.connection as? NETunnelProviderSession, state.value.isOn else {
-            completion(nil)
+            completion(L("туннель не готов к перезагрузке"))
             return
         }
+        var answered = false
+        let finish = { (result: String?) in
+            guard !answered else { return }
+            answered = true
+            completion(result)
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 10) { finish(L("расширение не ответило за 10 с")) }
         do {
             try session.sendProviderMessage(Data(TunnelIPC.reloadMessage.utf8)) { response in
+                let text = response.flatMap { String(data: $0, encoding: .utf8) }
                 DispatchQueue.main.async {
-                    completion(response.flatMap { String(data: $0, encoding: .utf8) }.map(TunnelText.localize))
+                    if text == TunnelIPC.reloadDone {
+                        finish(nil)
+                    } else {
+                        finish(text.map(TunnelText.localize) ?? L("расширение не ответило"))
+                    }
                 }
             }
         } catch {
-            completion(error.localizedDescription)
+            finish(error.localizedDescription)
         }
     }
 }
