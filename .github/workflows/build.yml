@@ -16,9 +16,9 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  # PTBeta: своя App Group, чтобы бета с новым ядром не делила данные (и кэш ядра) с Personal Tunnel.
-  # Если подпись выдаст другую группу, приложение возьмёт группу из профиля подписи (AppGroup.resolve).
-  APP_GROUP_IDENTIFIER: group.a69e6dc9a612eb7d.beta
+  # PTBeta 6: та же App Group, что у Personal Tunnel. Своя (group.a69e6dc9a612eb7d.beta, beta 1–5) в профиле
+  # подписи не выдана: расширение не открывало группу и не запускалось. Данные беты и основной — общие.
+  APP_GROUP_IDENTIFIER: group.a69e6dc9a612eb7d.1
 
 jobs:
   core:

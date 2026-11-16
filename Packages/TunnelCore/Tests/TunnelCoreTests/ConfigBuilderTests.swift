@@ -409,9 +409,9 @@ final class XrayBackedTests: XCTestCase {
         let runtime = try XCTUnwrap(ConfigBuilder.xrayRuntime(subscription: subscription))
         XCTAssertEqual(runtime["inbounds"]?.arrayValue?.map { $0["port"] }, [.int(Int64(XrayBacked.tunnelPortBase)), .int(Int64(XrayBacked.tunnelPortBase + 1))])
         let rules = runtime.at("routing", "rules")?.arrayValue ?? []
-        XCTAssertEqual(rules.map { $0["outboundTag"] }, ["n0-proxy", "n1-exit"])
-        let exit = runtime["outbounds"]?.arrayValue?.first { $0["tag"] == "n1-exit" }
-        XCTAssertEqual(exit?.at("streamSettings", "sockopt", "dialerProxy"), "n1-hop")
+        XCTAssertEqual(rules.map { $0["outboundTag"] }, ["n20800-proxy", "n20801-exit"])
+        let exit = runtime["outbounds"]?.arrayValue?.first { $0["tag"] == "n20801-exit" }
+        XCTAssertEqual(exit?.at("streamSettings", "sockopt", "dialerProxy"), "n20801-hop")
         XCTAssertNil(ConfigBuilder.xrayRuntime(subscription: Subscription(id: 4, name: "Y", nodes: [nodes[1]])))
     }
 }
@@ -424,13 +424,34 @@ extension XrayBackedTests {
         XCTAssertEqual(ready.at("log", "error"), "/tmp/xray.log")
         let outbounds = ready["outbounds"]?.arrayValue ?? []
         func tagged(_ tag: String) -> JSONValue? { outbounds.first { $0["tag"]?.stringValue == tag } }
-        XCTAssertEqual(tagged("n0-proxy")?.at("streamSettings", "sockopt", "interface"), "en0")
-        XCTAssertEqual(tagged("n0-direct")?.at("streamSettings", "sockopt", "interface"), "en0")
+        XCTAssertEqual(tagged("n20800-proxy")?.at("streamSettings", "sockopt", "interface"), "en0")
+        XCTAssertEqual(tagged("n20800-direct")?.at("streamSettings", "sockopt", "interface"), "en0")
         // The chain's exit dials through its hop; the hop is the one bound.
-        XCTAssertNil(tagged("n1-exit")?.at("streamSettings", "sockopt", "interface"))
-        XCTAssertEqual(tagged("n1-hop")?.at("streamSettings", "sockopt", "interface"), "en0")
+        XCTAssertNil(tagged("n20801-exit")?.at("streamSettings", "sockopt", "interface"))
+        XCTAssertEqual(tagged("n20801-hop")?.at("streamSettings", "sockopt", "interface"), "en0")
         XCTAssertNil(tagged("pt-block")?["streamSettings"])
         XCTAssertEqual(XrayBacked.prepare(runtime, interface: nil, logPath: nil), runtime)
+        XCTAssertEqual(XrayBacked.prepare(runtime, interface: nil, logPath: "/tmp/p.log", level: "info").at("log", "loglevel"), "info")
+    }
+
+    /// 3.1.15: Xray-core's reason for a failed test, read from its «info» log by the
+    /// server's port (lines as Xray v26.11.9 writes them).
+    func testFailureIsReadFromTheLogByPort() {
+        let log = """
+        2026/11/16 08:12:17.714340 [Warning] core: Xray 26.11.9 started
+        2026/11/16 08:12:26.904990 [Info] [1936113593] proxy/socks: TCP Connect request to tcp:www.gstatic.com:443
+        2026/11/16 08:12:26.905060 [Info] [1936113593] app/dispatcher: taking detour [n30861-proxy] for [tcp:www.gstatic.com:443]
+        2026/11/16 08:12:26.905061 [Info] [77] app/dispatcher: taking detour [n30862-proxy] for [tcp:www.gstatic.com:443]
+        2026/11/16 08:12:26.911571 [Info] [1936113593] transport/internet/grpc: creating connection to tcp:fi.example.com:443
+        2026/11/16 08:12:27.000000 [Info] [77] app/proxyman/outbound: app/proxyman/outbound: failed to process outbound traffic > other server
+        2026/11/16 08:12:28.915099 [Info] [1936113593] app/proxyman/outbound: app/proxyman/outbound: failed to process outbound traffic > proxy/vless/outbound: failed to find an available destination > common/retry: [transport/internet/grpc: failed to dial gRPC > rpc error: code = Unavailable desc = "transport: Error while dialing: EOF"] > common/retry: all retry attempts failed
+        """
+        XCTAssertEqual(XrayBacked.failure(inLog: log, port: 30861),
+                       "proxy/vless/outbound: failed to find an available destination > common/retry: [transport/internet/grpc: failed to dial gRPC > rpc error: code = Unavailable desc = \"transport: Error while dialing: EOF\"]")
+        XCTAssertEqual(XrayBacked.failure(inLog: log, port: 30862), "other server")
+        XCTAssertNil(XrayBacked.failure(inLog: log, port: 30863))
+        // n3086 is not n30861: the prefix ends with «-».
+        XCTAssertNil(XrayBacked.failure(inLog: log, port: 3086))
     }
 }
 

@@ -73,7 +73,7 @@ public enum XrayBacked {
         for (index, node) in backed.enumerated() {
             let port = portBase + index
             ports[node.id] = port
-            let prefix = "n\(index)-"
+            let prefix = tagPrefix(port: port)
             let own = node.outbound.at("xray", "outbounds")?.arrayValue ?? []
             var renamed: [String: String] = [:]
             for (offset, item) in own.enumerated() {
@@ -116,13 +116,62 @@ public enum XrayBacked {
 }
 
 public extension XrayBacked {
+    /// 3.1.15: the prefix of a server's outbound tags in the runtime. It names the
+    /// server's local port, unique in the app across subscriptions (the index was
+    /// not), so Xray's log tells the servers apart.
+    static func tagPrefix(port: Int) -> String { "n\(port)-" }
+
+    /// 3.1.15: Xray-core's own reason for the last failed connection through the
+    /// server on `port`, from a log written at the «info» level. Xray writes why an
+    /// outbound failed only there (`failed to process outbound traffic > …`); the app
+    /// saw only «connection reset by peer» from the local port.
+    /// A connection is followed by its session number: `[Info] [123] app/dispatcher:
+    /// taking detour [n30861-proxy] …`, then `[Info] [123] …: failed …`.
+    static func failure(inLog text: String, port: Int) -> String? {
+        let marker = "taking detour [" + tagPrefix(port: port)
+        var sessions = Set<Substring>()
+        var reason: String?
+        for line in text.split(separator: "\n") {
+            guard let session = session(of: line) else { continue }
+            if line.contains(marker) {
+                sessions.insert(session)
+            } else if sessions.contains(session), line.contains("failed") || line.contains("[Warning]") || line.contains("[Error]") {
+                reason = cleaned(line, after: session)
+            }
+        }
+        return reason
+    }
+
+    /// The session number in `2026/11/16 08:02:01.123 [Info] [123] …`.
+    private static func session(of line: Substring) -> Substring? {
+        guard let level = line.range(of: "] [") else { return nil }
+        let rest = line[level.upperBound...]
+        guard let end = rest.firstIndex(of: "]"), rest.startIndex < end,
+              rest[..<end].allSatisfy(\.isNumber) else { return nil }
+        return rest[..<end]
+    }
+
+    /// The message of a log line without the date, level, session and the words
+    /// every outbound failure starts and ends with.
+    private static func cleaned(_ line: Substring, after session: Substring) -> String {
+        var text = line.range(of: "[\(session)] ").map { String(line[$0.upperBound...]) } ?? String(line)
+        for noise in ["app/proxyman/outbound: ", "failed to process outbound traffic > "] {
+            while text.hasPrefix(noise) { text.removeFirst(noise.count) }
+        }
+        text = text.replacingOccurrences(of: " > common/retry: all retry attempts failed", with: "")
+        return text.count > 400 ? String(text.prefix(400)) + "…" : text
+    }
+
     /// What the extension does to the runtime before starting it: every hop that
     /// dials the network itself is bound to the physical interface (as sing-box
     /// binds its own; otherwise Xray's connections could loop back into the
     /// tunnel), and Xray's warnings go to a file the app can show.
-    static func prepare(_ runtime: JSONValue, interface: String?, logPath: String?) -> JSONValue {
+    /// `level`: «info» for the app's measurements, whose failures are read back
+    /// (`failure(inLog:port:)`); the tunnel keeps «warning» (a line per connection
+    /// would grow the file all day).
+    static func prepare(_ runtime: JSONValue, interface: String?, logPath: String?, level: String = "warning") -> JSONValue {
         var config = runtime
-        if let logPath { config["log"] = ["loglevel": "warning", "error": .string(logPath), "access": "none"] }
+        if let logPath { config["log"] = ["loglevel": .string(level), "error": .string(logPath), "access": "none"] }
         guard let interface, !interface.isEmpty else { return config }
         config["outbounds"] = .array((config["outbounds"]?.arrayValue ?? []).map { outbound in
             let proto = outbound["protocol"]?.stringValue?.lowercased() ?? ""
