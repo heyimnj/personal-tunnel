@@ -8,10 +8,12 @@ Personal Tunnel — VPN-клиент для iPhone. Серверы и подпи
 ## Коротко
 
 - Нет аналитики, телеметрии, рекламы, учётных записей и своих серверов. Разработчик не получает ничего.
-- Приложение подключается только к адресам подписок, которые вы добавили, к вашим VPN-серверам и к `www.gstatic.com`
-  для проверки задержки.
-- Провайдер подписки может получить HWID, модель iPhone, версию iOS и язык. Это отключается.
-- Всё хранится только на iPhone. Кнопка «Удалить все данные» стирает это одним нажатием.
+- Приложение подключается только к адресам подписок, которые вы добавили, к вашим VPN-серверам, к `www.gstatic.com`
+  для проверки задержки и к выбранным резолверам DNS.
+- Перед каждым добавлением приложение показывает, что именно добавляется, и спрашивает про данные устройства.
+- Провайдер подписки может получить HWID (свой для каждой новой подписки), модель iPhone, а при необходимости версию
+  iOS и язык. Это отключается.
+- Всё хранится только на iPhone. «Удалить все данные» стирает это одним нажатием.
 
 ## 1. Что приложение не собирает
 
@@ -27,94 +29,115 @@ Personal Tunnel — VPN-клиент для iPhone. Серверы и подпи
 
 | Куда | Когда | Что уходит |
 |------|-------|------------|
-| Адрес подписки, который вы добавили | при добавлении; по кнопке «Обновить»; один раз после обновления приложения (все подписки); после подключения VPN — если перед этим подписка не загрузилась без VPN | HTTP-запрос, заголовки — в разделе 3 |
+| Адрес подписки, который вы добавили (только `https://`) | после «Добавить» на экране подтверждения; по кнопке «Обновить»; один раз после обновления приложения (все подписки); после подключения VPN — если перед этим подписка не загрузилась без VPN | HTTP-запрос, заголовки — в разделе 3 |
 | Ваши VPN-серверы | когда VPN включён | трафик устройства по протоколу сервера |
 | Адреса ваших серверов напрямую | при проверке задержки (пинг): TCP-подключение, иногда TLS-рукопожатие с именем сервера | ничего, кроме самого подключения |
 | `www.gstatic.com/generate_204` через сервер | при проверке задержки; при «Автовыборе» — каждые 3 минуты, пока VPN включён | пустой запрос; режим «Альтернативный» использует `http://`, остальные `https://` |
 | `www.gstatic.com/generate_204` напрямую | по кнопке «Проверка соединения» | запрос `HEAD` |
-| DNS-резолверы | пока VPN включён | см. ниже |
+| DNS-резолверы | пока VPN включён и при пинге | см. ниже |
 
-**DNS.** Имена сайтов разрешаются через выбранный резолвер (по умолчанию 1.1.1.1) **через VPN-сервер**: по HTTPS и по
-TCP одновременно. Без VPN, обычным UDP, разрешаются только адреса ваших серверов, а при включённом «Обходе российских
-сайтов» — ещё российские домены. Такие запросы уходят одновременно выбранному резолверу, Яндексу (77.88.8.8) и Google
-(8.8.8.8). Провайдер интернета видит эти имена.
+**Пинг при включённом VPN.** Ядро приложения, которое проверяет задержку серверов, подключается к ним по физической сети
+(Wi-Fi, сотовая): так оно измеряет сам сервер, а в туннеле для этого нет никаких обходов. С kill switch iOS ничего не
+выпускает мимо туннеля, и тогда пинг идёт через него.
+
+**DNS.** Имена сайтов разрешаются через резолвер 1.1.1.1 **через VPN-сервер**: по HTTPS и по TCP одновременно. Мимо
+туннеля разрешаются только адреса ваших серверов — по DNS over HTTPS через резолверы из настройки «DNS вне туннеля»
+(по умолчанию Cloudflare и Google; можно выбрать Cloudflare, Google, Quad9 или Яндекс). При включённом «Обходе
+российских сайтов» российские домены разрешаются через Яндекс, тоже по HTTPS. Провайдер интернета видит, что вы
+обращаетесь к этим резолверам, но не видит имён.
 
 Сам по себе, без вашего действия или подключения VPN, приложение в сеть не выходит.
 
 ## 3. Что получает провайдер подписки
 
-При загрузке подписки приложение представляется другим клиентом, потому что панели отдают полный список серверов только
-известным приложениям. Оно пробует по очереди, пока панель не отдаст серверы:
+**Перед добавлением.** Ссылка из буфера, QR-код, файл или введённый текст сначала показываются на экране
+подтверждения: для подписки — только её хост (без пути и токена) и переключатель «Передавать данные устройства
+провайдеру», для серверов — их число и протоколы. Пока вы не нажали «Добавить», по сети ничего не уходит. Адреса
+`http://` не принимаются: адрес с токеном и данные устройства ушли бы без шифрования.
+
+**Как представляется приложение.** Панели отдают полный список серверов только известным приложениям, поэтому приложение
+представляется другим клиентом. Оно пробует по очереди, пока панель не отдаст серверы:
 
 1. `User-Agent: INCY/2.7.2`
 2. `User-Agent: Happ/3.13.0`
-3. `User-Agent: PersonalTunnel/2.0`
+3. `User-Agent: PersonalTunnel/2.0` (без данных устройства)
 
 Всегда передаются `Accept: text/plain, application/json, */*` и ваш IP-адрес: провайдер видит его, как любой сайт.
 Если панель вернула Xray JSON, приложение делает второй запрос как `PersonalTunnel/2.0`, без данных устройства, и
 добавляет серверы, которых не было в первом ответе.
 
 **Данные устройства** уходят только с INCY и Happ и только если у подписки включён переключатель «Передавать данные
-устройства провайдеру»:
+устройства провайдеру». Сначала — без версии iOS и языка. Они добавляются, только если без них панель серверы не отдала:
 
-| Заголовок | Значение |
-|-----------|----------|
-| `X-HWID` | идентификатор устройства, 32 символа |
-| `X-Device-OS` | `iOS` |
-| `X-Ver-OS` | версия iOS, например `26.1` |
-| `X-Device-Model` | модель, например `iPhone17,1` |
-| `X-Device-Locale` | язык и регион системы, например `ru_RU` |
+| Заголовок | Значение | Когда |
+|-----------|----------|-------|
+| `X-HWID` | идентификатор, 32 символа | всегда (при включённом переключателе) |
+| `X-Device-OS` | `iOS` | всегда |
+| `X-Device-Model` | модель, например `iPhone17,1` | всегда |
+| `X-Ver-OS` | версия iOS, например `26.1` | только при второй попытке |
+| `X-Device-Locale` | язык и регион системы, например `ru_RU` | только при второй попытке |
 
-**Как получается HWID.** С версии 3.2.1 новый HWID — случайный (UUID без дефисов). Если HWID уже был, он сохраняется,
-чтобы панели не посчитали iPhone новым устройством. Раньше HWID делался из первых 32 символов `identifierForVendor`
-или переносился из версии 1.x. Хранится в Keychain («только на этом устройстве»). Его копия лежит в настройках
-приложения, а настройки попадают в резервную копию — значит, при восстановлении из неё HWID переедет на новый iPhone.
-Один и тот же HWID уходит всем панелям, у которых включена передача.
+Если панель перенаправляет запрос на другой хост, данные устройства туда не передаются. Перенаправление на `http://`
+не выполняется: загрузка останавливается.
+
+**Как получается HWID.** У iPhone есть свой идентификатор: случайный (UUID без дефисов), созданный при первом
+обращении. Если он был ещё в прежних версиях, он сохраняется: тогда он получен из `identifierForVendor` или перенесён
+из 1.x. Хранится только в Keychain, «только на этом устройстве»: в резервные копии он не попадает и на другой iPhone не
+переезжает. Подписка, добавленная начиная с 3.3, отправляет не его, а свой HWID: HMAC-SHA256 от него и хоста панели,
+первые 32 символа. Разные панели не могут сопоставить ваше устройство по HWID. Подписки, добавленные раньше,
+отправляют прежний общий HWID, чтобы панели не посчитали iPhone новым устройством.
 
 **Как отключить.**
-- *Настройки → Конфиденциальность → «Для новых подписок»* — выключите до добавления подписки. Иначе первый же запрос
-  уйдёт с данными устройства.
+- На экране подтверждения при добавлении — переключатель «Передавать данные устройства провайдеру».
+- *Настройки → Конфиденциальность → «Для новых подписок»* — значение этого переключателя по умолчанию.
 - *Настройки → Конфиденциальность* — отдельный переключатель у каждой подписки. Он же есть в «Управлении подписками» и
   в меню «…» у подписки в стиле «Классика».
 - Без данных устройства некоторые панели не отдают серверы или считают iPhone новым устройством.
 
-Чего приложение пока не делает (см. `audit/security-2026-11.md`, PT-13): не убирает эти заголовки, если панель
-перенаправляет запрос на другой адрес.
-
 ## 4. Что хранится на iPhone
 
-| Что | Где | Защита |
-|-----|-----|--------|
-| Подписки (их адреса), серверы и их ключи, выбранный сервер | общая папка приложения и VPN-расширения (App Group): `PersonalTunnel/library.json` | защита файлов iOS «до первой разблокировки» |
-| Конфигурация, которую запускает VPN | там же: `PersonalTunnel/tunnel.json`, `tunnel-xray.json`; копия от ядра — `configuration.json` | то же |
-| Журнал расширения, журнал Xray-core, отчёты о падениях ядра (с копией конфигурации) | там же: `PersonalTunnel/tunnel-events.log`, `Library/Caches/…` | то же |
-| Данные версии 1.x, если вы обновлялись с неё | там же: `settings.db`, `configs/` | то же |
-| HWID | Keychain, «только на этом устройстве» + копия в настройках | Keychain iOS |
-| Настройки, избранное, порядок и фильтры серверов | настройки приложения (UserDefaults) | — |
-| Шрифт, который вы выбрали сами | папка приложения `Application Support/Fonts` | — |
-| Статистика трафика, результаты пинга, журнал ядра на экране | только в памяти, пропадают при закрытии приложения | — |
+| Что | Где | Защита | В бэкапе |
+|-----|-----|--------|----------|
+| Подписки (их адреса), серверы и их ключи, выбранный сервер | общая папка приложения и VPN-расширения (App Group): `PersonalTunnel/library.json` | файл открывается только при разблокированном iPhone | нет |
+| Конфигурация, которую запускает VPN | там же: `PersonalTunnel/tunnel.json`, `tunnel-xray.json` | «до первой разблокировки» (VPN по требованию запускается и на заблокированном iPhone) | нет |
+| Журнал расширения | `PersonalTunnel/tunnel-events.log` | то же | нет |
+| Журнал Xray-core, отчёты о падениях ядра (хранятся 7 дней) | `Library/Caches/…` в App Group | то же | нет |
+| Данные версии 1.x, если вы обновлялись с неё | App Group: `settings.db`, `configs/` — не удаляются при обновлении | то же | да |
+| HWID | Keychain, «только на этом устройстве» | Keychain iOS | нет |
+| Настройки, избранное, порядок и фильтры серверов (без ключей) | настройки приложения (UserDefaults) | — | да |
+| Шрифт, который вы выбрали сами | папка приложения `Application Support/Fonts` | — | да |
+| Статистика трафика, результаты пинга, журнал ядра на экране | только в памяти, пропадают при закрытии приложения | — | — |
 
-Ключи хранятся в JSON без дополнительного шифрования, только под защитой iOS. Файлы App Group и настройки **попадают в
-резервную копию iCloud и компьютера**: в незашифрованной копии на компьютере они лежат открытым текстом.
-«Резервные копии» в настройках создают файл со всеми ключами — храните его как пароль.
+Ключи хранятся в JSON без дополнительного шифрования, под защитой файлов iOS. Ядро больше не делает своих копий
+конфигурации (`configuration.json`), а сделанные прежними версиями удаляются при запуске. Связь между ядрами sing-box и
+Xray-core внутри iPhone идёт через локальный порт со случайным номером и паролем, которые меняются при каждом запуске
+VPN и хранятся только в памяти.
+
+«Резервные копии» в настройках создают файл со всеми ключами — храните его как пароль. Временная копия удаляется сразу
+после сохранения. Восстановление из копии сначала спрашивает подтверждение. Ссылки, скопированные приложением, видны
+только на этом iPhone (без Universal Clipboard) и пропадают из буфера через 2 минуты.
 
 **Как удалить всё.** *Настройки → Конфиденциальность → «Удалить все данные»*. VPN отключается, его настройка удаляется
 из iOS, стираются подписки и серверы, статистика, результаты пинга, журналы, отчёты о падениях, копии конфигурации,
-данные 1.x, временные файлы и HWID (Keychain и копия). Настройки интерфейса и сети остаются. Нажмите кнопку **до**
-удаления приложения: записи Keychain iOS при удалении приложения не стирает.
+данные 1.x, временные файлы, HWID в Keychain и скопированная приложением ссылка, если она ещё в буфере. Настройки
+интерфейса и сети остаются. Нажмите кнопку **до** удаления приложения: записи Keychain iOS при удалении приложения не
+стирает.
 
 ## 5. Журналы
 
-- Журнал ядра виден в «Журнале службы» (до 1000 строк). Короткий журнал расширения (запуски, остановки, память)
-  хранится в файле. Сами они никуда не отправляются.
-- При копировании журнала, отчёта о падении или результата диагностики текст проходит через фильтр. Вырезаются
-  ссылки серверов (`vless://`, `ss://`, `hysteria2://` и другие), адреса подписок с путём, значения полей `uuid`,
-  `password`, `token`, `auth`, `private_key`, `public_key`, `short_id`, `psk`, `hwid`, `secret`, все UUID, а также имена
-  ваших серверов и IP-адреса в строках с ними.
-- **Остаются** домены и адреса сайтов, к которым шли соединения: при обычном уровне журнала ядро пишет каждое
-  соединение. Прочитайте журнал, прежде чем отправлять его кому-то.
-- Известные пробелы фильтра (audit PT-16): ссылки `socks4://`, `http-proxy://`, `https-proxy://`, токены после `Bearer`,
-  поля `username` и `peer_public_key`.
+- Ядро пишет только предупреждения и ошибки. «Подробный журнал для диагностики» в меню «Журнала службы» включает
+  запись каждого соединения на 30 минут и выключается сам, даже если приложение закрыто. «Подробный журнал» — каждый
+  пакет, для разработки.
+- Журнал виден в «Журнале службы» (до 1000 строк). Короткий журнал расширения (запуски, остановки, память) хранится
+  в файле. Сами они никуда не отправляются.
+- При копировании журнала, отчёта о падении или результата диагностики текст проходит через фильтр. Вырезаются:
+  - ссылки серверов — все схемы, которые приложение понимает;
+  - адреса подписок с путём или параметрами, токены после `Bearer`;
+  - значения полей `uuid`, `password`, `username`, `token`, `auth`, ключи, `short_id`, `pbk`, `sid`, `psk`, `hwid`,
+    `id` и подобные, в том числе внутри экранированного JSON; все UUID;
+  - имена ваших серверов;
+  - адреса сайтов, к которым шли соединения (`<назначение>`);
+  - все IP-адреса, кроме адресов самого туннеля (`<адрес>`).
 
 ## 6. Блокировка рекламы
 
@@ -128,8 +151,8 @@ TCP одновременно. Без VPN, обычным UDP, разрешают
 | Encrypted DNS Bypass (DoH/DoT и iCloud Private Relay) | HaGeZi DNS Blocklists | GPL-3.0 |
 | Российские и мобильные рекламные серверы | AdGuard Filters | GPL-3.0 |
 
-Тексты лицензий и версии списков — в `PacketTunnel/Rules/*.NOTICE.txt`. При включённой блокировке зашифрованный DNS
-приложений и iCloud Private Relay блокируются: их запросы идут через DNS туннеля и его блокировку.
+Тексты лицензий, версии списков и коммиты источников — в `PacketTunnel/Rules/*.NOTICE.txt`. При включённой блокировке
+зашифрованный DNS приложений и iCloud Private Relay блокируются: их запросы идут через DNS туннеля и его блокировку.
 
 ## 7. Что видит провайдер VPN-сервера и чего приложение не скрывает
 
@@ -140,18 +163,24 @@ VPN прячет ваш трафик от провайдера интернет�
 
 Мимо VPN — и потому видно провайдеру интернета — идут:
 - российские сайты и адреса при «Обходе российских сайтов» (по умолчанию включён) и локальная сеть при «Локальной
-  сети». Сайт может подгрузить что-то с российского адреса и так сопоставить ваш настоящий IP с IP VPN;
-- адреса и домены ваших серверов (для пинга при включённом VPN) — audit PT-06;
-- push-уведомления Apple и службы оператора (звонки, SMS) — даже при включённом kill switch;
-- весь трафик, пока VPN переподключается или перезапускается, если kill switch выключен (по умолчанию выключен).
+  сети». Сайт может подгрузить что-то с российского адреса и так увидеть ваш настоящий IP рядом с IP VPN;
+- push-уведомления Apple и службы оператора (звонки, SMS) — так устроена iOS, даже при включённом kill switch;
+- без kill switch — весь трафик, пока VPN переподключается или перезапускается системой. Kill switch включён по
+  умолчанию у новых установок; у обновившихся сохранено прежнее значение. Смена сервера при включённом VPN больше не
+  выключает туннель.
 
-Известные недостатки этой версии описаны в `audit/security-2026-11.md`. Самый важный для конфиденциальности (PT-01):
-пока работает сервер, который ведёт Xray-core, на iPhone открыт локальный SOCKS-порт без пароля, и другое приложение
-может через него узнать IP сервера.
+Сервер без проверки сертификата отмечен в списке как «сертификат не проверяется»: соединение с ним можно перехватить.
+
+Что ещё не сделано (подробно — в `audit/security-2026-11.md`):
+- локальный порт между ядрами защищён паролем, но другое приложение может найти открытый порт и по нему догадаться,
+  что VPN включён (Unix-сокет вместо порта требует правки ядра);
+- приложение по-прежнему представляется клиентами INCY и Happ;
+- ключи хранятся в файлах под защитой iOS, а не в Keychain;
+- данные 1.x при обновлении не удаляются и попадают в резервную копию.
 
 ---
 
-Действует для **Personal Tunnel 3.2.1 (PTBeta, beta 1, сборка 249)**. Дата: **16 ноября 2026 г.** При изменении
+Действует для **Personal Tunnel 3.3 (PTBeta, beta 1, сборка 250)**. Дата: **16 ноября 2026 г.** При изменении
 поведения приложения политика обновляется вместе с ним.
 
 ---
@@ -164,9 +193,11 @@ app actually does with data. It is taken from the source code of this repository
 ## In short
 
 - No analytics, telemetry, ads, accounts or servers of its own. The developer receives nothing.
-- The app connects only to the subscription addresses you added, your VPN servers, and `www.gstatic.com` for latency
-  checks.
-- A subscription provider may get the HWID, iPhone model, iOS version and language. This can be turned off.
+- The app connects only to the subscription addresses you added, your VPN servers, `www.gstatic.com` for latency checks
+  and the DNS resolvers you chose.
+- Before anything is added, the app shows what it is and asks about device data.
+- A subscription provider may get an HWID (its own for each new subscription), the iPhone model and, if needed, the
+  iOS version and language. This can be turned off.
 - Everything stays on the iPhone. “Delete all data” erases it in one tap.
 
 ## 1. What the app does not collect
@@ -183,94 +214,115 @@ app actually does with data. It is taken from the source code of this repository
 
 | Where | When | What is sent |
 |-------|------|--------------|
-| A subscription address you added | when added; on “Update”; once after an app update (every subscription); after the VPN connects, if the subscription failed to load without it | an HTTP request; headers in section 3 |
+| A subscription address you added (`https://` only) | after “Add” on the confirmation screen; on “Update”; once after an app update (every subscription); after the VPN connects, if the subscription failed to load without it | an HTTP request; headers in section 3 |
 | Your VPN servers | while the VPN is on | the device's traffic, over the server's protocol |
 | Your servers' addresses directly | during a latency check (ping): a TCP connection, sometimes a TLS handshake with the server's name | nothing but the connection itself |
 | `www.gstatic.com/generate_204` through a server | during a latency check; with “Auto select”, every 3 minutes while the VPN is on | an empty request; the “Alternative” mode uses `http://`, the others `https://` |
 | `www.gstatic.com/generate_204` directly | on “Connection check” | a `HEAD` request |
-| DNS resolvers | while the VPN is on | see below |
+| DNS resolvers | while the VPN is on, and during ping | see below |
 
-**DNS.** Site names are resolved by the chosen resolver (1.1.1.1 by default) **through the VPN server**, over HTTPS and
-TCP at once. Outside the VPN, over plain UDP, only your servers' addresses are resolved, plus Russian domains when
-“Bypass Russian sites” is on. Those queries go at once to the chosen resolver, Yandex (77.88.8.8) and Google
-(8.8.8.8). Your internet provider sees these names.
+**Ping with the VPN on.** The app's own core that measures servers reaches them over the physical network (Wi-Fi,
+cellular): it measures the server itself, and the tunnel keeps no way around itself for that. With the kill switch iOS
+lets nothing around the tunnel, and then ping goes through it.
+
+**DNS.** Site names are resolved by 1.1.1.1 **through the VPN server**, over HTTPS and TCP at once. Outside the tunnel
+only your servers' addresses are resolved, over DNS over HTTPS by the resolvers of the “DNS outside the tunnel” setting
+(Cloudflare and Google by default; Cloudflare, Google, Quad9 or Yandex can be chosen). With “Bypass Russian sites” on,
+Russian domains are resolved by Yandex, over HTTPS too. Your internet provider sees that you talk to these resolvers,
+not the names.
 
 The app does not go online on its own without an action of yours or the VPN connecting.
 
 ## 3. What the subscription provider gets
 
-When it downloads a subscription, the app introduces itself as another client, because panels give the full server
-list only to clients they know. It tries in turn until the panel returns servers:
+**Before anything is added.** A link from the clipboard, a QR code, a file or typed text is first shown on a
+confirmation screen: for a subscription only its host (no path, no token) and the “Share device data with the
+provider” switch; for servers their number and protocols. Nothing goes over the network until you tap “Add”. `http://`
+addresses are refused: the address with its token and the device data would travel unencrypted.
+
+**How the app introduces itself.** Panels give the full server list only to clients they know, so the app introduces
+itself as another client. It tries in turn until the panel returns servers:
 
 1. `User-Agent: INCY/2.7.2`
 2. `User-Agent: Happ/3.13.0`
-3. `User-Agent: PersonalTunnel/2.0`
+3. `User-Agent: PersonalTunnel/2.0` (no device data)
 
 Always sent: `Accept: text/plain, application/json, */*`, and your IP address, which the provider sees like any
 website does. When the panel returns Xray JSON, the app makes a second request as `PersonalTunnel/2.0`, without device
 data, and adds the servers the first answer lacked.
 
 **Device data** is sent only with INCY and Happ, and only when the subscription's “Share device data with the provider”
-switch is on:
+switch is on. First without the iOS version and language; they are added only if the panel gave no servers without
+them:
 
-| Header | Value |
-|--------|-------|
-| `X-HWID` | device identifier, 32 characters |
-| `X-Device-OS` | `iOS` |
-| `X-Ver-OS` | iOS version, e.g. `26.1` |
-| `X-Device-Model` | model, e.g. `iPhone17,1` |
-| `X-Device-Locale` | system language and region, e.g. `en_US` |
+| Header | Value | When |
+|--------|-------|------|
+| `X-HWID` | identifier, 32 characters | always (with the switch on) |
+| `X-Device-OS` | `iOS` | always |
+| `X-Device-Model` | model, e.g. `iPhone17,1` | always |
+| `X-Ver-OS` | iOS version, e.g. `26.1` | on the second try only |
+| `X-Device-Locale` | system language and region, e.g. `en_US` | on the second try only |
 
-**How the HWID is made.** From 3.2.1 a new HWID is random (a UUID without dashes). An existing HWID is kept, so panels
-do not count the iPhone as a new device. Earlier versions took the first 32 characters of `identifierForVendor`, or
-carried the HWID over from 1.x. It is stored in the Keychain (“this device only”). A copy sits in the app's settings,
-and settings go into backups, so restoring a backup moves the HWID to a new iPhone. The same HWID goes to every panel
-that has sharing on.
+When a panel redirects the request to another host, the device data does not go there. A redirect to `http://` is not
+followed: the download stops.
+
+**How the HWID is made.** The iPhone has an identifier of its own: random (a UUID without dashes), made when first
+needed. If it existed in an earlier version it is kept; it then came from `identifierForVendor` or was carried over
+from 1.x. It is stored only in the Keychain, “this device only”: it does not go into backups or move to another iPhone.
+A subscription added from 3.3 on does not send it but an HWID of its own: HMAC-SHA256 of it and the panel's host, the
+first 32 characters. Different panels cannot match your device by its HWID. Subscriptions added earlier send the
+former shared HWID, so panels do not count the iPhone as a new device.
 
 **How to turn it off.**
-- *Settings → Privacy → “For new subscriptions”*: turn it off before adding a subscription. Otherwise the very first
-  request goes out with device data.
+- On the confirmation screen when adding: the “Share device data with the provider” switch.
+- *Settings → Privacy → “For new subscriptions”*: that switch's default.
 - *Settings → Privacy*: a switch for each subscription. It is also in “Manage subscriptions” and in a subscription's
   “…” menu in the “Classic” style.
 - Without device data some panels give no servers or count the iPhone as a new device.
 
-Not done yet (see `audit/security-2026-11.md`, PT-13): the headers are not removed when a panel redirects the request
-to another address.
-
 ## 4. What is stored on the iPhone
 
-| What | Where | Protection |
-|------|-------|------------|
-| Subscriptions (their addresses), servers and their keys, the chosen server | the folder the app shares with its VPN extension (App Group): `PersonalTunnel/library.json` | iOS file protection “until first unlock” |
-| The configuration the VPN runs | same place: `PersonalTunnel/tunnel.json`, `tunnel-xray.json`; the core's copy, `configuration.json` | same |
-| The extension's log, Xray-core's log, core crash reports (with a copy of the configuration) | same place: `PersonalTunnel/tunnel-events.log`, `Library/Caches/…` | same |
-| Data of version 1.x, if you updated from it | same place: `settings.db`, `configs/` | same |
-| HWID | Keychain, “this device only”, plus a copy in settings | iOS Keychain |
-| Settings, favourites, server order and filters | app settings (UserDefaults) | — |
-| A font you picked yourself | the app's `Application Support/Fonts` folder | — |
-| Traffic statistics, ping results, the on-screen core log | memory only; gone when the app closes | — |
+| What | Where | Protection | In backups |
+|------|-------|------------|------------|
+| Subscriptions (their addresses), servers and their keys, the chosen server | the folder the app shares with its VPN extension (App Group): `PersonalTunnel/library.json` | opens only while the iPhone is unlocked | no |
+| The configuration the VPN runs | same place: `PersonalTunnel/tunnel.json`, `tunnel-xray.json` | “until first unlock” (On Demand starts the VPN on a locked iPhone too) | no |
+| The extension's log | `PersonalTunnel/tunnel-events.log` | same | no |
+| Xray-core's log, core crash reports (kept 7 days) | `Library/Caches/…` in the App Group | same | no |
+| Data of version 1.x, if you updated from it | App Group: `settings.db`, `configs/`, not deleted by updates | same | yes |
+| HWID | Keychain, “this device only” | iOS Keychain | no |
+| Settings, favourites, server order and filters (no keys) | app settings (UserDefaults) | — | yes |
+| A font you picked yourself | the app's `Application Support/Fonts` folder | — | yes |
+| Traffic statistics, ping results, the on-screen core log | memory only; gone when the app closes | — | — |
 
-Keys are stored as JSON with no encryption beyond iOS's own protection. App Group files and settings **go into iCloud
-and computer backups**; an unencrypted computer backup holds them as plain text. “Backups” in Settings creates a file
-with every key: keep it like a password.
+Keys are stored as JSON with no encryption beyond iOS file protection. The core no longer makes copies of the
+configuration (`configuration.json`), and those earlier versions made are deleted at launch. Inside the iPhone,
+sing-box and Xray-core talk over a local port with a random number and password, both new at every VPN start and kept
+in memory only.
+
+“Backups” in Settings creates a file with every key: keep it like a password. The temporary copy is deleted right
+after it is saved. Restoring a backup asks first. Links the app copies stay on this iPhone (no Universal Clipboard)
+and leave the clipboard after 2 minutes.
 
 **How to delete everything.** *Settings → Privacy → “Delete all data”*. The VPN disconnects and its configuration is
 removed from iOS. Erased: subscriptions and servers, statistics, ping results, logs, crash reports, configuration
-copies, 1.x data, temporary files and the HWID (the Keychain item and its copy). Interface and network settings stay.
-Tap it **before** deleting the app: iOS does not erase Keychain items when an app is deleted.
+copies, 1.x data, temporary files, the HWID in the Keychain, and a link the app copied if it is still on the clipboard.
+Interface and network settings stay. Tap it **before** deleting the app: iOS does not erase Keychain items when an app
+is deleted.
 
 ## 5. Logs
 
-- The core's log is shown in “Service log” (up to 1000 lines). The extension's short log (starts, stops, memory) is
-  kept in a file. Neither is sent anywhere by itself.
-- When you copy the log, a crash report or a diagnostics result, the text goes through a filter. Removed: server links
-  (`vless://`, `ss://`, `hysteria2://` and others), subscription addresses with a path, the values of `uuid`,
-  `password`, `token`, `auth`, `private_key`, `public_key`, `short_id`, `psk`, `hwid`, `secret`, every UUID, and your
-  servers' names together with the IP addresses on their lines.
-- **Kept:** the domains and addresses of sites connections went to; at the normal log level the core logs every
-  connection. Read the log before sending it to anyone.
-- Known gaps in the filter (audit PT-16): `socks4://`, `http-proxy://`, `https-proxy://` links, tokens after `Bearer`,
-  the `username` and `peer_public_key` fields.
+- The core logs only warnings and errors. “Diagnostic log” in the “Service log” menu logs every connection for 30
+  minutes and turns itself off, even when the app is closed. “Verbose log” logs every packet, for development.
+- The log is shown in “Service log” (up to 1000 lines). The extension's short log (starts, stops, memory) is kept in a
+  file. Neither is sent anywhere by itself.
+- When you copy the log, a crash report or a diagnostics result, the text goes through a filter. Removed:
+  - server links, every scheme the app understands;
+  - subscription addresses with a path or parameters, tokens after `Bearer`;
+  - the values of `uuid`, `password`, `username`, `token`, `auth`, keys, `short_id`, `pbk`, `sid`, `psk`, `hwid`, `id`
+    and the like, escaped JSON included; every UUID;
+  - your servers' names;
+  - the addresses of the sites connections went to (`<destination>`);
+  - every IP address but the tunnel's own (`<address>`).
 
 ## 6. Ad blocking
 
@@ -284,8 +336,8 @@ sent anywhere. A blocked name gets the answer `0.0.0.0` / `::`.
 | Encrypted DNS Bypass (DoH/DoT and iCloud Private Relay) | HaGeZi DNS Blocklists | GPL-3.0 |
 | Russian and mobile ad servers | AdGuard Filters | GPL-3.0 |
 
-Licence texts and list versions are in `PacketTunnel/Rules/*.NOTICE.txt`. With blocking on, apps' own encrypted DNS and
-iCloud Private Relay are blocked, so their queries go through the tunnel's DNS and its blocking.
+Licence texts, list versions and source commits are in `PacketTunnel/Rules/*.NOTICE.txt`. With blocking on, apps' own
+encrypted DNS and iCloud Private Relay are blocked, so their queries go through the tunnel's DNS and its blocking.
 
 ## 7. What the VPN server's provider sees, and what the app does not hide
 
@@ -297,16 +349,23 @@ A VPN hides your traffic from your internet provider, **not from whoever runs th
 
 Outside the VPN, and so visible to your internet provider:
 - Russian sites and addresses with “Bypass Russian sites” (on by default), and the local network with “Local
-  network”. A site can load something from a Russian address and so match your real IP with the VPN's;
-- your servers' addresses and domains (for ping while the VPN is on), audit PT-06;
-- Apple push notifications and carrier services (calls, SMS), even with the kill switch on;
-- all traffic while the VPN reconnects or restarts, if the kill switch is off (it is off by default).
+  network”. A site can load something from a Russian address and so see your real IP next to the VPN's;
+- Apple push notifications and carrier services (calls, SMS): that is how iOS works, even with the kill switch on;
+- without the kill switch, all traffic while the VPN reconnects or is restarted by the system. The kill switch is on
+  by default for new installs; updated installs keep their value. Changing the server with the VPN on no longer takes
+  the tunnel down.
 
-Known weaknesses of this version are described in `audit/security-2026-11.md`. The most important one for privacy
-(PT-01): while a server run by Xray-core is in use, the iPhone has a local SOCKS port without a password, and another
-app can learn the server's IP through it.
+A server whose certificate is not checked is marked “certificate not checked” in the list: connections to it can be
+intercepted.
+
+Not done yet (details in `audit/security-2026-11.md`):
+- the local port between the cores is password-protected, but another app can still find an open port and guess from
+  it that a VPN is on (a Unix socket instead of a port needs a change to the core);
+- the app still introduces itself as the INCY and Happ clients;
+- keys are stored in files under iOS protection, not in the Keychain;
+- 1.x data is not deleted by updates and goes into backups.
 
 ---
 
-Applies to **Personal Tunnel 3.2.1 (PTBeta, beta 1, build 249)**. Date: **16 November 2026**. The policy is updated
+Applies to **Personal Tunnel 3.3 (PTBeta, beta 1, build 250)**. Date: **16 November 2026**. The policy is updated
 whenever the app's behaviour changes.

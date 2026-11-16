@@ -838,7 +838,7 @@ final class SubscriptionsViewController: FormViewController {
                 alert.addAction(UIAlertAction(title: L("Удалить"), style: .destructive) { _ in App.shared.delete(subscription: id) })
                 self?.present(alert, animated: true)
             })
-            let footer = subscription.warnings.first ?? (subscription.isRemote ? L("HWID, модель iPhone, версия iOS и язык уходят провайдеру при обновлении подписки. Подробнее — в «Конфиденциальности».") : nil)
+            let footer = subscription.warnings.first ?? (subscription.isRemote ? L("При обновлении подписки провайдер получает HWID и модель iPhone, а версию iOS и язык — только если без них не отдаёт серверы. Подробнее — в «Конфиденциальности».") : nil)
             sections.append(FormSection(subscription.name, footer: footer, rows))
         }
         return sections
