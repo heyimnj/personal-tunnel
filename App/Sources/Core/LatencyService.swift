@@ -182,13 +182,19 @@ final class LocalCoreProbes: LatencyProbes, @unchecked Sendable {
     private var probers: [Int64: PtbridgeProber]
     /// Xray-core for the servers only it can run, one per subscription that has them.
     private var xrays: [PtbridgeXrayInstance] = []
+    /// 3.1.15: Xray-core's log for this run («info»: only there does Xray say why a
+    /// server failed) and each Xray-backed server's local port, by test tag.
+    private let xrayLog: URL
+    private let xrayPorts: [String: Int]
     /// Receives the core's own words for the first few failures of a run.
     var report: ((String) -> Void)?
     private let samples = FailureSamples()
 
-    private init(probers: [Int64: PtbridgeProber], xrays: [PtbridgeXrayInstance]) {
+    private init(probers: [Int64: PtbridgeProber], xrays: [PtbridgeXrayInstance], xrayLog: URL, xrayPorts: [String: Int]) {
         self.probers = probers
         self.xrays = xrays
+        self.xrayLog = xrayLog
+        self.xrayPorts = xrayPorts
     }
 
     /// Starts a core for every subscription; those that do not start are
@@ -197,14 +203,19 @@ final class LocalCoreProbes: LatencyProbes, @unchecked Sendable {
         var probers: [Int64: PtbridgeProber] = [:]
         var xrays: [PtbridgeXrayInstance] = []
         var failed: [Int64: String] = [:]
+        var xrayPorts: [String: Int] = [:]
+        let xrayLog = FileManager.default.temporaryDirectory.appendingPathComponent("xray-probe-\(UUID().uuidString).log")
         for (index, subscription) in subscriptions.enumerated() {
             // Each subscription's Xray servers get their own block of local ports.
             let portBase = XrayBacked.appPortBase + index * 500
             do {
-                if let runtime = ConfigBuilder.xrayRuntime(subscription: subscription, portBase: portBase) {
+                if let runtime = ConfigBuilder.xrayRuntimeAndPorts(subscription: subscription, portBase: portBase) {
+                    // One log for every instance of the run: Xray keeps one log per process.
+                    let config = XrayBacked.prepare(runtime.config, interface: nil, logPath: xrayLog.path, level: "info")
                     var error: NSError?
-                    if let xray = PtbridgeStartXray(runtime.serialized(pretty: false), &error), error == nil {
+                    if let xray = PtbridgeStartXray(config.serialized(pretty: false), &error), error == nil {
                         xrays.append(xray)
+                        for (id, port) in runtime.ports { xrayPorts["\(subscription.id):\(id)"] = port }
                     } else {
                         failed[subscription.id] = Lf("Xray-core не запустился: %@", error?.localizedDescription ?? "—")
                         continue
@@ -221,7 +232,7 @@ final class LocalCoreProbes: LatencyProbes, @unchecked Sendable {
                 failed[subscription.id] = (error as? ImportError)?.message ?? error.localizedDescription
             }
         }
-        return (LocalCoreProbes(probers: probers, xrays: xrays), failed)
+        return (LocalCoreProbes(probers: probers, xrays: xrays, xrayLog: xrayLog, xrayPorts: xrayPorts), failed)
     }
 
     func close() {
@@ -233,6 +244,19 @@ final class LocalCoreProbes: LatencyProbes, @unchecked Sendable {
         lock.unlock()
         for prober in all { prober.close() }
         for xray in running { xray.close() }
+        try? FileManager.default.removeItem(at: xrayLog)
+    }
+
+    /// Xray-core's own reason for the last failure through an Xray-backed server.
+    /// Xray may still be retrying when sing-box's test gives up: read again once.
+    private func xrayReason(_ tag: String) -> String? {
+        guard let port = xrayPorts[tag] else { return nil }
+        for attempt in 0 ..< 2 {
+            if attempt > 0 { Thread.sleep(forTimeInterval: 1.5) }
+            guard let data = try? Data(contentsOf: xrayLog) else { continue }
+            if let reason = XrayBacked.failure(inLog: String(decoding: data, as: UTF8.self), port: port) { return reason }
+        }
+        return nil
     }
 
     private func prober(_ subscription: Int64) -> PtbridgeProber? {
@@ -257,8 +281,12 @@ final class LocalCoreProbes: LatencyProbes, @unchecked Sendable {
                 if result.error.isEmpty {
                     continuation.resume(returning: .delay(max(1, Int(result.delay))))
                 } else {
-                    if self.samples.take(ProbeFailure.classify(result.error)) { self.report?(Lf("URL-тест «%@» ядром приложения: %@", inner, Redactor.hideAddresses(Redactor.redact(result.error)))) }
-                    FailureNotes.shared.set(tag, result.error)
+                    // 3.1.15: through Xray-core, Xray's own reason after sing-box's
+                    // («connection reset by peer» from the local port said nothing).
+                    var text = result.error
+                    if let reason = self.xrayReason(tag) { text = Lf("%@ — Xray-core: %@", text, reason) }
+                    if self.samples.take(ProbeFailure.classify(result.error)) { self.report?(Lf("URL-тест «%@» ядром приложения: %@", inner, Redactor.hideAddresses(Redactor.redact(text)))) }
+                    FailureNotes.shared.set(tag, text)
                     continuation.resume(returning: .failed(ProbeFailure.classify(result.error)))
                 }
             }

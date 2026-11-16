@@ -138,7 +138,13 @@ final class TunnelController {
                 // connected» with nothing shown at all.
                 manager?.connection.fetchLastDisconnectError { [weak self] error in
                     guard let error else { return }
-                    let text = Redactor.redact(error.localizedDescription)
+                    var text = Redactor.redact(error.localizedDescription)
+                    // 3.1.15: the extension ran but could not write its error: the
+                    // App Group of the build is not in the signature (PTBeta 5 had
+                    // its own group, which the signing profile does not grant).
+                    if AppGroup.containerURL == nil {
+                        text += " " + Lf("Нет доступа к общей группе приложения (%@): проверьте подпись приложения и расширения.", AppGroup.identifier)
+                    }
                     DispatchQueue.main.async {
                         self?.lastError.value = Lf("VPN не запустился: %@", "\(text)")
                         self?.disableOnDemand()

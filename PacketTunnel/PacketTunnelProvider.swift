@@ -60,7 +60,7 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
                 defaults.removeObject(forKey: SharedKey.tunnelStartedAt)
                 self.event("запуск не удался: \(message)")
                 self.shutDown()
-                completionHandler(TunnelError(message))
+                completionHandler(TunnelError(message).bridged)
             }
         }
     }
@@ -392,4 +392,11 @@ struct TunnelError: LocalizedError {
     }
 
     var errorDescription: String? { message }
+
+    /// 3.1.15: the error the system hands to the app. A Swift error crossed to the
+    /// app without its text (PTBeta showed «PacketTunnel.TunnelError error 1»):
+    /// the text has to be in the error's own `userInfo`.
+    var bridged: NSError {
+        NSError(domain: "PersonalTunnel", code: 1, userInfo: [NSLocalizedDescriptionKey: message])
+    }
 }

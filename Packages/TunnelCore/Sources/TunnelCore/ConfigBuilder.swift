@@ -538,7 +538,12 @@ public enum ConfigBuilder {
     /// The Xray configuration the tunnel runs beside sing-box, when the subscription
     /// has servers only Xray-core can run.
     public static func xrayRuntime(subscription: Subscription, portBase: Int = XrayBacked.tunnelPortBase) -> JSONValue? {
-        XrayBacked.runtime(subscription.nodes.map(XrayBacked.promoted), portBase: portBase)?.config
+        xrayRuntimeAndPorts(subscription: subscription, portBase: portBase)?.config
+    }
+
+    /// The same, with each Xray-backed server's local port (by server id).
+    public static func xrayRuntimeAndPorts(subscription: Subscription, portBase: Int) -> (config: JSONValue, ports: [String: Int])? {
+        XrayBacked.runtime(subscription.nodes.map(XrayBacked.promoted), portBase: portBase)
     }
 
     /// Tags the selector offers, in order (without the `auto` group).

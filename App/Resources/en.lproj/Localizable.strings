@@ -435,6 +435,8 @@
 "URL-тест «%@» через туннель: %@" = "URL test “%@” through the tunnel: %@";
 "Подписка «%@»: ещё %@ серверов есть только в обычном списке ссылок — добавлены." = "Subscription “%@”: %@ more servers are only in the plain list of links — added.";
 "Xray-core не запустился: %@" = "Xray-core did not start: %@";
+"Нет доступа к общей группе приложения (%@): проверьте подпись приложения и расширения." = "No access to the app's shared group (%@): check the signing of the app and the extension.";
+"%@ — Xray-core: %@" = "%@ — Xray-core: %@";
 "Последнее падение ядра:" = "The core's last crash:";
 "Панель подписки не отдала серверы клиенту «%@»: %@" = "The subscription panel gave no servers to “%@”: %@";
 "Название" = "Name";
