@@ -231,6 +231,25 @@ final class ConfigBuilderTests: XCTestCase {
         XCTAssertNil(DirectResolvers.https(tag: "x", address: "1.1.1.1")["tls"])
     }
 
+    /// 3.3 (PT-11): the TUN always has an IPv6 address, so IPv6 goes into the
+    /// tunnel too (without one the extension sets no IPv6 route and it would leak).
+    func testTunAlwaysHasAnIPv6Address() throws {
+        var options = TunnelOptions()
+        for (bypass, ads, auto) in [(true, true, false), (false, false, true)] {
+            options.bypassRussia = bypass
+            options.adBlocking = ads
+            options.autoSelect = auto
+            let config = try ConfigBuilder.build(subscription: try subscription(), selected: nil, options: options)
+            for (name, document) in [("tunnel", config), ("kill switch", ConfigBuilder.stackForIncludeAllNetworks(in: config, includeAllNetworks: true))] {
+                let tun = try XCTUnwrap(document["inbounds"]?.arrayValue?.first { $0["type"] == "tun" }, name)
+                let addresses = tun["address"]?.stringList ?? []
+                XCTAssertTrue(addresses.contains { $0.contains(":") && $0.contains("/") }, "\(name): no IPv6 address in \(addresses)")
+                XCTAssertTrue(addresses.contains { !$0.contains(":") }, name)
+                XCTAssertEqual(tun["auto_route"], true)
+            }
+        }
+    }
+
     /// 3.3 (PT-06): the tunnel the app writes sends no server's address around
     /// the VPN — no rule outside the bypasses goes `direct` — and the app's own
     /// core is bound to the physical interface instead.
