@@ -4,6 +4,7 @@ import Foundation
 import Libbox
 import Network
 import NetworkExtension
+import Security
 import TunnelCore
 
 /// Runs the sing-box core inside the Network Extension.
@@ -24,6 +25,10 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
     /// Xray-core for the servers only it can run, beside sing-box.
     private var xray: PtbridgeXrayInstance?
     #endif
+    /// 3.3 (PT-01): the Xray configuration of the running tunnel, with the local
+    /// links this start made (only here, in memory); a network change restarts
+    /// Xray with it, so sing-box's hops still match.
+    private var xrayRuntime: JSONValue?
     /// The physical network Xray's connections are bound to; a change restarts Xray.
     private var xrayPath: NWPathMonitor?
     private var xrayInterface: String?
@@ -137,14 +142,37 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
         guard let container = AppGroup.containerURL else {
             throw TunnelError("Нет доступа к общей группе приложения (\(AppGroup.identifier)). Проверьте подпись приложения и расширения.")
         }
+        PacketTunnelProvider.useSystemRandom()
         let paths = SharedPaths(container: container)
         try paths.prepare()
         self.paths = paths
-        let configuration = try loadConfiguration(options, paths: paths)
+        let configuration = try withNewLinks(try loadConfiguration(options, paths: paths), paths: paths)
         try setUpCore(paths)
         try startCommandServer()
+        xrayRuntime = configuration.xray
         try startXray(paths)
-        try startService(configuration)
+        try startService(configuration.config)
+    }
+
+    /// 3.3 (PT-01): new random ports and logins for the SOCKS hops between
+    /// sing-box and Xray-core at every start and reload, in both configurations.
+    private func withNewLinks(_ text: String, paths: SharedPaths) throws -> (config: JSONValue, xray: JSONValue?) {
+        let config = try JSONValue.parse(text)
+        guard let data = try? Data(contentsOf: paths.activeXrayConfig), !data.isEmpty,
+              let runtime = try? JSONValue.parse(String(decoding: data, as: UTF8.self)) else { return (config, nil) }
+        if let rekeyed = XrayBacked.rekey(config: config, xray: runtime) { return (rekeyed.config, rekeyed.xray) }
+        event("Xray-core: локальные порты не сопоставились, используются сохранённые")
+        return (config, runtime)
+    }
+
+    /// The system's own generator for the local logins (PT-01).
+    static func useSystemRandom() {
+        LocalSecrets.randomBytes = { count in
+            var bytes = [UInt8](repeating: 0, count: count)
+            if SecRandomCopyBytes(kSecRandomDefault, count, &bytes) == errSecSuccess { return bytes }
+            var generator = SystemRandomNumberGenerator()
+            return (0 ..< count).map { _ in UInt8.random(in: .min ... .max, using: &generator) }
+        }
     }
 
     private func setUpCore(_ paths: SharedPaths) throws {
@@ -182,10 +210,9 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
         commandServer = server
     }
 
-    private func startService(_ configuration: String) throws {
+    private func startService(_ document: JSONValue) throws {
         guard let commandServer else { throw TunnelError("Командный сервер не запущен.") }
         let rules = Bundle.main.resourceURL?.appendingPathComponent("Rules", isDirectory: true).path ?? ""
-        let document = try JSONValue.parse(configuration)
         // 3.1.7: the kill switch («include all networks») takes gVisor; sing-tun
         // refuses the `mixed` stack with it and the tunnel stopped at once.
         let stacked = ConfigBuilder.stackForIncludeAllNetworks(in: document, includeAllNetworks: platform.includeAllNetworks())
@@ -196,8 +223,7 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
     /// (Re)starts Xray-core when the subscription has servers only it can run.
     private func startXray(_ paths: SharedPaths) throws {
         stopXray()
-        guard let data = try? Data(contentsOf: paths.activeXrayConfig), !data.isEmpty,
-              let runtime = try? JSONValue.parse(String(decoding: data, as: UTF8.self)) else {
+        guard let runtime = xrayRuntime else {
             stopWatchingPath()
             return
         }
@@ -266,8 +292,10 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
         guard let paths else { throw TunnelError("Туннель не запущен.") }
         reasserting = true
         defer { reasserting = false }
+        let configuration = try withNewLinks(try readStoredConfiguration(paths), paths: paths)
+        xrayRuntime = configuration.xray
         try startXray(paths)
-        try startService(try readStoredConfiguration(paths))
+        try startService(configuration.config)
     }
 
     /// Called by the core when it stops itself.
@@ -285,6 +313,7 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
         memoryTimer = nil
         closeService()
         stopXray()
+        xrayRuntime = nil
         stopWatchingPath()
         commandServer?.close()
         commandServer = nil

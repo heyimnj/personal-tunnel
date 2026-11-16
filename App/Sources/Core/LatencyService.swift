@@ -205,23 +205,24 @@ final class LocalCoreProbes: LatencyProbes, @unchecked Sendable {
         var failed: [Int64: String] = [:]
         var xrayPorts: [String: Int] = [:]
         let xrayLog = FileManager.default.temporaryDirectory.appendingPathComponent("xray-probe-\(UUID().uuidString).log")
-        for (index, subscription) in subscriptions.enumerated() {
-            // Each subscription's Xray servers get their own block of local ports.
-            let portBase = XrayBacked.appPortBase + index * 500
+        for subscription in subscriptions {
+            // 3.3 (PT-02): each Xray server behind a random local port and login,
+            // made for this run only and kept in memory.
+            let links = XrayBacked.links(for: subscription.nodes.map(XrayBacked.promoted))
             do {
-                if let runtime = ConfigBuilder.xrayRuntimeAndPorts(subscription: subscription, portBase: portBase) {
+                if let runtime = ConfigBuilder.xrayRuntime(subscription: subscription, links: links) {
                     // One log for every instance of the run: Xray keeps one log per process.
-                    let config = XrayBacked.prepare(runtime.config, interface: nil, logPath: xrayLog.path, level: "info")
+                    let config = XrayBacked.prepare(runtime, interface: nil, logPath: xrayLog.path, level: "info")
                     var error: NSError?
                     if let xray = PtbridgeStartXray(config.serialized(pretty: false), &error), error == nil {
                         xrays.append(xray)
-                        for (id, port) in runtime.ports { xrayPorts["\(subscription.id):\(id)"] = port }
+                        for (id, link) in links { xrayPorts["\(subscription.id):\(id)"] = link.port }
                     } else {
                         failed[subscription.id] = Lf("Xray-core не запустился: %@", error?.localizedDescription ?? "—")
                         continue
                     }
                 }
-                let config = try ConfigBuilder.probe(subscription: subscription, options: options, xrayPortBase: portBase).serialized(pretty: false)
+                let config = try ConfigBuilder.probe(subscription: subscription, options: options, xrayLinks: links).serialized(pretty: false)
                 var error: NSError?
                 if let prober = PtbridgeNewProber(config, &error), error == nil {
                     probers[subscription.id] = prober

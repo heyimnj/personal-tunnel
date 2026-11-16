@@ -121,15 +121,17 @@ func TestSingBoxReachesXrayOnlyServerThroughLocalXray(t *testing.T) {
 		"outbounds": [{"protocol": "freedom", "settings": {"finalRules": [{"action": "allow"}]}}]
 	}`, serverPort, uuid, mask))
 
-	// What XrayBacked.runtime writes for one server.
+	// What XrayBacked.runtime writes for one server (3.3, PT-01: behind a login).
+	user, pass := "0123456789abcdef0123456789abcdef", "fedcba9876543210fedcba9876543210"
 	client, err := StartXray(fmt.Sprintf(`{
 		"log": {"loglevel": "warning"},
-		"inbounds": [{"tag": "in0", "listen": "127.0.0.1", "port": %d, "protocol": "socks", "settings": {"auth": "noauth", "udp": true, "ip": "127.0.0.1"}}],
+		"inbounds": [{"tag": "in0", "listen": "127.0.0.1", "port": %d, "protocol": "socks",
+		  "settings": {"auth": "password", "accounts": [{"user": "%s", "pass": "%s"}], "udp": true, "ip": "127.0.0.1"}}],
 		"outbounds": [{"protocol": "blackhole", "tag": "pt-block"},
 		  {"tag": "n0-proxy", "protocol": "vless", "settings": {"vnext": [{"address": "127.0.0.1", "port": %d, "users": [{"id": "%s", "encryption": "none"}]}]},
 		   "streamSettings": {"network": "raw", %s}}],
 		"routing": {"domainStrategy": "AsIs", "rules": [{"type": "field", "inboundTag": ["in0"], "outboundTag": "n0-proxy"}]}
-	}`, localPort, serverPort, uuid, mask))
+	}`, localPort, user, pass, serverPort, uuid, mask))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -137,9 +139,12 @@ func TestSingBoxReachesXrayOnlyServerThroughLocalXray(t *testing.T) {
 
 	prober, err := NewProber(fmt.Sprintf(`{
 		"log": {"level": "warn"},
-		"outbounds": [{"type": "socks", "tag": "sudoku", "server": "127.0.0.1", "server_port": %d, "version": "5"}, {"type": "direct", "tag": "direct"}],
+		"outbounds": [{"type": "socks", "tag": "sudoku", "server": "127.0.0.1", "server_port": %d, "version": "5", "username": "%s", "password": "%s"},
+		  {"type": "socks", "tag": "stranger", "server": "127.0.0.1", "server_port": %d, "version": "5"},
+		  {"type": "socks", "tag": "wrong", "server": "127.0.0.1", "server_port": %d, "version": "5", "username": "%s", "password": "guess"},
+		  {"type": "direct", "tag": "direct"}],
 		"route": {"final": "direct"}
-	}`, localPort))
+	}`, localPort, user, pass, localPort, localPort, user))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -148,6 +153,12 @@ func TestSingBoxReachesXrayOnlyServerThroughLocalXray(t *testing.T) {
 		t.Fatalf("sudoku: %s", result.Error)
 	} else {
 		t.Logf("sudoku through local Xray: %d ms", result.Delay)
+	}
+	// Another app on the device, without the login or with a wrong one, gets nothing.
+	for _, tag := range []string{"stranger", "wrong"} {
+		if result := prober.Test(tag, target.URL, 3000); result.Error == "" {
+			t.Fatalf("%s: the local SOCKS port let a connection through without the login", tag)
+		}
 	}
 }
 

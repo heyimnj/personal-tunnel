@@ -128,13 +128,15 @@ final class LibraryStore {
         let selected = current.selectedNodeID(in: subscription)
         // 3.1.6: only what the tunnel runs (the chosen server, or all with automatic selection).
         let running = ConfigBuilder.tunnelSubscription(subscription, selected: selected, options: options)
-        let config = try ConfigBuilder.build(subscription: running, selected: selected, options: options)
-        let text = config.serialized()
+        // 3.3 (PT-01): both sides with the same new local links (random port and
+        // login); the extension gives them new ones again at every start.
+        let made = try ConfigBuilder.tunnel(subscription: running, selected: selected, options: options)
+        let text = made.config.serialized()
         if let paths {
             try Data(text.utf8).write(to: paths.activeConfig, options: .atomic)
             try? FileManager.default.setAttributes([.protectionKey: FileProtectionType.completeUntilFirstUserAuthentication], ofItemAtPath: paths.activeConfig.path)
             // Written first and read by the extension before sing-box starts.
-            if let xray = ConfigBuilder.xrayRuntime(subscription: running) {
+            if let xray = made.xray {
                 try Data(xray.serialized().utf8).write(to: paths.activeXrayConfig, options: .atomic)
                 try? FileManager.default.setAttributes([.protectionKey: FileProtectionType.completeUntilFirstUserAuthentication], ofItemAtPath: paths.activeXrayConfig.path)
             } else {

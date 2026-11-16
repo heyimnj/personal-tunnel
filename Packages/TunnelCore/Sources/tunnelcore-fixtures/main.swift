@@ -186,9 +186,20 @@ guard xraySubscription.nodes.filter({ $0.type == XrayBacked.type }).count == 2 e
     exit(1)
 }
 try write("xray-only-servers", xraySubscription)
-for (name, base) in [("tunnel", XrayBacked.tunnelPortBase), ("app", XrayBacked.appPortBase)] {
-    let runtime = ConfigBuilder.xrayRuntime(subscription: xraySubscription, portBase: base)!
-    try runtime.serialized(pretty: true).write(to: output.appendingPathComponent("xray-runtime-\(name).json"), atomically: true, encoding: .utf8)
-    written += 1
+// 3.3 (PT-01): the sing-box hops and the Xray inbounds share random ports and logins;
+// the bridge's tests load the Xray side, `sing-box check` the other.
+for name in ["tunnel", "app"] {
+    let made = try ConfigBuilder.tunnel(subscription: xraySubscription, selected: nil, options: TunnelOptions())
+    let runtime = made.xray!
+    let text = runtime.serialized(pretty: true)
+    guard !text.contains("noauth"), made.links.count == 2, made.links.values.allSatisfy({ link in
+        made.config["outbounds"]?.arrayValue?.contains { $0["server_port"]?.intValue == link.port && $0["username"]?.stringValue == link.username && $0["password"]?.stringValue == link.password } ?? false
+    }) else {
+        FileHandle.standardError.write(Data("xray runtime: a local SOCKS port without the hop's login\n".utf8))
+        exit(1)
+    }
+    try text.write(to: output.appendingPathComponent("xray-runtime-\(name).json"), atomically: true, encoding: .utf8)
+    try ConfigBuilder.relocateRuleSets(in: made.config, directory: rules).serialized(pretty: true).write(to: output.appendingPathComponent("xray-hops-\(name).json"), atomically: true, encoding: .utf8)
+    written += 2
 }
 print("written \(written) configurations to \(output.path)")

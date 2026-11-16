@@ -584,3 +584,6 @@
 "Все данные удалены." = "All data deleted.";
 "HWID, модель iPhone, версия iOS и язык уходят провайдеру при обновлении подписки. Подробнее — в «Конфиденциальности»." = "The HWID, iPhone model, iOS version and language go to the provider when the subscription updates. More in “Privacy”.";
 "HWID, модель, iOS и язык" = "HWID, model, iOS and language";
+
+/* 3.3: security fixes */
+"Xray-core: локальные порты не сопоставились, используются сохранённые" = "Xray-core: the local ports did not match, the saved ones are used";

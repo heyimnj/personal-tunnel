@@ -394,41 +394,103 @@ final class XrayBackedTests: XCTestCase {
         let nodes = NodeAssembler.assemble(try ContentImporter.parse(Self.subscriptionJSON).nodes)
         XCTAssertEqual(nodes.map(\.type), ["xray", "trojan", "xray"])
         let subscription = Subscription(id: 3, name: "X", nodes: nodes)
-        let config = try ConfigBuilder.build(subscription: subscription, selected: nil, options: TunnelOptions())
+        let made = try ConfigBuilder.tunnel(subscription: subscription, selected: nil, options: TunnelOptions())
+        let config = made.config
         let outbounds = config["outbounds"]?.arrayValue ?? []
         let sudoku = outbounds.first { $0["tag"]?.stringValue == nodes[0].id }
+        let sudokuLink = try XCTUnwrap(made.links[nodes[0].id])
         XCTAssertEqual(sudoku?["type"], "socks")
         XCTAssertEqual(sudoku?["server"], "127.0.0.1")
-        XCTAssertEqual(sudoku?["server_port"], .int(Int64(XrayBacked.tunnelPortBase)))
+        XCTAssertEqual(sudoku?["server_port"], .int(Int64(sudokuLink.port)))
         XCTAssertNil(sudoku?["xray"])
         XCTAssertFalse(config.serialized().contains("\"xray\""))
-        // The probe uses the app's own ports.
-        let probe = try ConfigBuilder.probe(subscription: subscription, options: TunnelOptions())
-        XCTAssertEqual(probe["outbounds"]?.arrayValue?.first { $0["tag"]?.stringValue == nodes[2].id }?["server_port"], .int(Int64(XrayBacked.appPortBase + 1)))
 
-        let runtime = try XCTUnwrap(ConfigBuilder.xrayRuntime(subscription: subscription))
-        XCTAssertEqual(runtime["inbounds"]?.arrayValue?.map { $0["port"] }, [.int(Int64(XrayBacked.tunnelPortBase)), .int(Int64(XrayBacked.tunnelPortBase + 1))])
+        let runtime = try XCTUnwrap(made.xray)
+        let ports = [nodes[0].id, nodes[2].id].compactMap { made.links[$0]?.port }
+        XCTAssertEqual(runtime["inbounds"]?.arrayValue?.map { $0["port"] }, ports.map { .int(Int64($0)) })
         let rules = runtime.at("routing", "rules")?.arrayValue ?? []
-        XCTAssertEqual(rules.map { $0["outboundTag"] }, ["n20800-proxy", "n20801-exit"])
-        let exit = runtime["outbounds"]?.arrayValue?.first { $0["tag"] == "n20801-exit" }
-        XCTAssertEqual(exit?.at("streamSettings", "sockopt", "dialerProxy"), "n20801-hop")
-        XCTAssertNil(ConfigBuilder.xrayRuntime(subscription: Subscription(id: 4, name: "Y", nodes: [nodes[1]])))
+        XCTAssertEqual(rules.map { $0["outboundTag"] }, [.string("n\(ports[0])-proxy"), .string("n\(ports[1])-exit")])
+        let exit = runtime["outbounds"]?.arrayValue?.first { $0["tag"] == .string("n\(ports[1])-exit") }
+        XCTAssertEqual(exit?.at("streamSettings", "sockopt", "dialerProxy"), .string("n\(ports[1])-hop"))
+        XCTAssertNil(ConfigBuilder.xrayRuntime(subscription: Subscription(id: 4, name: "Y", nodes: [nodes[1]]), links: made.links))
+    }
+
+    /// 3.3 (PT-01, PT-02): no SOCKS port without a login; both sides hold the same
+    /// credentials; ports and credentials are new every time.
+    func testLocalSocksNeedsTheLinksLoginAndIsNewEachTime() throws {
+        let nodes = NodeAssembler.assemble(try ContentImporter.parse(Self.subscriptionJSON).nodes)
+        let subscription = Subscription(id: 3, name: "X", nodes: nodes)
+        let first = try ConfigBuilder.tunnel(subscription: subscription, selected: nil, options: TunnelOptions())
+        let second = try ConfigBuilder.tunnel(subscription: subscription, selected: nil, options: TunnelOptions())
+        let runtime = try XCTUnwrap(first.xray)
+        XCTAssertFalse(runtime.serialized().contains("noauth"))
+        let inbounds = runtime["inbounds"]?.arrayValue ?? []
+        XCTAssertEqual(inbounds.count, 2)
+        for inbound in inbounds {
+            XCTAssertEqual(inbound.at("settings", "auth"), "password")
+            XCTAssertEqual(inbound["listen"], "127.0.0.1")
+            let account = try XCTUnwrap(inbound.at("settings", "accounts")?[0])
+            let port = try XCTUnwrap(inbound["port"]?.intValue)
+            XCTAssertTrue(LocalSecrets.portRange.contains(port))
+            let hop = try XCTUnwrap(first.config["outbounds"]?.arrayValue?.first { $0["server_port"]?.intValue == port })
+            XCTAssertEqual(hop["username"], account["user"])
+            XCTAssertEqual(hop["password"], account["pass"])
+            XCTAssertEqual(account["user"]?.stringValue?.count, 32)
+            XCTAssertEqual(account["pass"]?.stringValue?.count, 32)
+        }
+        XCTAssertNotEqual(first.links, second.links)
+        XCTAssertEqual(Set(first.links.values.map(\.port)).count, first.links.count)
+        XCTAssertNotEqual(first.links[nodes[0].id]?.password, first.links[nodes[2].id]?.password)
+        // A port something already listens on is not handed out.
+        let taken = first.links[nodes[0].id]!.port
+        let saved = LocalSecrets.isFree
+        defer { LocalSecrets.isFree = saved }
+        LocalSecrets.isFree = { $0 != taken }
+        for _ in 0 ..< 20 { XCTAssertFalse(LocalSecrets.freePorts(3).contains(taken)) }
+    }
+
+    /// The extension's new links at each start: both sides change together.
+    func testRekeyChangesBothSidesTogether() throws {
+        let nodes = NodeAssembler.assemble(try ContentImporter.parse(Self.subscriptionJSON).nodes)
+        let made = try ConfigBuilder.tunnel(subscription: Subscription(id: 3, name: "X", nodes: nodes), selected: nil, options: TunnelOptions())
+        let rekeyed = try XCTUnwrap(XrayBacked.rekey(config: made.config, xray: try XCTUnwrap(made.xray)))
+        let inbounds = rekeyed.xray["inbounds"]?.arrayValue ?? []
+        XCTAssertEqual(inbounds.count, 2)
+        for (index, inbound) in inbounds.enumerated() {
+            let port = try XCTUnwrap(inbound["port"]?.intValue)
+            XCTAssertFalse(made.links.values.contains { $0.port == port })
+            let account = try XCTUnwrap(inbound.at("settings", "accounts")?[0])
+            let hop = try XCTUnwrap(rekeyed.config["outbounds"]?.arrayValue?.first { $0["server_port"]?.intValue == port })
+            XCTAssertEqual(hop["tag"]?.stringValue, [nodes[0].id, nodes[2].id][index])
+            XCTAssertEqual(hop["username"], account["user"])
+            XCTAssertEqual(hop["password"], account["pass"])
+            let rule = rekeyed.xray.at("routing", "rules")?[index]
+            XCTAssertTrue(rule?["outboundTag"]?.stringValue?.hasPrefix("n\(port)-") ?? false)
+        }
+        let exitPort = try XCTUnwrap(inbounds[1]["port"]?.intValue)
+        let exit = rekeyed.xray["outbounds"]?.arrayValue?.first { $0["tag"] == .string("n\(exitPort)-exit") }
+        XCTAssertEqual(exit?.at("streamSettings", "sockopt", "dialerProxy"), .string("n\(exitPort)-hop"))
+        XCTAssertFalse(rekeyed.xray.serialized().contains("noauth"))
+        // A sing-box configuration without the hops does not match.
+        XCTAssertNil(XrayBacked.rekey(config: ["outbounds": []], xray: try XCTUnwrap(made.xray)))
     }
 }
 
 extension XrayBackedTests {
     func testPrepareBindsHopsToTheInterfaceAndLogsToAFile() throws {
         let nodes = NodeAssembler.assemble(try ContentImporter.parse(Self.subscriptionJSON).nodes)
-        let runtime = try XCTUnwrap(ConfigBuilder.xrayRuntime(subscription: Subscription(id: 3, name: "X", nodes: nodes)))
+        let made = try ConfigBuilder.tunnel(subscription: Subscription(id: 3, name: "X", nodes: nodes), selected: nil, options: TunnelOptions())
+        let runtime = try XCTUnwrap(made.xray)
+        let first = try XCTUnwrap(made.links[nodes[0].id]?.port), second = try XCTUnwrap(made.links[nodes[2].id]?.port)
         let ready = XrayBacked.prepare(runtime, interface: "en0", logPath: "/tmp/xray.log")
         XCTAssertEqual(ready.at("log", "error"), "/tmp/xray.log")
         let outbounds = ready["outbounds"]?.arrayValue ?? []
         func tagged(_ tag: String) -> JSONValue? { outbounds.first { $0["tag"]?.stringValue == tag } }
-        XCTAssertEqual(tagged("n20800-proxy")?.at("streamSettings", "sockopt", "interface"), "en0")
-        XCTAssertEqual(tagged("n20800-direct")?.at("streamSettings", "sockopt", "interface"), "en0")
+        XCTAssertEqual(tagged("n\(first)-proxy")?.at("streamSettings", "sockopt", "interface"), "en0")
+        XCTAssertEqual(tagged("n\(first)-direct")?.at("streamSettings", "sockopt", "interface"), "en0")
         // The chain's exit dials through its hop; the hop is the one bound.
-        XCTAssertNil(tagged("n20801-exit")?.at("streamSettings", "sockopt", "interface"))
-        XCTAssertEqual(tagged("n20801-hop")?.at("streamSettings", "sockopt", "interface"), "en0")
+        XCTAssertNil(tagged("n\(second)-exit")?.at("streamSettings", "sockopt", "interface"))
+        XCTAssertEqual(tagged("n\(second)-hop")?.at("streamSettings", "sockopt", "interface"), "en0")
         XCTAssertNil(tagged("pt-block")?["streamSettings"])
         XCTAssertEqual(XrayBacked.prepare(runtime, interface: nil, logPath: nil), runtime)
         XCTAssertEqual(XrayBacked.prepare(runtime, interface: nil, logPath: "/tmp/p.log", level: "info").at("log", "loglevel"), "info")
@@ -498,10 +560,10 @@ final class RealityGRPCInXrayTests: XCTestCase {
         XCTAssertEqual(saved.type, "vless")
         XCTAssertEqual(saved.facts.badges.last, "Xray")
         let subscription = Subscription(id: 1, name: "S", nodes: [saved])
-        let config = try ConfigBuilder.build(subscription: subscription, selected: nil, options: TunnelOptions())
-        let hop = try XCTUnwrap(config["outbounds"]?.arrayValue?.first { $0["tag"] == "G" })
+        let made = try ConfigBuilder.tunnel(subscription: subscription, selected: nil, options: TunnelOptions())
+        let hop = try XCTUnwrap(made.config["outbounds"]?.arrayValue?.first { $0["tag"] == "G" })
         XCTAssertEqual(hop["type"], "socks")
-        let runtime = try XCTUnwrap(ConfigBuilder.xrayRuntime(subscription: subscription))
+        let runtime = try XCTUnwrap(made.xray)
         XCTAssertTrue(runtime["outbounds"]?.arrayValue?.contains { $0.at("streamSettings", "grpcSettings", "serviceName") == "svc" } ?? false)
     }
 }

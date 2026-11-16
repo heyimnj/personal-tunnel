@@ -1,4 +1,9 @@
 import Foundation
+#if canImport(Darwin)
+import Darwin
+#elseif canImport(Glibc)
+import Glibc
+#endif
 
 /// Servers only Xray-core can run (masks such as `finalmask` `header-custom` or
 /// `sudoku`). Such a server keeps its own Xray outbounds; sing-box reaches it
@@ -9,9 +14,6 @@ import Foundation
 /// never written into a sing-box configuration as it is.
 public enum XrayBacked {
     public static let type = "xray"
-    /// Local ports: the tunnel's Xray, and the app's own for measuring.
-    public static let tunnelPortBase = 20800
-    public static let appPortBase = 30800
 
     static let proxyProtocols: Set<String> = ["vless", "vmess", "trojan", "shadowsocks", "hysteria", "hysteria2", "socks", "http", "wireguard"]
 
@@ -56,23 +58,36 @@ public enum XrayBacked {
                 network == "raw" ? "tcp" : network, flow.hasPrefix("xtls-rprx-vision"))
     }
 
-    /// The sing-box side: a SOCKS hop to the local port.
-    static func socks(tag: String, port: Int) -> JSONValue {
-        ["type": "socks", "tag": .string(tag), "server": "127.0.0.1", "server_port": .int(Int64(port)), "version": "5"]
+    /// The sing-box side: a SOCKS hop to the local port, with the link's login.
+    static func socks(tag: String, link: LocalLink) -> JSONValue {
+        ["type": "socks", "tag": .string(tag), "server": "127.0.0.1", "server_port": .int(Int64(link.port)), "version": "5",
+         "username": .string(link.username), "password": .string(link.password)]
+    }
+
+    /// 3.3 (PT-01, PT-02): a fresh local link — random free port, login and
+    /// password — for each Xray-backed server of the list.
+    public static func links(for nodes: [ServerNode]) -> LocalLinks {
+        let backed = nodes.filter { $0.type == type }.map(\.id)
+        var links: LocalLinks = [:]
+        for (id, port) in zip(backed, LocalSecrets.freePorts(backed.count)) {
+            links[id] = LocalLink(port: port, username: LocalSecrets.token(), password: LocalSecrets.token())
+        }
+        return links
     }
 
     /// One Xray configuration that serves every Xray-backed server of the list,
-    /// each on its own local SOCKS port (`portBase` + its index). Nil when there are none.
-    public static func runtime(_ nodes: [ServerNode], portBase: Int) -> (config: JSONValue, ports: [String: Int])? {
-        let backed = nodes.filter { $0.type == type }
+    /// each on its own local SOCKS port behind a login (3.3: random ports and
+    /// credentials, `links`; there were fixed ports without a password before).
+    /// A server without a link is left out. Nil when there are none.
+    public static func runtime(_ nodes: [ServerNode], links: LocalLinks) -> JSONValue? {
+        let backed = nodes.filter { $0.type == type && links[$0.id] != nil }
         guard !backed.isEmpty else { return nil }
         var inbounds: [JSONValue] = []
         var outbounds: [JSONValue] = [["protocol": "blackhole", "tag": "pt-block"]]
         var rules: [JSONValue] = []
-        var ports: [String: Int] = [:]
         for (index, node) in backed.enumerated() {
-            let port = portBase + index
-            ports[node.id] = port
+            guard let link = links[node.id] else { continue }
+            let port = link.port
             let prefix = tagPrefix(port: port)
             let own = node.outbound.at("xray", "outbounds")?.arrayValue ?? []
             var renamed: [String: String] = [:]
@@ -99,7 +114,8 @@ public enum XrayBacked {
             }
             inbounds.append([
                 "tag": .string("in\(index)"), "listen": "127.0.0.1", "port": .int(Int64(port)), "protocol": "socks",
-                "settings": ["auth": "noauth", "udp": true, "ip": "127.0.0.1"],
+                "settings": ["auth": "password", "accounts": [["user": .string(link.username), "pass": .string(link.password)]],
+                             "udp": true, "ip": "127.0.0.1"],
             ])
             rules.append(["type": "field", "inboundTag": [.string("in\(index)")], "outboundTag": .string(mainTag ?? "pt-block")])
         }
@@ -111,7 +127,147 @@ public enum XrayBacked {
             "outbounds": .array(outbounds),
             "routing": ["domainStrategy": "AsIs", "rules": .array(rules)],
         ]
-        return (config, ports)
+        return config
+    }
+
+    /// 3.3 (PT-01): the tunnel's two configurations with new local links. The
+    /// extension calls it at every start and reload, so the stored files never
+    /// hold the links the running tunnel uses. The sing-box SOCKS hop of each Xray
+    /// inbound is found by its old port. Nil when the two do not match.
+    public static func rekey(config: JSONValue, xray: JSONValue) -> (config: JSONValue, xray: JSONValue)? {
+        guard let inbounds = xray["inbounds"]?.arrayValue, !inbounds.isEmpty,
+              var outbounds = config["outbounds"]?.arrayValue else { return nil }
+        let fresh = LocalSecrets.freePorts(inbounds.count)
+        guard fresh.count == inbounds.count else { return nil }
+        var newInbounds: [JSONValue] = []
+        var newOutbounds: [JSONValue] = []
+        var renamed: [String: String] = [:]
+        for (index, inbound) in inbounds.enumerated() {
+            guard let old = inbound["port"]?.intValue,
+                  let hop = outbounds.firstIndex(where: { $0["type"] == "socks" && $0["server"] == "127.0.0.1" && $0["server_port"]?.intValue == old })
+            else { return nil }
+            let link = LocalLink(port: fresh[index], username: LocalSecrets.token(), password: LocalSecrets.token())
+            var item = inbound
+            item["port"] = .int(Int64(link.port))
+            var settings = item["settings"] ?? .object([:])
+            settings["auth"] = "password"
+            settings["accounts"] = [["user": .string(link.username), "pass": .string(link.password)]]
+            item["settings"] = settings
+            newInbounds.append(item)
+            let tag = outbounds[hop]["tag"]?.stringValue ?? ""
+            outbounds[hop] = socks(tag: tag, link: link)
+            renamed[tagPrefix(port: old)] = tagPrefix(port: link.port)
+        }
+        // Xray's outbound tags carry the port (`n<port>-`): they follow it.
+        func rename(_ value: JSONValue?) -> JSONValue? {
+            guard let text = value?.stringValue else { return value }
+            for (old, new) in renamed where text.hasPrefix(old) { return .string(new + text.dropFirst(old.count)) }
+            return value
+        }
+        for outbound in xray["outbounds"]?.arrayValue ?? [] {
+            var outbound = outbound
+            outbound["tag"] = rename(outbound["tag"])
+            if var stream = outbound["streamSettings"], var sockopt = stream["sockopt"], let dialer = sockopt["dialerProxy"] {
+                sockopt["dialerProxy"] = rename(dialer)
+                stream["sockopt"] = sockopt
+                outbound["streamSettings"] = stream
+            }
+            if let proxy = outbound.at("proxySettings", "tag") { outbound["proxySettings"] = ["tag": rename(proxy) ?? proxy] }
+            newOutbounds.append(outbound)
+        }
+        var runtime = xray
+        runtime["inbounds"] = .array(newInbounds)
+        runtime["outbounds"] = .array(newOutbounds)
+        if let rules = xray.at("routing", "rules")?.arrayValue {
+            var routing = xray["routing"] ?? .object([:])
+            routing["rules"] = .array(rules.map { rule in
+                var rule = rule
+                rule["outboundTag"] = rename(rule["outboundTag"])
+                return rule
+            })
+            runtime["routing"] = routing
+        }
+        var result = config
+        result["outbounds"] = .array(outbounds)
+        return (result, runtime)
+    }
+}
+
+/// 3.3 (PT-01): how sing-box reaches one Xray-backed server inside the device.
+public struct LocalLink: Equatable, Sendable {
+    public var port: Int
+    public var username: String
+    public var password: String
+
+    public init(port: Int, username: String, password: String) {
+        self.port = port
+        self.username = username
+        self.password = password
+    }
+}
+
+/// Server id → its local link.
+public typealias LocalLinks = [String: LocalLink]
+
+/// Randomness and free ports for the local links (3.3, PT-01).
+public enum LocalSecrets {
+    /// Cryptographically secure bytes. The default is the system generator
+    /// (arc4random on Apple systems, getrandom on Linux); the app and the
+    /// extension set SecRandomCopyBytes at start.
+    nonisolated(unsafe) public static var randomBytes: (Int) -> [UInt8] = { count in
+        var generator = SystemRandomNumberGenerator()
+        return (0 ..< count).map { _ in UInt8.random(in: .min ... .max, using: &generator) }
+    }
+
+    /// 128 bits as 32 hex characters.
+    public static func token() -> String {
+        randomBytes(16).map { String(format: "%02x", $0) }.joined()
+    }
+
+    /// Ports that are tried: well above the system's own services, below the
+    /// range the system hands out for outgoing connections.
+    public static let portRange = 20000 ... 48999
+
+    /// `count` distinct random ports nothing listens on right now (127.0.0.1).
+    public static func freePorts(_ count: Int) -> [Int] {
+        var result: [Int] = []
+        var attempts = 0
+        while result.count < count, attempts < count * 50 + 50 {
+            attempts += 1
+            let bytes = randomBytes(4)
+            let value = bytes.reduce(0) { ($0 << 8) | Int($1) }
+            let port = portRange.lowerBound + value % portRange.count
+            guard !result.contains(port), isFree(port) else { continue }
+            result.append(port)
+        }
+        return result
+    }
+
+    /// Whether a TCP port can be bound on 127.0.0.1 now.
+    nonisolated(unsafe) public static var isFree: (Int) -> Bool = LoopbackPort.isFree
+}
+
+enum LoopbackPort {
+    static func isFree(_ port: Int) -> Bool {
+        #if canImport(Darwin)
+        let stream = SOCK_STREAM
+        #else
+        let stream = Int32(SOCK_STREAM.rawValue)
+        #endif
+        let descriptor = socket(AF_INET, stream, 0)
+        guard descriptor >= 0 else { return true }
+        defer { close(descriptor) }
+        var address = sockaddr_in()
+        #if canImport(Darwin)
+        address.sin_len = UInt8(MemoryLayout<sockaddr_in>.size)
+        #endif
+        address.sin_family = sa_family_t(AF_INET)
+        address.sin_port = in_port_t(UInt16(port).bigEndian)
+        address.sin_addr.s_addr = inet_addr("127.0.0.1")
+        let result = withUnsafePointer(to: &address) {
+            $0.withMemoryRebound(to: sockaddr.self, capacity: 1) { bind(descriptor, $0, socklen_t(MemoryLayout<sockaddr_in>.size)) }
+        }
+        return result == 0
     }
 }
 

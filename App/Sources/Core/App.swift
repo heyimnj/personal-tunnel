@@ -1,4 +1,5 @@
 import Foundation
+import Security
 import TunnelCore
 import UIKit
 
@@ -18,6 +19,13 @@ final class App {
     let notice = Observable<String?>(nil)
 
     private init() {
+        // 3.3 (PT-02): the local logins between the app's two cores come from the system's generator.
+        LocalSecrets.randomBytes = { count in
+            var bytes = [UInt8](repeating: 0, count: count)
+            if SecRandomCopyBytes(kSecRandomDefault, count, &bytes) == errSecSuccess { return bytes }
+            var generator = SystemRandomNumberGenerator()
+            return (0 ..< count).map { _ in UInt8.random(in: .min ... .max, using: &generator) }
+        }
         #if canImport(Darwin)
         paths = AppGroup.containerURL.map(SharedPaths.init)
         #else
