@@ -168,7 +168,7 @@ final class App {
                                                                   sendsDeviceIdentity: sendsDeviceData))
                         if library.activeSubscriptionID == nil { library.activeSubscriptionID = id }
                     }
-                    completion(fetched.summary)
+                    completion(App.joined(fetched.summary, CertificateCheck.summary(fetched.nodes)))
                 } catch {
                     completion(error.localizedDescription)
                 }
@@ -184,10 +184,16 @@ final class App {
                 library.subscriptions.append(Subscription(id: id, name: nodes.count == 1 ? name : Lf("Серверы (%@)", "\(nodes.count)"), nodes: nodes, updatedAt: Date()))
                 if library.activeSubscriptionID == nil { library.activeSubscriptionID = id }
             }
-            completion(result.summary)
+            completion(App.joined(result.summary, CertificateCheck.summary(nodes)))
         } catch {
             completion(error.localizedDescription)
         }
+    }
+
+    /// Messages of an import, one after another (nil when there are none).
+    static func joined(_ parts: String?...) -> String? {
+        let present = parts.compactMap { $0 }.filter { !$0.isEmpty }
+        return present.isEmpty ? nil : present.joined(separator: " ")
     }
 
     /// A server typed in by hand: a subscription of its own, like a pasted link.
@@ -255,7 +261,7 @@ final class App {
                     library.replace(current)
                 }
                 if self.library.activeSubscription?.id == id { self.reloadTunnel() }
-                if let summary = fetched.summary { self.notice.value = summary }
+                if let summary = App.joined(fetched.summary, CertificateCheck.summary(fetched.nodes)) { self.notice.value = summary }
                 if let updated = self.library.subscription(id) { self.autoPing(updated) }
             } catch let error as URLError where !self.tunnel.state.value.isOn {
                 // Without the VPN the subscription server may be out of reach (blocked

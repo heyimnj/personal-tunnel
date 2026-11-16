@@ -14,6 +14,12 @@ public struct ProtocolFacts: Hashable, Sendable {
     public var isMixedGroup = false
     /// Run by Xray-core instead of sing-box.
     public var xray = false
+    /// 3.3 (PT-04): TLS whose certificate is not checked at all (`insecure`
+    /// without a pin): anyone on the way can stand in for the server.
+    public var certificateUnchecked = false
+
+    /// The mark of such a server in both interfaces.
+    public static var uncheckedBadge: String { CoreText.t("сертификат не проверяется") }
 
     /// The core's tag (3.1.13): every server shows which core runs it, and the
     /// filter bar can narrow a subscription to either.
@@ -24,7 +30,7 @@ public struct ProtocolFacts: Hashable, Sendable {
     /// The line the Classic interface prints under a server.
     public var summary: String {
         if isMixedGroup { return CoreText.t("Группа · разные протоколы") }
-        return ([proto, security, transport] + (flow.map { [$0] } ?? []) + [coreBadge]).joined(separator: " · ")
+        return ([proto, security, transport] + (flow.map { [$0] } ?? []) + [coreBadge] + (certificateUnchecked ? [Self.uncheckedBadge] : [])).joined(separator: " · ")
     }
 
     /// Short tags for the Minimal interface, in display order.
@@ -40,6 +46,7 @@ public struct ProtocolFacts: Hashable, Sendable {
         result.append(transport == "TCP/RAW" ? "TCP" : transport)
         if let flow { result.append(flow) }
         result.append(coreBadge)
+        if certificateUnchecked { result.append(Self.uncheckedBadge) }
         return result
     }
 
@@ -80,6 +87,22 @@ public struct ProtocolFacts: Hashable, Sendable {
         flow = object["flow"]?.stringValue == "xtls-rprx-vision" ? "Vision" : nil
         // Saved before 3.1.14 as sing-box, run by Xray-core now (`XrayBacked.promoted`).
         xray = XrayBacked.belongsInXray(object)
+        certificateUnchecked = security == "TLS" && tls?["insecure"]?.boolValue == true
+            && tls?["certificate_sha256"] == nil && tls?["certificate_public_key_sha256"] == nil
+    }
+}
+
+/// 3.3 (PT-04): what an import or an update says about servers whose certificate
+/// is not checked.
+public enum CertificateCheck {
+    public static func unchecked(_ nodes: [ServerNode]) -> Int {
+        nodes.filter { $0.facts.certificateUnchecked }.count
+    }
+
+    public static func summary(_ nodes: [ServerNode]) -> String? {
+        let count = unchecked(nodes)
+        guard count > 0 else { return nil }
+        return CoreText.f("Сертификат не проверяется у серверов: %@. Соединение с ними можно перехватить.", "\(count)")
     }
 }
 

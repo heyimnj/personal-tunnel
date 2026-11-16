@@ -46,6 +46,9 @@ public struct ServerDraft: Equatable, Sendable {
     public var fingerprint = "chrome"
     public var alpn = ""
     public var insecure = false
+    /// 3.3 (PT-04): whether «Не проверять сертификат» may be offered: not for a
+    /// server Xray-core runs, which no longer has the switch.
+    public var allowsInsecure = true
     public var publicKey = ""
     public var shortID = ""
     public var transport = Transport.tcp

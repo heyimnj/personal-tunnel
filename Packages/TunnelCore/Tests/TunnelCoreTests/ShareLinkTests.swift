@@ -38,7 +38,8 @@ final class ShareLinkTests: XCTestCase {
         XCTAssertEqual(node.outbound.at("transport", "headers", "Host"), "cdn.example.org")
         XCTAssertEqual(node.outbound.at("tls", "insecure"), true)
         XCTAssertEqual(node.outbound.at("tls", "alpn"), ["h2", "http/1.1"])
-        XCTAssertEqual(ProtocolFacts(object: node.outbound).badges, ["VLESS", "TLS", "WebSocket", "sing-box"])
+        // 3.3 (PT-04): allowInsecure without a pin is marked.
+        XCTAssertEqual(ProtocolFacts(object: node.outbound).badges, ["VLESS", "TLS", "WebSocket", "sing-box", ProtocolFacts.uncheckedBadge])
     }
 
     func testVLESSGRPCAndXHTTP() throws {
@@ -112,7 +113,7 @@ final class ShareLinkTests: XCTestCase {
         XCTAssertEqual(node.outbound["server_ports"], ["443:443", "20000:30000"])
         XCTAssertEqual(node.outbound.at("obfs", "type"), "salamander")
         XCTAssertEqual(node.outbound.at("tls", "insecure"), true)
-        XCTAssertEqual(ProtocolFacts(object: node.outbound).summary, "HYSTERIA2 · TLS · QUIC · sing-box")
+        XCTAssertEqual(ProtocolFacts(object: node.outbound).summary, "HYSTERIA2 · TLS · QUIC · sing-box · " + ProtocolFacts.uncheckedBadge)
         let short = try ShareLink.parse("hy2://pass@1.1.1.1:8443#x")
         XCTAssertNil(short.outbound.at("tls", "server_name"))
         XCTAssertNil(short.outbound["server_ports"])

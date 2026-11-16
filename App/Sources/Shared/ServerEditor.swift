@@ -170,7 +170,7 @@ final class ServerEditorViewController: FormViewController {
             }
             if draft.security != .reality {
                 tls.append(field("list.bullet", "ALPN", "h2,http/1.1", \.alpn))
-                tls.append(toggle("exclamationmark.shield", L("Не проверять сертификат"), \.insecure))
+                if draft.allowsInsecure { tls.append(toggle("exclamationmark.shield", L("Не проверять сертификат"), \.insecure)) }
             }
         }
         if !tls.isEmpty { sections.append(FormSection("TLS", tls)) }

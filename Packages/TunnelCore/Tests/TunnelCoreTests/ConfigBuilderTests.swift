@@ -596,3 +596,48 @@ final class RealityGRPCInXrayTests: XCTestCase {
         XCTAssertTrue(runtime["outbounds"]?.arrayValue?.contains { $0.at("streamSettings", "grpcSettings", "serviceName") == "svc" } ?? false)
     }
 }
+
+/// 3.3 (PT-04): servers whose certificate is not checked are marked; Xray-core
+/// gets no `allowInsecure` (v26.11.9 refuses it and the runtime would not start).
+final class CertificateCheckTests: XCTestCase {
+    func testUncheckedServersAreMarkedAndCounted() throws {
+        let unchecked = try ShareLink.parse("trojan://pw@t.example.net:443?security=tls&sni=t.example.net&allowInsecure=1#Unchecked")
+        let pinned = try ShareLink.parse("trojan://pw@p.example.net:443?security=tls&sni=p.example.net&allowInsecure=1&pcs=" + String(repeating: "ab", count: 32) + "#Pinned")
+        let checked = try ShareLink.parse("trojan://pw@c.example.net:443?security=tls&sni=c.example.net#Checked")
+        let reality = try ShareLink.parse("vless://11111111-2222-3333-4444-555555555555@r.example.net:443?security=reality&sni=www.apple.com&pbk=frA_WzVIkA2NPG1EUvGDN8WoFAneqhPgaBGe9FvsaKc&sid=ab12&fp=chrome&allowInsecure=1#Reality")
+        let nodes = NodeAssembler.assemble([unchecked, pinned, checked, reality])
+        XCTAssertEqual(nodes.map(\.facts.certificateUnchecked), [true, false, false, false])
+        XCTAssertTrue(nodes[0].facts.badges.contains(ProtocolFacts.uncheckedBadge))
+        XCTAssertTrue(nodes[0].facts.summary.hasSuffix(ProtocolFacts.uncheckedBadge))
+        XCTAssertFalse(nodes[2].facts.badges.contains(ProtocolFacts.uncheckedBadge))
+        XCTAssertEqual(CertificateCheck.unchecked(nodes), 1)
+        XCTAssertNotNil(CertificateCheck.summary(nodes))
+        XCTAssertNil(CertificateCheck.summary(Array(nodes.dropFirst())))
+    }
+
+    func testXrayRuntimeCarriesNoAllowInsecure() throws {
+        let json = #"""
+        [{"remarks": "Masked", "outbounds": [
+           {"tag": "proxy", "protocol": "vless", "settings": {"vnext": [{"address": "s.example.net", "port": 443, "users": [{"id": "11111111-2222-3333-4444-555555555555", "encryption": "none"}]}]},
+            "streamSettings": {"network": "raw", "security": "tls", "tlsSettings": {"serverName": "s.example.net", "allowInsecure": true},
+              "finalmask": {"tcp": [{"type": "sudoku", "settings": {"password": "mask"}}]}}}]}]
+        """#
+        let nodes = NodeAssembler.assemble(try ContentImporter.parse(json).nodes)
+        XCTAssertEqual(nodes.first?.type, XrayBacked.type)
+        let made = try ConfigBuilder.tunnel(subscription: Subscription(id: 1, name: "X", nodes: nodes), selected: nil, options: TunnelOptions())
+        XCTAssertFalse(try XCTUnwrap(made.xray).serialized().contains("allowInsecure"))
+        // The editor offers no «do not check» for an Xray server, and writing it back adds none.
+        let plain: JSONValue = ["type": "xray", "server": "w.example.net", "server_port": 443, "xray": ["outbounds": [[
+            "tag": "proxy", "protocol": "vless",
+            "settings": ["vnext": [["address": "w.example.net", "port": 443, "users": [["id": "11111111-2222-3333-4444-555555555555", "encryption": "none"]]]]],
+            "streamSettings": ["network": "ws", "security": "tls", "tlsSettings": ["serverName": "w.example.net", "allowInsecure": true], "wsSettings": ["path": "/w"]],
+        ]]]]
+        var draft = try XCTUnwrap(XrayBacked.draft(plain, name: "Plain"))
+        XCTAssertFalse(draft.allowsInsecure)
+        XCTAssertFalse(draft.insecure)
+        draft.insecure = true
+        let edited = try XrayBacked.apply(draft, to: plain)
+        XCTAssertFalse(edited.serialized().contains("allowInsecure"))
+        XCTAssertEqual(edited.at("xray", "outbounds")?[0]?.at("streamSettings", "tlsSettings", "serverName"), "w.example.net")
+    }
+}

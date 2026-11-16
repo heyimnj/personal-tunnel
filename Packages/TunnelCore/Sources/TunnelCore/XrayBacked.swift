@@ -96,7 +96,7 @@ public enum XrayBacked {
             }
             var mainTag: String?
             for (offset, item) in own.enumerated() {
-                var item = item
+                var item = withoutAllowInsecure(item)
                 let tag = renamed[item["tag"]?.stringValue ?? "#\(offset)"] ?? prefix + "out\(offset)"
                 item["tag"] = .string(tag)
                 if let dialer = item.at("streamSettings", "sockopt", "dialerProxy")?.stringValue, let next = renamed[dialer] {
@@ -128,6 +128,19 @@ public enum XrayBacked {
             "routing": ["domainStrategy": "AsIs", "rules": .array(rules)],
         ]
         return config
+    }
+
+    /// 3.3 (PT-04): `allowInsecure` taken out of an Xray outbound. Xray-core
+    /// v26.11.9 refuses the field as a removed feature, and one server with it
+    /// kept the whole runtime from starting; the certificate is then checked (or
+    /// pinned with `pinnedPeerCertSha256`).
+    static func withoutAllowInsecure(_ outbound: JSONValue) -> JSONValue {
+        guard var stream = outbound["streamSettings"], var tls = stream["tlsSettings"], tls["allowInsecure"] != nil else { return outbound }
+        tls["allowInsecure"] = nil
+        stream["tlsSettings"] = tls
+        var outbound = outbound
+        outbound["streamSettings"] = stream
+        return outbound
     }
 
     /// 3.3 (PT-01): the tunnel's two configurations with new local links. The
@@ -354,7 +367,11 @@ public extension XrayBacked {
     static func draft(_ outbound: JSONValue, name: String) -> ServerDraft? {
         guard outbound["type"]?.stringValue == type, let proxy = main(outbound),
               let converted = try? XrayImport.outbound(from: proxy) else { return nil }
-        return ServerDraft(outbound: converted, name: name)
+        var draft = ServerDraft(outbound: converted, name: name)
+        // 3.3 (PT-04): Xray-core has no «do not check» any more.
+        draft?.insecure = false
+        draft?.allowsInsecure = false
+        return draft
     }
 
     /// The edited form written back into the Xray outbounds, so the server stays
@@ -415,7 +432,9 @@ public extension XrayBacked {
             stream["hysteriaSettings"] = hy
             var tls = stream["tlsSettings"] ?? .object([:])
             tls["serverName"] = draft.sni.isEmpty ? nil : .string(draft.sni)
-            tls["allowInsecure"] = draft.insecure ? true : nil
+            // 3.3 (PT-04): Xray-core v26.11.9 refuses `allowInsecure` (a removed
+            // feature: the whole runtime would not start); a pin stays as it is.
+            tls["allowInsecure"] = nil
             stream["tlsSettings"] = tls
         } else if draft.proto != .shadowsocks {
             let network = draft.transport.rawValue
@@ -428,7 +447,7 @@ public extension XrayBacked {
                 tls["serverName"] = draft.sni.isEmpty ? nil : .string(draft.sni)
                 tls["fingerprint"] = draft.fingerprint.isEmpty ? nil : .string(draft.fingerprint)
                 tls["alpn"] = alpn.isEmpty ? nil : JSONValue(alpn)
-                tls["allowInsecure"] = draft.insecure ? true : nil
+                tls["allowInsecure"] = nil
                 stream["tlsSettings"] = tls
             case .reality:
                 var reality = stream["realitySettings"] ?? .object([:])
