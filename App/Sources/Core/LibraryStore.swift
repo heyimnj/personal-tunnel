@@ -68,6 +68,33 @@ final class LibraryStore {
         }
     }
 
+    /// «Удалить все данные» (3.2.1): an empty library, and every file the app, the
+    /// extension and the core keep in the shared container — 2.x and 1.x data,
+    /// the configurations, the core's copies of them, the logs and crash reports.
+    /// `done` runs on the main queue once the files are gone.
+    func eraseAll(_ done: @escaping () -> Void) {
+        labelCache = [:]
+        library.value = Library()
+        guard let paths else { DispatchQueue.main.async(execute: done); return }
+        queue.async {
+            let files = FileManager.default
+            let container = paths.container
+            var targets = [paths.data, paths.temp, paths.legacyDatabase, paths.legacyConfigs,
+                           container.appendingPathComponent("configuration.json")]
+            for suffix in ["-wal", "-shm", "-journal"] {
+                targets.append(URL(fileURLWithPath: paths.legacyDatabase.path + suffix))
+            }
+            for url in targets { try? files.removeItem(at: url) }
+            // The app's own temporary files: backup copies, Xray's measuring logs.
+            let temporary = files.temporaryDirectory
+            for item in (try? files.contentsOfDirectory(at: temporary, includingPropertiesForKeys: nil)) ?? [] {
+                try? files.removeItem(at: item)
+            }
+            try? paths.prepare()
+            DispatchQueue.main.async(execute: done)
+        }
+    }
+
     /// List labels and flags of a subscription, cached until its servers change.
     func labels(for subscription: Subscription) -> [String: ServerLabels.Label] {
         var hasher = Hasher()

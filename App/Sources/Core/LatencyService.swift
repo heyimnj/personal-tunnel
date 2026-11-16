@@ -311,6 +311,11 @@ final class FailureNotes: @unchecked Sendable {
         lock.lock(); notes[key] = nil; lock.unlock()
     }
 
+    /// «Удалить все данные» (3.2.1).
+    func clearAll() {
+        lock.lock(); notes = [:]; lock.unlock()
+    }
+
     func note(_ key: String) -> String? {
         lock.lock(); defer { lock.unlock() }
         return notes[key]
@@ -641,6 +646,15 @@ final class LatencyService {
         local?.close()
         local = nil
         if progress.value.running { finish() }
+    }
+
+    /// «Удалить все данные» (3.2.1): every result, with the test stopped first.
+    func clearResults() {
+        cancel()
+        let keys = Set(results.keys)
+        results = [:]
+        FailureNotes.shared.clearAll()
+        if !keys.isEmpty { changed.value = keys }
     }
 
     private func finish() {

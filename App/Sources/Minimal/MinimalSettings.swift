@@ -35,6 +35,7 @@ final class MinimalSettingsViewController: FormViewController {
             FormSection(footer: AboutViewController.version, [
                 .link(symbol: "externaldrive.badge.icloud", title: L("Резервные копии")) { [weak self] in self?.push(BackupViewController()) },
                 .link(symbol: "eye", title: L("Сетевая активность приложения")) { [weak self] in self?.push(NetworkActivityViewController()) },
+                .link(symbol: "hand.raised", title: L("Конфиденциальность")) { [weak self] in self?.push(PrivacyViewController()) },
                 .link(symbol: "info.circle", title: L("О приложении")) { [weak self] in self?.push(AboutViewController()) },
             ]),
         ]

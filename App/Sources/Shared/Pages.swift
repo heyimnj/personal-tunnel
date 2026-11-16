@@ -791,12 +791,8 @@ final class SubscriptionsViewController: FormViewController {
             }
             let id = subscription.id
             if subscription.isRemote {
-                rows.append(.toggle(title: L("Отправлять HWID"), get: { App.shared.library.subscription(id)?.sendsDeviceIdentity ?? true }, set: { value in
-                    App.shared.store.update { library in
-                        guard var current = library.subscription(id) else { return }
-                        current.sendsDeviceIdentity = value
-                        library.replace(current)
-                    }
+                rows.append(.toggle(title: L("Передавать данные устройства провайдеру"), get: { App.shared.library.subscription(id)?.sendsDeviceIdentity ?? true }, set: { value in
+                    App.setSendsDeviceData(value, for: id)
                 }))
                 rows.append(.button(title: L("Обновить"), destructive: false) { App.shared.refresh(id) })
             }
@@ -806,7 +802,8 @@ final class SubscriptionsViewController: FormViewController {
                 alert.addAction(UIAlertAction(title: L("Удалить"), style: .destructive) { _ in App.shared.delete(subscription: id) })
                 self?.present(alert, animated: true)
             })
-            sections.append(FormSection(subscription.name, footer: subscription.warnings.first, rows))
+            let footer = subscription.warnings.first ?? (subscription.isRemote ? L("HWID, модель iPhone, версия iOS и язык уходят провайдеру при обновлении подписки. Подробнее — в «Конфиденциальности».") : nil)
+            sections.append(FormSection(subscription.name, footer: footer, rows))
         }
         return sections
     }
@@ -851,7 +848,7 @@ final class NetworkActivityViewController: FormViewController {
     init() { super.init(title: L("Сетевая активность")) }
 
     override func build() -> [FormSection] {
-        [FormSection(footer: L("У приложения нет своего сервера. Само оно выходит в сеть только чтобы обновить подписки, проверить соединение по кнопке и измерить задержку серверов."), [
+        [FormSection(footer: L("У приложения нет своего сервера. Само оно выходит в сеть только чтобы обновить подписки (по команде, после подключения VPN и один раз после обновления приложения), проверить соединение по кнопке и измерить задержку серверов."), [
             .value(title: L("Обновление подписок"), detail: { L("по запросу") }),
             .value(title: L("Проверка соединения"), detail: { "www.gstatic.com" }),
             .value(title: L("Пинг серверов"), detail: { L("URL-тест через сервер") }),

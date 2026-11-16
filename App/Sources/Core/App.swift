@@ -150,12 +150,14 @@ final class App {
         if let url = URL(string: trimmed), let scheme = url.scheme?.lowercased(), scheme == "http" || scheme == "https", !trimmed.contains("\n") {
             Task { @MainActor in
                 do {
-                    let fetched = try await SubscriptionService.fetch(url: trimmed, sendIdentity: true)
+                    let sendsDeviceData = Prefs.deviceDataForNewSubscriptions
+                    let fetched = try await SubscriptionService.fetch(url: trimmed, sendIdentity: sendsDeviceData)
                     self.logImport(fetched, name: fetched.title ?? SubscriptionHeaders.fallbackName(url: trimmed))
                     self.store.update { library in
                         let id = library.allocateID()
                         library.subscriptions.append(Subscription(id: id, name: fetched.title ?? SubscriptionHeaders.fallbackName(url: trimmed), url: trimmed,
-                                                                  nodes: fetched.nodes, updatedAt: Date(), info: fetched.info))
+                                                                  nodes: fetched.nodes, updatedAt: Date(), info: fetched.info,
+                                                                  sendsDeviceIdentity: sendsDeviceData))
                         if library.activeSubscriptionID == nil { library.activeSubscriptionID = id }
                     }
                     completion(fetched.summary)
@@ -285,6 +287,34 @@ final class App {
 
     func refreshAll() {
         for subscription in library.subscriptions where subscription.isRemote { refresh(subscription.id) }
+    }
+
+    /// «Удалить все данные» (3.2.1): the VPN is stopped and its configuration
+    /// removed, then subscriptions and servers, statistics, results, logs, crash
+    /// reports and the HWID are erased. Interface and network settings stay.
+    func eraseAllData(_ done: @escaping () -> Void) {
+        reconnecting = false
+        retryThroughTunnel = []
+        latency.clearResults()
+        tunnel.removeConfiguration { [weak self] in
+            guard let self else { done(); return }
+            self.core.stop()
+            self.core.clearLogs()
+            self.core.resetStatistics()
+            DeviceIdentity.erase()
+            Prefs.eraseServerData()
+            let group = AppGroup.defaults
+            for key in [SharedKey.lastTunnelError, SharedKey.tunnelStartedAt, SharedKey.tunnelMemory] { group.removeObject(forKey: key) }
+            // A beat for the extension to finish writing its last lines before they go.
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1) {
+                self.store.eraseAll {
+                    self.tunnel.crash.value = nil
+                    self.tunnel.lastError.value = nil
+                    self.notice.value = L("Все данные удалены.")
+                    done()
+                }
+            }
+        }
     }
 
     func delete(subscription id: Int64) {

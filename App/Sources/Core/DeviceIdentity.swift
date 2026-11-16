@@ -29,11 +29,24 @@ enum DeviceIdentity {
             writeKeychain(stored)
             return stored
         }
-        let seed = UIDevice.current.identifierForVendor?.uuidString ?? UUID().uuidString
-        let fresh = String(seed.replacingOccurrences(of: "-", with: "").prefix(32))
+        // 3.2.1: a new identifier is random. It came from identifierForVendor, and
+        // then «Удалить все данные» could not change it: the same value came back.
+        // Installs that already have one keep it (Keychain, or the 1.x defaults).
+        let fresh = String(UUID().uuidString.replacingOccurrences(of: "-", with: "").lowercased().prefix(32))
         writeKeychain(fresh)
         defaults.set(fresh, forKey: defaultsKey)
         return fresh
+    }
+
+    /// «Удалить все данные» (3.2.1): the identifier is gone from the Keychain and
+    /// the defaults; the next subscription download that sends it makes a new one.
+    static func erase() {
+        let base: [String: Any] = [kSecClass as String: kSecClassGenericPassword, kSecAttrService as String: service, kSecAttrAccount as String: account]
+        SecItemDelete(base as CFDictionary)
+        let defaults = UserDefaults.standard
+        defaults.removeObject(forKey: defaultsKey)
+        defaults.removeObject(forKey: "vpndirect.subscription.hwid")
+        cached = nil
     }
 
     private static func readKeychain() -> String? {

@@ -313,6 +313,15 @@ final class ClassicManageViewController: ClassicPage {
             if subscription.isRemote {
                 actions.append(UIAction(title: L("Обновить"), image: UIImage(systemName: "arrow.clockwise")) { _ in App.shared.refresh(id) })
                 actions.append(UIAction(title: L("Скопировать ссылку"), image: UIImage(systemName: "doc.on.doc")) { _ in UIPasteboard.general.string = subscription.url })
+                // 3.2.1: the panel's device data could not be turned off in «Классика».
+                let sends = subscription.sendsDeviceIdentity
+                let deviceData = UIAction(title: L("Передавать данные устройства провайдеру"), image: UIImage(systemName: "iphone"),
+                                          state: sends ? .on : .off) { [weak self] _ in
+                    App.setSendsDeviceData(!sends, for: id)
+                    self?.rebuild()
+                }
+                deviceData.subtitle = L("HWID, модель, iOS и язык")
+                actions.append(deviceData)
             }
             actions.append(UIAction(title: L("Проверить пинг"), image: UIImage(systemName: "waveform.path.ecg")) { _ in App.shared.ping([subscription]) })
             actions.append(UIAction(title: L("На главный экран"), image: UIImage(systemName: "house")) { _ in
@@ -439,6 +448,7 @@ final class ClassicSettingsViewController: ClassicPage {
             link(L("Журнал службы")) { ServiceLogViewController() },
             link(L("Резервные копии")) { BackupViewController() },
             link(L("Сетевая активность приложения")) { NetworkActivityViewController() },
+            link(L("Конфиденциальность")) { PrivacyViewController() },
             link(L("О приложении")) { AboutViewController() },
         ], spacing: 0))
         let version = Classic.body(AboutViewController.version, 12, .regular, .secondaryLabel)

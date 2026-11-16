@@ -325,6 +325,28 @@ final class TunnelController {
         }
     }
 
+    /// «Удалить все данные» (3.2.1): the VPN is stopped and its configuration is
+    /// removed from iOS Settings; the next connection adds it again.
+    func removeConfiguration(_ done: @escaping () -> Void) {
+        startPending = nil
+        startRequested = false
+        NETunnelProviderManager.loadAllFromPreferences { [weak self] managers, _ in
+            let group = DispatchGroup()
+            for manager in managers ?? [] {
+                group.enter()
+                manager.isOnDemandEnabled = false
+                manager.connection.stopVPNTunnel()
+                manager.removeFromPreferences { _ in group.leave() }
+            }
+            group.notify(queue: .main) {
+                guard let self else { done(); return }
+                self.manager = nil
+                self.sync()
+                done()
+            }
+        }
+    }
+
     /// Turns off the system's reconnection without stopping anything.
     private func disableOnDemand() {
         guard let manager, manager.isOnDemandEnabled else { return }

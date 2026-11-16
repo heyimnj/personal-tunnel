@@ -257,4 +257,21 @@ enum Prefs {
         get { defaults.bool(forKey: "pt.migrated.v1") }
         set { defaults.set(newValue, forKey: "pt.migrated.v1") }
     }
+
+    // MARK: Privacy (3.2.1)
+
+    /// «Передавать данные устройства провайдеру» for a subscription being added:
+    /// the first download already sends them, so the choice is made beforehand.
+    static var deviceDataForNewSubscriptions: Bool {
+        get { bool("pt.privacy.deviceDataForNew", true) }
+        set { defaults.set(newValue, forKey: "pt.privacy.deviceDataForNew") }
+    }
+
+    /// «Удалить все данные»: what belongs to the servers and subscriptions. The
+    /// interface and network switches stay.
+    static func eraseServerData() {
+        for key in ["pt.serverFilters", "vpndirect.favorite.servers", "pt.expandedSubscriptions", "pt.autoSelect", Arrangement.defaultsKey] {
+            defaults.removeObject(forKey: key)
+        }
+    }
 }
