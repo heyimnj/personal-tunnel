@@ -616,7 +616,7 @@
 "DNS вне туннеля" = "DNS outside the tunnel";
 "DNS ВНЕ ТУННЕЛЯ" = "DNS OUTSIDE THE TUNNEL";
 "Резолверы" = "Resolvers";
-"Адреса серверов находятся вне туннеля, по DNS over HTTPS через выбранные резолверы. Российские сайты при обходе — через Яндекс." = "Server addresses are looked up outside the tunnel over DNS over HTTPS by the chosen resolvers. Russian sites, with the bypass on, through Yandex.";
+"Адреса серверов находятся вне туннеля, по DNS over HTTPS через выбранные резолверы, а если сеть его не пропускает — обычным DNS через них же. Российские сайты при обходе — через Яндекс." = "Server addresses are looked up outside the tunnel over DNS over HTTPS by the chosen resolvers, or by plain DNS through the same ones if the network blocks it. Russian sites, with the bypass on, through Yandex.";
 "Российские сайты открываются мимо VPN, с вашим настоящим IP. Сайт, который подгружает что-то с российского адреса, может увидеть настоящий IP рядом с IP VPN." = "Russian sites open around the VPN, with your real IP. A site that loads something from a Russian address can see your real IP next to the VPN's.";
 
 /* 3.3 beta 3 */

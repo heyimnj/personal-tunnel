@@ -1,0 +1,99 @@
+diff --git a/dns/transport/group/group.go b/dns/transport/group/group.go
+index 9b64c53..d2f9c55 100644
+--- a/dns/transport/group/group.go
++++ b/dns/transport/group/group.go
+@@ -51,6 +51,14 @@ const (
+ 	ModeStable   = "stable"
+ 	ModeFastest  = "fastest"
+ 	ModeParallel = "parallel"
++	// lx:begin ordered (Personal Tunnel)
++	// ModeOrdered asks the first clean member in the order of `servers`; when it
++	// fails, the rescue fan asks the others, and the failed one is skipped while
++	// its error record lives (error_ttl), then tried first again. For a
++	// preferred way with fallbacks: DNS over HTTPS, and plain DNS only where a
++	// network breaks it.
++	ModeOrdered = "ordered"
++	// lx:end
+ 
+ 	DefaultErrorTTL = 2 * time.Minute
+ 	DefaultWinTTL   = 5 * time.Minute
+@@ -130,7 +138,7 @@ func NewTransport(ctx context.Context, logger log.ContextLogger, tag string, opt
+ 	switch mode {
+ 	case "":
+ 		mode = ModeStable
+-	case ModeStable, ModeFastest, ModeParallel:
++	case ModeStable, ModeFastest, ModeParallel, ModeOrdered: // lx: ordered
+ 	default:
+ 		return nil, E.New("group[", tag, "]: unknown mode: ", mode, " (expected ", ModeStable, ", ", ModeFastest, " or ", ModeParallel, ")")
+ 	}
+@@ -353,6 +361,10 @@ func (t *Transport) selectTarget() (selection, error) {
+ 	switch t.mode {
+ 	case ModeParallel:
+ 		return selection{fan: append([]*member(nil), clean...), gen: t.gen}, nil
++	// lx:begin ordered
++	case ModeOrdered:
++		return selection{target: clean[0], gen: t.gen}, nil
++	// lx:end
+ 	case ModeFastest:
+ 		best, maxWins := t.fastestCandidatesLocked(clean, now)
+ 		if maxWins > 0 {
+diff --git a/dns/transport/group/ordered_lx_test.go b/dns/transport/group/ordered_lx_test.go
+new file mode 100644
+index 0000000..87487d0
+--- /dev/null
++++ b/dns/transport/group/ordered_lx_test.go
+@@ -0,0 +1,54 @@
++package group
++
++import (
++	"context"
++	"testing"
++	"time"
++
++	mDNS "github.com/miekg/dns"
++	"github.com/stretchr/testify/require"
++)
++
++// lx: ordered — the first clean member in order is always asked first.
++func TestOrderedAsksTheFirstWhileItAnswers(t *testing.T) {
++	first := answering("doh")
++	second := answering("udp")
++	group := newTestGroup(t, ModeOrdered, time.Hour, 0, first, second)
++	for i := 0; i < 10; i++ {
++		_, err := group.Exchange(context.Background(), testQuery())
++		require.NoError(t, err)
++	}
++	require.Equal(t, int32(10), first.calls.Load())
++	require.Equal(t, int32(0), second.calls.Load())
++}
++
++// A broken first member: the query is rescued by the next one, the next
++// queries go to it while the error lives, and the first is asked again after.
++func TestOrderedFallsBackAndReturns(t *testing.T) {
++	broken := true
++	first := newFakeMember("doh", func(ctx context.Context, message *mDNS.Msg) (*mDNS.Msg, error) {
++		if broken {
++			return failing("x").exchange(ctx, message)
++		}
++		return okResponse(message), nil
++	})
++	second := answering("udp")
++	group := newTestGroup(t, ModeOrdered, 80*time.Millisecond, 0, first, second)
++
++	_, err := group.Exchange(context.Background(), testQuery())
++	require.NoError(t, err, "the fallback must answer the query the first one failed")
++	require.Equal(t, int32(1), first.calls.Load())
++	require.Equal(t, int32(1), second.calls.Load())
++
++	_, err = group.Exchange(context.Background(), testQuery())
++	require.NoError(t, err)
++	require.Equal(t, int32(1), first.calls.Load(), "a member with a live error is skipped")
++	require.Equal(t, int32(2), second.calls.Load())
++
++	broken = false
++	time.Sleep(120 * time.Millisecond)
++	_, err = group.Exchange(context.Background(), testQuery())
++	require.NoError(t, err)
++	require.Equal(t, int32(2), first.calls.Load(), "the first is asked again once its error expires")
++	require.Equal(t, int32(2), second.calls.Load())
++}

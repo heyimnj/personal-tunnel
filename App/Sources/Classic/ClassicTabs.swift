@@ -448,7 +448,7 @@ final class ClassicSettingsViewController: ClassicPage {
                 changed()
                 self?.rebuild()
             }
-        } + [Classic.body(L("Адреса серверов находятся вне туннеля, по DNS over HTTPS через выбранные резолверы. Российские сайты при обходе — через Яндекс."), 12, .regular, .secondaryLabel, lines: 0) as UIView]))
+        } + [Classic.body(L("Адреса серверов находятся вне туннеля, по DNS over HTTPS через выбранные резолверы, а если сеть его не пропускает — обычным DNS через них же. Российские сайты при обходе — через Яндекс."), 12, .regular, .secondaryLabel, lines: 0) as UIView]))
         content.addArrangedSubview(section(L("БЕЗОПАСНОСТЬ"), [toggle(L("Блокировка приложения"), Prefs.appLock) { Prefs.appLock = $0 }]))
         content.addArrangedSubview(section(L("ДАННЫЕ"), [
             link(L("Порядок серверов")) { ServerOrderViewController() },

@@ -129,7 +129,7 @@ final class NetworkSettingsViewController: FormViewController {
                 .toggle(title: L("Локальная сеть"), get: { Prefs.localNetwork }, set: { Prefs.localNetwork = $0; changed() }),
                 .note(L("Серверы DNS берутся из конфигурации. После изменения системных маршрутов переподключите VPN.")),
             ]),
-            FormSection(L("DNS вне туннеля"), footer: L("Адреса серверов находятся вне туннеля, по DNS over HTTPS через выбранные резолверы. Российские сайты при обходе — через Яндекс."), [
+            FormSection(L("DNS вне туннеля"), footer: L("Адреса серверов находятся вне туннеля, по DNS over HTTPS через выбранные резолверы, а если сеть его не пропускает — обычным DNS через них же. Российские сайты при обходе — через Яндекс."), [
                 .picker(title: L("Резолверы"), options: DirectResolvers.presets.map { preset -> (value: String, title: String) in (preset.id, Prefs.resolverTitle(preset.id)) },
                         get: { Prefs.directResolvers }, set: { Prefs.directResolvers = $0; changed() }),
             ]),

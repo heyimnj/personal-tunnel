@@ -10,6 +10,8 @@ fetch_xray
 # Personal Tunnel's own patches to the core carry their tests (core/patches):
 # the certificate pin (PT-03) in both TLS engines.
 (cd "$CORE_CHECKOUT" && go test -count=1 -trimpath -tags "$CHECK_TAGS" -ldflags "-checklinkname=0" -run 'CertificateSHA256' ./common/tls/)
+# The DNS group's `ordered` mode (0006): HTTPS first, plain DNS while it fails.
+(cd "$CORE_CHECKOUT" && go test -count=1 -trimpath -tags "$CHECK_TAGS" -ldflags "-checklinkname=0" -run 'Ordered' ./dns/transport/group/)
 cd "$BRIDGE_DIR"
 go vet -tags "$CHECK_TAGS" ./...
 # Конфигурации проверки серверов из tunnelcore-fixtures, если они уже записаны.

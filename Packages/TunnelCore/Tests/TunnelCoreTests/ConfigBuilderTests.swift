@@ -147,7 +147,8 @@ final class ConfigBuilderTests: XCTestCase {
         XCTAssertEqual(config.at("certificate", "store"), "mozilla")
         XCTAssertNil(config.at("route", "rule_set"))
         XCTAssertNil(config.at("route", "rules"))
-        XCTAssertEqual(config.at("dns", "servers")?.arrayValue?.map { $0["tag"] }, ["dns-direct", "dns-direct-1", "dns-direct-2"])
+        XCTAssertEqual(config.at("dns", "servers")?.arrayValue?.map { $0["tag"] },
+                       ["dns-direct", "dns-direct-https", "dns-direct-plain", "dns-direct-1", "dns-direct-2", "dns-direct-udp-1", "dns-direct-udp-2"])
         // Nothing points at what was removed.
         let text = config.serialized(pretty: false)
         XCTAssertFalse(text.contains("dns-remote"))
@@ -303,25 +304,34 @@ final class ConfigBuilderTests: XCTestCase {
         XCTAssertEqual(full.at("dns", "servers")?[1]?["detour"], "proxy")
         XCTAssertEqual(full.at("dns", "servers")?[2]?["type"], "tcp")
         XCTAssertEqual(full.at("dns", "servers")?[2]?["detour"], "proxy")
-        // 3.3 (PT-09): outside the tunnel, the setting's resolvers at once, over HTTPS by address.
+        // 3.3 (PT-09): outside the tunnel, the setting's resolvers at once, over HTTPS by
+        // address; beta 3: the same over UDP only while HTTPS fails (an `ordered` group).
+        func server(_ document: JSONValue, _ tag: String) -> JSONValue? { document.at("dns", "servers")?.arrayValue?.first { $0["tag"]?.stringValue == tag } }
         XCTAssertEqual(full.at("dns", "servers")?[3]?["tag"], "dns-direct")
-        XCTAssertEqual(full.at("dns", "servers")?[3]?["type"], "group")
-        XCTAssertEqual(full.at("dns", "servers")?[3]?["servers"], ["dns-direct-1", "dns-direct-2"])
-        XCTAssertEqual(full.at("dns", "servers")?[4]?["server"], "1.1.1.1")
-        XCTAssertEqual(full.at("dns", "servers")?[4]?["type"], "https")
-        XCTAssertEqual(full.at("dns", "servers")?[5]?["server"], "8.8.8.8")
-        XCTAssertNil(full.at("dns", "servers")?[4]?["detour"])
+        XCTAssertEqual(server(full, "dns-direct")?["type"], "group")
+        XCTAssertEqual(server(full, "dns-direct")?["mode"], "ordered")
+        XCTAssertEqual(server(full, "dns-direct")?["servers"], ["dns-direct-https", "dns-direct-plain"])
+        XCTAssertEqual(server(full, "dns-direct-https")?["mode"], "parallel")
+        XCTAssertEqual(server(full, "dns-direct-https")?["servers"], ["dns-direct-1", "dns-direct-2"])
+        XCTAssertEqual(server(full, "dns-direct-plain")?["servers"], ["dns-direct-udp-1", "dns-direct-udp-2"])
+        XCTAssertEqual(server(full, "dns-direct-1")?["server"], "1.1.1.1")
+        XCTAssertEqual(server(full, "dns-direct-1")?["type"], "https")
+        XCTAssertEqual(server(full, "dns-direct-2")?["server"], "8.8.8.8")
+        XCTAssertEqual(server(full, "dns-direct-udp-1")?["type"], "udp")
+        XCTAssertEqual(server(full, "dns-direct-udp-2")?["server"], "8.8.8.8")
+        XCTAssertNil(server(full, "dns-direct-1")?["detour"])
         XCTAssertEqual(full.at("route", "default_domain_resolver", "server"), "dns-direct")
-        // Yandex only for the Russian names of the bypass, over HTTPS with its certificate's name.
-        let russian = try XCTUnwrap(full.at("dns", "servers")?.arrayValue?.first { $0["tag"] == "dns-ru" })
-        XCTAssertEqual(russian["type"], "https")
-        XCTAssertEqual(russian["server"], "77.88.8.8")
-        XCTAssertEqual(russian.at("tls", "server_name"), "common.dot.dns.yandex.net")
-        XCTAssertNil(russian["detour"])
+        // Yandex only for the Russian names of the bypass, over HTTPS with its certificate's name first.
+        let russian = try XCTUnwrap(server(full, "dns-ru"))
+        XCTAssertEqual(russian["mode"], "ordered")
+        XCTAssertEqual(russian["servers"], ["dns-ru-https", "dns-ru-plain"])
+        XCTAssertEqual(server(full, "dns-ru-1")?["type"], "https")
+        XCTAssertEqual(server(full, "dns-ru-1")?["server"], "77.88.8.8")
+        XCTAssertEqual(server(full, "dns-ru-1")?.at("tls", "server_name"), "common.dot.dns.yandex.net")
+        XCTAssertEqual(server(full, "dns-ru-udp-1")?["server"], "77.88.8.8")
         XCTAssertTrue(full.at("dns", "rules")?.arrayValue?.contains { $0["server"] == "dns-ru" && $0["rule_set"] == ["pt-ru-domains", "pt-ru-inside"] } ?? false)
-        let names = (full.at("dns", "servers")?.arrayValue ?? []).filter { $0["tag"]?.stringValue?.hasPrefix("dns-direct-") ?? false }
-        XCTAssertFalse(names.contains { $0["server"] == "77.88.8.8" })
-        XCTAssertFalse(full.serialized().contains("\"udp\""))
+        let direct = (full.at("dns", "servers")?.arrayValue ?? []).filter { $0["tag"]?.stringValue?.hasPrefix("dns-direct-") ?? false }
+        XCTAssertFalse(direct.contains { $0["server"] == "77.88.8.8" })
 
         options.adBlocking = false
         options.bypassRussia = false
@@ -329,9 +339,9 @@ final class ConfigBuilderTests: XCTestCase {
         options.directResolvers = ["9.9.9.9", "9.9.9.9", "149.112.112.112"]
         let bare = try ConfigBuilder.build(subscription: subscription, selected: nil, options: options)
         // The setting's resolvers, each once; no Yandex without the bypass.
-        XCTAssertEqual(bare.at("dns", "servers")?[3]?["servers"], ["dns-direct-1", "dns-direct-2"])
-        XCTAssertEqual(bare.at("dns", "servers")?[4]?["server"], "9.9.9.9")
-        XCTAssertNil(bare.at("dns", "servers")?.arrayValue?.first { $0["tag"] == "dns-ru" })
+        XCTAssertEqual(server(bare, "dns-direct-https")?["servers"], ["dns-direct-1", "dns-direct-2"])
+        XCTAssertEqual(server(bare, "dns-direct-1")?["server"], "9.9.9.9")
+        XCTAssertNil(server(bare, "dns-ru"))
         XCTAssertEqual(bare.at("route", "rules")?.arrayValue?.count, 2)
         XCTAssertNil(bare.at("route", "rule_set"))
         XCTAssertNil(bare.at("dns", "rules"))

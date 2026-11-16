@@ -308,7 +308,7 @@ public enum ConfigBuilder {
                 ["type": "group", "tag": "dns-remote", "servers": ["dns-remote-https", "dns-remote-tcp"], "mode": "parallel"],
                 ["type": "https", "tag": "dns-remote-https", "server": .string(options.dnsServer), "detour": .string(selectorTag)],
                 ["type": "tcp", "tag": "dns-remote-tcp", "server": .string(options.dnsServer), "detour": .string(selectorTag)],
-            ] + directResolvers(options) + (options.bypassRussia ? [DirectResolvers.russian] : [])),
+            ] + directResolvers(options) + (options.bypassRussia ? DirectResolvers.russian : [])),
             "final": "dns-remote",
             "strategy": .string(options.dnsStrategy),
         ]
@@ -434,15 +434,17 @@ public enum ConfigBuilder {
     /// exceeded». 3.3 (PT-09): over DNS over HTTPS by address, without a detour
     /// (plain UDP showed the network which VPN servers the device used), and only
     /// the resolvers of the setting: Yandex no longer sees every server name.
+    ///
+    /// 3.3 beta 3: on a network that breaks DNS over HTTPS (on the device both
+    /// 1.1.1.1 and 8.8.8.8 ended in «EOF», and no server given by name could be
+    /// reached), the same resolvers are asked over plain UDP. `dns-direct` is an
+    /// `ordered` group (core/patches/0006): HTTPS first; plain DNS only while
+    /// HTTPS fails, then HTTPS again once its error has expired (2 minutes).
     static func directResolvers(_ options: TunnelOptions) -> [JSONValue] {
         var addresses: [String] = []
         for address in options.directResolvers where !address.isEmpty && !addresses.contains(address) { addresses.append(address) }
         if addresses.isEmpty { addresses = DirectResolvers.defaultAddresses }
-        let members = addresses.enumerated().map { index, address -> JSONValue in
-            DirectResolvers.https(tag: "dns-direct-\(index + 1)", address: address)
-        }
-        let group: JSONValue = ["type": "group", "tag": "dns-direct", "servers": .array(members.map { $0["tag"] ?? .null }), "mode": "parallel"]
-        return [group] + members
+        return DirectResolvers.ordered(tag: "dns-direct", addresses: addresses)
     }
 
     /// Servers keep fields that point into the configuration they came from:
@@ -608,7 +610,24 @@ public enum DirectResolvers {
         return .object(server)
     }
 
-    /// Russian names that leave the tunnel (the bypass): Yandex, over HTTPS.
+    /// Russian names that leave the tunnel (the bypass): Yandex, over HTTPS
+    /// (plain DNS while HTTPS fails).
     static let russianTag = "dns-ru"
-    static var russian: JSONValue { https(tag: russianTag, address: "77.88.8.8") }
+    static var russian: [JSONValue] { ordered(tag: russianTag, addresses: ["77.88.8.8"]) }
+
+    /// `tag`: an `ordered` group of two `parallel` groups — `tag-https` (every
+    /// address over HTTPS) first, `tag-plain` (the same over UDP) as the fallback.
+    /// Members are `tag-N` (HTTPS) and `tag-udp-N`.
+    static func ordered(tag: String, addresses: [String]) -> [JSONValue] {
+        let secure = addresses.enumerated().map { index, address in https(tag: "\(tag)-\(index + 1)", address: address) }
+        let plain = addresses.enumerated().map { index, address -> JSONValue in
+            ["type": "udp", "tag": .string("\(tag)-udp-\(index + 1)"), "server": .string(address)]
+        }
+        func group(_ name: String, _ members: [JSONValue], mode: String) -> JSONValue {
+            ["type": "group", "tag": .string(name), "servers": .array(members.map { $0["tag"] ?? .null }), "mode": .string(mode)]
+        }
+        let secureGroup = group("\(tag)-https", secure, mode: "parallel")
+        let plainGroup = group("\(tag)-plain", plain, mode: "parallel")
+        return [group(tag, [secureGroup, plainGroup], mode: "ordered"), secureGroup, plainGroup] + secure + plain
+    }
 }
