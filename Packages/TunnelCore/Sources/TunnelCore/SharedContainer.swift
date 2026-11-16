@@ -104,6 +104,8 @@ public enum SharedKey {
     public static let lastTunnelError = "pt.tunnel.lastError"
     /// Time the tunnel last started, seconds since 1970.
     public static let tunnelStartedAt = "pt.tunnel.startedAt"
+    /// 3.3 beta 4: the build of the extension that set `tunnelStartedAt`.
+    public static let tunnelStartedBuild = "pt.tunnel.startedBuild"
     /// The extension's last memory sample (`MemorySample`, JSON).
     public static let tunnelMemory = "pt.tunnel.memory"
     /// 3.3 (PT-16): end of «Подробный журнал для диагностики», seconds since 1970.

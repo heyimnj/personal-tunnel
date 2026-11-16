@@ -621,7 +621,11 @@
 
 /* 3.3 beta 3 */
 "туннель не готов к перезагрузке" = "the tunnel is not ready to reload";
-"расширение не ответило за 10 с" = "the extension did not answer in 10 s";
+"расширение не ответило за 25 с" = "the extension did not answer in 25 s";
 "расширение не ответило" = "the extension did not answer";
 "Сервер сменён без перезапуска VPN." = "Server changed without restarting the VPN.";
 "Настройки не применились без перезапуска (%@): VPN перезапускается." = "The settings did not apply without a restart (%@): the VPN restarts.";
+
+/* 3.3 beta 4 */
+"«%@»: сервер подписки не ответил (%@), пока VPN подключался: повтор после подключения." = "“%@”: the subscription server did not answer (%@) while the VPN was connecting: trying again once it is connected.";
+"«%@»: сервер подписки не ответил (%@): ещё одна попытка." = "“%@”: the subscription server did not answer (%@): trying once more.";

@@ -12,7 +12,13 @@ import TunnelCore
 /// and from the shared container when the system does (on demand, Settings,
 /// Control Center).
 final class PacketTunnelProvider: NEPacketTunnelProvider {
-    private let queue = DispatchQueue(label: "personaltunnel.tunnel")
+    private let queue: DispatchQueue = {
+        let queue = DispatchQueue(label: "personaltunnel.tunnel")
+        queue.setSpecific(key: PacketTunnelProvider.queueKey, value: ())
+        return queue
+    }()
+
+    private static let queueKey = DispatchSpecificKey<Void>()
     private var commandServer: LibboxCommandServer?
     private lazy var platform = TunnelPlatform(provider: self)
     private var paths: SharedPaths?
@@ -51,6 +57,9 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
             // the app showed «connecting», then «not connected», and nothing else.
             // Now the app reports the end with the core's own words.
             defaults.set(Date().timeIntervalSince1970, forKey: SharedKey.tunnelStartedAt)
+            // 3.3 beta 4: an extension of an older build ended by installing a newer
+            // one is not a crash.
+            defaults.set(Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String, forKey: SharedKey.tunnelStartedBuild)
             do {
                 try self.start(options: options)
                 defaults.removeObject(forKey: SharedKey.lastTunnelError)
@@ -72,10 +81,13 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
 
     override func stopTunnel(with reason: NEProviderStopReason, completionHandler: @escaping () -> Void) {
         queue.async {
+            // 3.3 beta 4: marked as stopped before the core is closed, not after: an
+            // update (stop reason 9) ends the process while the core is closing, and
+            // the app then reported a tunnel the system had ended without a stop.
+            AppGroup.defaults.removeObject(forKey: SharedKey.tunnelStartedAt)
             self.log("остановка, причина \(reason.rawValue)")
             self.event("остановка, причина \(reason.rawValue)")
             self.shutDown()
-            AppGroup.defaults.removeObject(forKey: SharedKey.tunnelStartedAt)
             // 3.1.14: turned off by the owner (Control Center, Settings, the app) or
             // replaced by another VPN: iOS must not bring it back on demand. Control
             // Center left On Demand on, and the VPN came back a few seconds later.
@@ -113,17 +125,39 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
                 completionHandler?(Data("unknown".utf8))
                 return
             }
-            do {
-                try self.reload()
-                self.event("перезагрузка конфигурации")
-                self.sampleMemory()
-                completionHandler?(Data(TunnelIPC.reloadDone.utf8))
-            } catch {
-                let message = Redactor.redact(error.localizedDescription)
-                AppGroup.defaults.set(message, forKey: SharedKey.lastTunnelError)
-                self.event("перезагрузка не удалась: \(message)")
+            if let message = self.reloadNoted() {
                 completionHandler?(Data(message.utf8))
+            } else {
+                completionHandler?(Data(TunnelIPC.reloadDone.utf8))
             }
+        }
+    }
+
+    /// The app asks over the core's command socket (3.3 beta 4; the system's
+    /// message never arrived on the device). Runs on the queue like everything else;
+    /// the app's call waits for it.
+    func reloadForApp() throws {
+        var failure: String?
+        if DispatchQueue.getSpecific(key: Self.queueKey) != nil {
+            failure = reloadNoted()
+        } else {
+            queue.sync { failure = self.reloadNoted() }
+        }
+        if let failure { throw TunnelError(failure).bridged }
+    }
+
+    /// Reloads and notes it in the extension's log; nil when the new configuration runs.
+    private func reloadNoted() -> String? {
+        do {
+            try reload()
+            event("перезагрузка конфигурации")
+            sampleMemory()
+            return nil
+        } catch {
+            let message = Redactor.redact(error.localizedDescription)
+            AppGroup.defaults.set(message, forKey: SharedKey.lastTunnelError)
+            event("перезагрузка не удалась: \(message)")
+            return message
         }
     }
 

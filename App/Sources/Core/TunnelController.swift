@@ -186,6 +186,14 @@ final class TunnelController {
                 coreCrash = text
             }
         }
+        // 3.3 beta 4: an update or a restart of the phone is not a crash. Every new
+        // build used to open with «the system ended the tunnel» over the screen.
+        let startedBuild = defaults.string(forKey: SharedKey.tunnelStartedBuild)
+        let build = Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String
+        if coreCrash == nil, CrashReport.isExpectedEnd(startedAt: startDate, startedBuild: startedBuild, currentBuild: build,
+                                                       bootTime: TunnelController.bootTime, events: events) {
+            return
+        }
         let report = { [weak self] (reason: String?) in
             let text = CrashReport.text(startedAt: startDate, systemReason: reason, memory: memory, events: events, coreCrash: coreCrash)
             self?.crash.value = TunnelCrash(cause: text.cause, details: text.details)
@@ -194,6 +202,15 @@ final class TunnelController {
         connection.fetchLastDisconnectError { error in
             DispatchQueue.main.async { report(error.map { Redactor.redact($0.localizedDescription) }) }
         }
+    }
+
+    /// When the device last started (nil if unknown).
+    private static var bootTime: Date? {
+        var time = timeval()
+        var size = MemoryLayout<timeval>.size
+        var mib: [Int32] = [CTL_KERN, KERN_BOOTTIME]
+        guard sysctl(&mib, 2, &time, &size, nil, 0) == 0, time.tv_sec > 0 else { return nil }
+        return Date(timeIntervalSince1970: TimeInterval(time.tv_sec) + TimeInterval(time.tv_usec) / 1_000_000)
     }
 
     /// Writes the app's routing choices into the system configuration.
@@ -299,14 +316,42 @@ final class TunnelController {
                     do {
                         try manager.connection.startVPNTunnel(options: [TunnelIPC.configOption: config as NSString])
                     } catch {
-                        self.startPending = nil
-                        self.lastError.value = error.localizedDescription
+                        // 3.3 beta 4: the first start after an update (the system had
+                        // disabled the configuration) or right after a stop can be
+                        // refused while iOS settles: one more try a second later,
+                        // with the configuration read again, before any message.
+                        self.startAgain(config: config)
+                        return
                     }
                     // The wait counts from the start itself, not from the save before it.
                     if self.startPending != nil { self.startPending = Date() }
                     self.sync()
                     self.recheckStart()
                 }
+            }
+        }
+    }
+
+    private func startAgain(config: String) {
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1) { [weak self] in
+            guard let self, self.startPending != nil else { return }
+            self.prepared(keepAlive: true) { [weak self] result in
+                guard let self else { return }
+                do {
+                    let manager = try result.get()
+                    switch manager.connection.status {
+                    case .connected, .connecting, .reasserting:
+                        break
+                    default:
+                        try manager.connection.startVPNTunnel(options: [TunnelIPC.configOption: config as NSString])
+                    }
+                    self.startPending = Date()
+                } catch {
+                    self.startPending = nil
+                    self.lastError.value = error.localizedDescription
+                }
+                self.sync()
+                self.recheckStart()
             }
         }
     }
@@ -399,11 +444,13 @@ final class TunnelController {
     }
 
     /// Asks the running tunnel to load the stored configuration again.
-    /// `completion(nil)` only when the extension answered that the new
-    /// configuration runs (3.3 beta 3); otherwise the reason. No answer within 10
-    /// seconds counts as a failure.
+    /// `completion(nil)` only when the extension says the new configuration runs;
+    /// otherwise the reason. 3.3 beta 4: over the core's command socket first, the
+    /// system's message to the extension only if that fails; no answer within 25
+    /// seconds counts as a failure (a reload may wait for the system's network
+    /// settings up to 20 s).
     func reload(_ completion: @escaping (String?) -> Void) {
-        guard let session = manager?.connection as? NETunnelProviderSession, state.value.isOn else {
+        guard state.value.isOn else {
             completion(L("туннель не готов к перезагрузке"))
             return
         }
@@ -413,7 +460,18 @@ final class TunnelController {
             answered = true
             completion(result)
         }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 10) { finish(L("расширение не ответило за 10 с")) }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 25) { finish(L("расширение не ответило за 25 с")) }
+        CoreClient.reloadService { [weak self] failure in
+            guard let failure else { finish(nil); return }
+            guard let self, let session = self.manager?.connection as? NETunnelProviderSession else {
+                finish(failure)
+                return
+            }
+            self.reloadByMessage(session, socketFailure: failure, finish)
+        }
+    }
+
+    private func reloadByMessage(_ session: NETunnelProviderSession, socketFailure: String, _ finish: @escaping (String?) -> Void) {
         do {
             try session.sendProviderMessage(Data(TunnelIPC.reloadMessage.utf8)) { response in
                 let text = response.flatMap { String(data: $0, encoding: .utf8) }
@@ -421,12 +479,12 @@ final class TunnelController {
                     if text == TunnelIPC.reloadDone {
                         finish(nil)
                     } else {
-                        finish(text.map(TunnelText.localize) ?? L("расширение не ответило"))
+                        finish(socketFailure + "; " + (text.map(TunnelText.localize) ?? L("расширение не ответило")))
                     }
                 }
             }
         } catch {
-            finish(error.localizedDescription)
+            finish(socketFailure + "; " + error.localizedDescription)
         }
     }
 }

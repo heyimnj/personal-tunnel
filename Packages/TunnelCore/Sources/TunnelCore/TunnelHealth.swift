@@ -67,6 +67,23 @@ public enum TunnelEvents {
 
 /// Puts together why the tunnel ended without being stopped.
 public enum CrashReport {
+    /// 3.3 beta 4: an end that only looks like a crash (the start mark was left
+    /// behind) and is not reported: the extension was of an older build (an update
+    /// replaced it), the device was restarted after the start, or the extension
+    /// logged its own stop after the start (it was closing when an update ended it).
+    public static func isExpectedEnd(startedAt: Date, startedBuild: String?, currentBuild: String?, bootTime: Date?, events: [String]) -> Bool {
+        if let startedBuild, let currentBuild, !startedBuild.isEmpty, startedBuild != currentBuild { return true }
+        if let bootTime, bootTime > startedAt { return true }
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime]
+        for line in events.reversed() {
+            guard let space = line.firstIndex(of: " "), let date = formatter.date(from: String(line[..<space])) else { continue }
+            if date < startedAt.addingTimeInterval(-1) { break }
+            if line[space...].contains("остановка, причина") { return true }
+        }
+        return false
+    }
+
     /// - Parameters:
     ///   - systemReason: the system's last disconnect error, if any.
     ///   - memory: the extension's last memory sample.

@@ -1070,14 +1070,25 @@ final class ServerListView: UIScrollView {
     /// changes, subscriptions and servers glide from where they were (a short
     /// spring); anything else is shown at once.
     func set(_ next: [Section], open: Set<Int64>) {
-        let reorder = window != nil && link == nil && !UIAccessibility.isReduceMotionEnabled && Self.isReorder(sections, next)
-        let oldSurfaceY = surfaces.mapValues(\.frame.minY)
+        // 3.3 beta 4: the same content again (the list is told twice about one
+        // choice: the library and the order) keeps its rows and any glide under
+        // way. Recycling them mid-glide sent cards under other servers' names
+        // and left gaps and overlaps on the device.
+        let unchanged = next == sections && next.allSatisfy { section in
+            springs[section.id]?.target == (!section.standalone && open.contains(section.id) ? 1 : 0)
+        }
+        let reorder = !unchanged && window != nil && link == nil && !UIAccessibility.isReduceMotionEnabled && Self.isReorder(sections, next)
+        // Where things are on screen now: a glide that is still running starts
+        // the next one from its current point, not from where it was going.
+        func shown(_ view: UIView) -> CGFloat { view.layer.presentation()?.frame.minY ?? view.frame.minY }
+        let oldSurfaceY = surfaces.mapValues { shown($0) }
         var oldRowY: [String: CGFloat] = [:]
         if reorder {
             for section in sections where !section.standalone {
                 let top = rowsTop(section) + 3
                 for (index, node) in section.nodes.enumerated() { oldRowY[Self.key(section.id, node)] = top + CGFloat(index) * Self.rowPitch }
             }
+            for (key, row) in rows { oldRowY[key] = shown(row) }
         }
         sections = next
         let ids = Set(next.map(\.id))
@@ -1104,12 +1115,18 @@ final class ServerListView: UIScrollView {
                 surfaces[section.id] = surface
             }
         }
-        if !reorder {
+        if !reorder, !unchanged {
             for (key, row) in rows { recycle(row); rows[key] = nil }
+            for surface in surfaces.values { surface.layer.removeAllAnimations() }
         }
         // Rows are built ahead, so the first frames of a disclosure only place them.
         while pool.count < 16 { pool.append(makeRow()) }
         reconfigureHeaders()
+        if unchanged {
+            reconfigureRows()
+            for row in rows.values { row.actions = actionsForRow?(row.key.subscription, row.key.node) ?? [] }
+            return
+        }
         layoutList()
         guard reorder else { return }
         // Everything is in its new place: put it back where it was and let it glide.
@@ -1117,13 +1134,15 @@ final class ServerListView: UIScrollView {
         let surfaceTargets = surfaces.mapValues(\.frame)
         let rowTargets = rows.mapValues(\.frame)
         for (id, surface) in surfaces {
+            surface.layer.removeAllAnimations()
             if let y = oldSurfaceY[id], y != surface.frame.minY { surface.frame.origin.y = y }
         }
         for (key, row) in rows {
+            row.layer.removeAllAnimations()
             if let y = oldRowY[key], y != row.frame.minY { row.frame.origin.y = y }
         }
         UIView.animate(withDuration: 0.32, delay: 0, usingSpringWithDamping: 0.9, initialSpringVelocity: 0,
-                       options: [.allowUserInteraction, .beginFromCurrentState]) {
+                       options: [.allowUserInteraction]) {
             for (id, frame) in surfaceTargets { self.surfaces[id]?.frame = frame }
             for (key, frame) in rowTargets { self.rows[key]?.frame = frame }
         }
@@ -1462,6 +1481,8 @@ final class ServerListView: UIScrollView {
     }
 
     private func recycle(_ row: ServerRowView) {
+        // 3.3 beta 4: a row taken mid-glide must not carry the glide to its next server.
+        row.layer.removeAllAnimations()
         row.removeFromSuperview()
         row.close(animated: false)
         row.onSlide = nil

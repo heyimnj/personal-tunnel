@@ -124,6 +124,9 @@ final class ClassicServersViewController: UIViewController, UITableViewDataSourc
         groupProgress.text = progress.total > 0 ? Lf("ПРОВЕРЕНО %@ ИЗ %@", "\(progress.done)", "\(progress.total)") : ""
     }
 
+    /// Rows are moving to a new order (`reload`).
+    private var moving = false
+
     private func reload() {
         let library = App.shared.library
         subscription = library.activeSubscription
@@ -184,18 +187,25 @@ final class ClassicServersViewController: UIViewController, UITableViewDataSourc
         groupCount.text = String(format: "%02d", rows.count)
         // 3.3 beta 3: the same servers in another order glide to their places.
         let next = rows.map(\.id)
+        // 3.3 beta 4: the same order again while rows are moving: the move's own
+        // reload at its end shows the news; reloading now cut the move short.
+        if previous == next, moving { return }
         guard previous != next, previous.count == next.count, Set(previous) == Set(next), table.window != nil,
               !UIAccessibility.isReduceMotionEnabled else {
             table.reloadData()
             return
         }
         let from = Dictionary(previous.enumerated().map { ($1, $0) }, uniquingKeysWith: { first, _ in first })
+        moving = true
         table.performBatchUpdates({
             for (index, id) in next.enumerated() {
                 guard let old = from[id], old != index else { continue }
                 self.table.moveRow(at: IndexPath(row: old, section: 0), to: IndexPath(row: index, section: 0))
             }
-        }, completion: { [weak self] _ in self?.table.reloadData() })
+        }, completion: { [weak self] _ in
+            self?.moving = false
+            self?.table.reloadData()
+        })
     }
 
     func tableView(_: UITableView, numberOfRowsInSection _: Int) -> Int { rows.count }

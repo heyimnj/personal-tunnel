@@ -191,7 +191,12 @@ class ClassicPage: UIViewController {
     }
 
     private func orderFrames() -> [String: CGRect] {
-        orderViews().mapValues { $0.convert($0.bounds, to: content) }
+        // 3.3 beta 4: where a view is on screen now, so a rebuild during a glide
+        // (the order is reported twice for one choice) carries on from there.
+        orderViews().mapValues { view in
+            let lift = view.layer.presentation()?.affineTransform().ty ?? 0
+            return view.convert(view.bounds, to: content).offsetBy(dx: 0, dy: lift)
+        }
     }
 
     func build() {}

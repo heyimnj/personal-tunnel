@@ -24,8 +24,10 @@ final class App {
     /// The server the VPN is connected (or connecting) to: it rises in its
     /// subscription's list under the pinned ones, and goes back when the VPN is off.
     var liftedServer: String? {
-        let state = tunnel.state.value
-        guard state.isOn || state == .connecting, let subscription = library.activeSubscription,
+        // 3.3 beta 4: it stays up while the VPN restarts on another server (stopping,
+        // the beat before the start, starting): it went back and rose again in
+        // that time, and the list jerked.
+        guard tunnel.state.value != .disconnected || reconnecting, let subscription = library.activeSubscription,
               let node = library.selectedNodeID(in: subscription) else { return nil }
         return Arrangement.server(subscription.id, node)
     }
@@ -65,6 +67,11 @@ final class App {
         tunnel.state.observe(self) { [weak self] state in
             guard let self else { return }
             self.connectionOrderChanged()
+            if self.refreshWhenSettled, state == .connected || state == .disconnected {
+                self.refreshWhenSettled = false
+                // A moment for the tunnel's routes to settle.
+                DispatchQueue.main.asyncAfter(deadline: .now() + (state == .connected ? 1.5 : 0)) { [weak self] in self?.refreshAll() }
+            }
             if state == .connected {
                 self.core.start()
                 self.retryAfterConnecting()
@@ -72,9 +79,13 @@ final class App {
                 self.core.stop()
                 self.latency.cancel()
                 if self.reconnecting {
-                    self.reconnecting = false
-                    // A beat for the system to release the old session.
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) { [weak self] in self?.connect() }
+                    // A beat for the system to release the old session. Still
+                    // «reconnecting» until then: the connected server keeps its place.
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) { [weak self] in
+                        guard let self, self.reconnecting else { return }
+                        self.connect()
+                        self.connectionOrderChanged()
+                    }
                 }
             }
         }
@@ -89,7 +100,15 @@ final class App {
             if Prefs.refreshedForBuild != build {
                 Prefs.refreshedForBuild = build
                 if self.library.subscriptions.contains(where: \.isRemote) {
-                    self.refreshAll()
+                    // 3.3 beta 4: not while the VPN is coming up or going down (after
+                    // an update iOS brings it back by itself): those downloads started
+                    // on one network and timed out on the other («The request timed
+                    // out»), and a manual refresh a minute later worked.
+                    if self.tunnel.state.value.isBusy {
+                        self.refreshWhenSettled = true
+                    } else {
+                        self.refreshAll()
+                    }
                     return
                 }
             }
@@ -118,6 +137,10 @@ final class App {
             tunnel.stop()
         }
     }
+
+    /// The launch after an update found the VPN coming up or going down: the
+    /// subscriptions are fetched once it has settled.
+    private var refreshWhenSettled = false
 
     /// Set while the tunnel is stopped to come straight back with another server.
     private var reconnecting = false
@@ -154,6 +177,7 @@ final class App {
     }
 
     func connect() {
+        reconnecting = false
         do {
             let config = try store.writeActiveConfig()
             tunnel.start(config: config)
@@ -322,7 +346,8 @@ final class App {
         }
     }
 
-    func refresh(_ id: Int64) {
+    /// `attempt`: 1 for the quiet second try after a network error with the VPN on.
+    func refresh(_ id: Int64, attempt: Int = 0) {
         guard let subscription = library.subscription(id), let url = subscription.url, !refreshing.value.contains(id) else { return }
         refreshing.value.insert(id)
         Task { @MainActor in
@@ -342,6 +367,15 @@ final class App {
                 if self.library.activeSubscription?.id == id { self.reloadTunnel() }
                 if let summary = App.joined(fetched.summary, CertificateCheck.summary(fetched.nodes)) { self.notice.value = summary }
                 if let updated = self.library.subscription(id) { self.autoPing(updated) }
+            } catch let error as URLError where self.tunnel.state.value == .connecting {
+                // 3.3 beta 4: the VPN is coming up under the download: again once it is up.
+                self.retryThroughTunnel.insert(id)
+                self.core.note(Lf("«%@»: сервер подписки не ответил (%@), пока VPN подключался: повтор после подключения.", subscription.name, error.localizedDescription), level: 3)
+            } catch let error as URLError where self.tunnel.state.value.isOn && attempt == 0 {
+                // 3.3 beta 4: the network changed under the download (the VPN came up
+                // or was restarted): one more try a moment later, without a message.
+                self.core.note(Lf("«%@»: сервер подписки не ответил (%@): ещё одна попытка.", subscription.name, error.localizedDescription), level: 3)
+                DispatchQueue.main.asyncAfter(deadline: .now() + 2) { [weak self] in self?.refresh(id, attempt: 1) }
             } catch let error as URLError where !self.tunnel.state.value.isOn {
                 // Without the VPN the subscription server may be out of reach (blocked
                 // networks): try again through the tunnel once it is up.

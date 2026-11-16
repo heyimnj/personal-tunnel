@@ -299,7 +299,7 @@ final class TunnelPlatform: NSObject, LibboxPlatformInterfaceProtocol, LibboxCom
     }
 
     func serviceReload() throws {
-        try provider.reload()
+        try provider.reloadForApp()
     }
 
     func getSystemProxyStatus() throws -> LibboxSystemProxyStatus {

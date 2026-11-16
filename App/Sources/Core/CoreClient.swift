@@ -322,6 +322,23 @@ final class CoreClient {
 
     // MARK: One-off commands
 
+    /// 3.3 beta 4: asks the running tunnel to load the stored configuration again,
+    /// over the core's command socket (the extension's `serviceReload`). The
+    /// system's message to the extension never reached it on the device (beta 3:
+    /// every server change restarted the VPN). nil: the new configuration runs.
+    static func reloadService(completion: @escaping (String?) -> Void) {
+        DispatchQueue.global(qos: .userInitiated).async {
+            var failure: String?
+            do {
+                guard let client = LibboxNewStandaloneCommandClient() else { throw NSError(domain: "PersonalTunnel", code: 1) }
+                try client.serviceReload()
+            } catch {
+                failure = Redactor.redact(error.localizedDescription)
+            }
+            DispatchQueue.main.async { completion(failure) }
+        }
+    }
+
     /// Switches the server inside the running tunnel.
     static func select(tag: String, completion: @escaping (Bool) -> Void) {
         DispatchQueue.global(qos: .userInitiated).async {

@@ -41,4 +41,26 @@ final class TunnelHealthTests: XCTestCase {
         XCTAssertTrue(report.details.contains("a\nb"))
         XCTAssertTrue(report.details.contains("[mem]"))
     }
+
+    func testExpectedEnds() {
+        let start = Date(timeIntervalSince1970: 1_800_000_000)
+        let line = { (offset: TimeInterval, text: String) -> String in
+            let formatter = ISO8601DateFormatter()
+            formatter.formatOptions = [.withInternetDateTime]
+            return formatter.string(from: start.addingTimeInterval(offset)) + " " + text
+        }
+        // An unexplained end is reported.
+        XCTAssertFalse(CrashReport.isExpectedEnd(startedAt: start, startedBuild: "252", currentBuild: "252", bootTime: start.addingTimeInterval(-600),
+                                                 events: [line(0, "запуск, ядро combined"), line(60, "[mem] used 30 MiB")]))
+        // An update replaced the extension.
+        XCTAssertTrue(CrashReport.isExpectedEnd(startedAt: start, startedBuild: "252", currentBuild: "253", bootTime: nil, events: []))
+        // The device restarted after the start.
+        XCTAssertTrue(CrashReport.isExpectedEnd(startedAt: start, startedBuild: nil, currentBuild: "253", bootTime: start.addingTimeInterval(60), events: []))
+        // The extension logged its stop after this start.
+        XCTAssertTrue(CrashReport.isExpectedEnd(startedAt: start, startedBuild: "253", currentBuild: "253", bootTime: nil,
+                                                events: [line(0, "запуск, ядро combined"), line(30, "остановка, причина 9")]))
+        // A stop before this start does not count.
+        XCTAssertFalse(CrashReport.isExpectedEnd(startedAt: start, startedBuild: "253", currentBuild: "253", bootTime: nil,
+                                                 events: [line(-30, "остановка, причина 1"), line(0, "запуск, ядро combined")]))
+    }
 }

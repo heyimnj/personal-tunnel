@@ -33,6 +33,10 @@ enum SubscriptionService {
     static func fetch(url text: String, device: SubscriptionRequest.Device?) async throws -> Fetched {
         let url = try SubscriptionRequest.address(text)
         var lastError: Error = ImportError(L("Подписка не загрузилась."))
+        // 3.3 beta 4: a session of its own: no connection kept from before the VPN
+        // came up or restarted (a launch after an update timed out on one).
+        let session = URLSession(configuration: .ephemeral)
+        defer { session.finishTasksAndInvalidate() }
         for attempt in SubscriptionRequest.attempts(device: device) {
             let agent = attempt.agent
             var request = URLRequest(url: url, cachePolicy: .reloadIgnoringLocalCacheData, timeoutInterval: 20)
@@ -40,7 +44,7 @@ enum SubscriptionService {
             request.setValue("text/plain, application/json, */*", forHTTPHeaderField: "Accept")
             for (key, value) in attempt.headers { request.setValue(value, forHTTPHeaderField: key) }
             do {
-                let (data, response) = try await URLSession.shared.data(for: request, delegate: RedirectGuard())
+                let (data, response) = try await session.data(for: request, delegate: RedirectGuard())
                 guard let http = response as? HTTPURLResponse else { throw ImportError(L("Сервер подписки не ответил.")) }
                 if (300 ..< 400).contains(http.statusCode) {
                     // RedirectGuard refused it: from https to http.
@@ -59,7 +63,7 @@ enum SubscriptionService {
                 }
                 var nodes = result.nodes
                 var added = 0
-                if result.format == .xray, agent != SubscriptionRequest.plainAgent, let plain = await plainList(url) {
+                if result.format == .xray, agent != SubscriptionRequest.plainAgent, let plain = await plainList(url, session: session) {
                     let extra = SubscriptionMerge.missing(from: plain, in: nodes)
                     nodes += extra
                     added = extra.count
@@ -107,11 +111,11 @@ enum SubscriptionService {
 
     /// The same subscription as a plain client sees it (no Happ identity): some
     /// panels leave servers out of the Xray JSON they give Happ.
-    private static func plainList(_ url: URL) async -> [ParsedNode]? {
+    private static func plainList(_ url: URL, session: URLSession) async -> [ParsedNode]? {
         var request = URLRequest(url: url, cachePolicy: .reloadIgnoringLocalCacheData, timeoutInterval: 20)
         request.setValue(SubscriptionRequest.plainAgent, forHTTPHeaderField: "User-Agent")
         request.setValue("text/plain, application/json, */*", forHTTPHeaderField: "Accept")
-        guard let (data, response) = try? await URLSession.shared.data(for: request, delegate: RedirectGuard()),
+        guard let (data, response) = try? await session.data(for: request, delegate: RedirectGuard()),
               let http = response as? HTTPURLResponse, (200 ..< 300).contains(http.statusCode),
               let result = try? ContentImporter.parse(String(decoding: data, as: UTF8.self)),
               !SubscriptionStub.isStub(result.nodes.map(\.name)) else { return nil }
