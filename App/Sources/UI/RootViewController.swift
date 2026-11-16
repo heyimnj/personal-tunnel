@@ -15,6 +15,17 @@ final class RootViewController: UIViewController {
             App.shared.notice.value = nil
             self.show(message)
         }
+        // 3.3 (PT-08): the VPN did not start even on its second try.
+        App.shared.tunnel.unprotected.observe(self) { [weak self] reason in
+            guard let self, let reason else { return }
+            App.shared.tunnel.unprotected.value = nil
+            let alert = UIAlertController(title: L("VPN не запущен, трафик не защищён"), message: reason, preferredStyle: .alert)
+            alert.addAction(UIAlertAction(title: L("Повторить"), style: .default) { _ in App.shared.connect() })
+            alert.addAction(UIAlertAction(title: "OK", style: .cancel))
+            var top: UIViewController = self
+            while let presented = top.presentedViewController { top = presented }
+            top.present(alert, animated: true)
+        }
         App.shared.tunnel.crash.observe(self) { [weak self] crash in
             guard let self, let crash else { return }
             App.shared.tunnel.crash.value = nil

@@ -542,7 +542,7 @@
 "Как сервер пришёл от провайдера" = "The server as the provider gave it";
 "VLESS с TLS работает через Xray-core, как в Happ." = "VLESS over TLS runs through Xray-core, as in Happ.";
 "Kill switch" = "Kill switch";
-"Пока VPN включён, но не подключён (переподключение, сбой), приложения не выходят в интернет напрямую. Действует со следующего подключения." = "While the VPN is on but not connected (reconnecting, a failure), apps do not reach the internet directly. Takes effect from the next connection.";
+"Пока VPN включён, но не подключён (переподключение, сбой), приложения не выходят в интернет напрямую. Исключения iOS: push-уведомления Apple и службы оператора (звонки, SMS) идут мимо VPN всегда. Действует со следующего подключения." = "While the VPN is on but not connected (reconnecting, a failure), apps do not reach the internet directly. iOS exceptions: Apple push notifications and carrier services (calls, SMS) always go around the VPN. Takes effect from the next connection.";
 "Группа серверов" = "Server group";
 "Серверы группы" = "Servers in the group";
 "Группа сама выбирает из включённых серверов тот, что отвечает быстрее." = "The group picks whichever of the servers turned on answers fastest.";
@@ -590,3 +590,5 @@
 "сертификат не проверяется" = "certificate not checked";
 "Сертификат не проверяется у серверов: %@. Соединение с ними можно перехватить." = "Certificate not checked on servers: %@. Connections to them can be intercepted.";
 "Сервер не сменился без перезапуска (%@): VPN перезапускается." = "The server did not change without a restart (%@): the VPN restarts.";
+"VPN не запущен, трафик не защищён" = "The VPN is not running: traffic is not protected";
+"Повторить" = "Try again";

@@ -27,6 +27,11 @@ final class TunnelController {
     let crash = Observable<TunnelCrash?>(nil)
     /// The system's VPN configuration has been read: `state` is the real one.
     let loaded = Observable(false)
+    /// 3.3 (PT-08): the VPN did not start even on the second try: why. Shown as
+    /// «VPN не запущен, трафик не защищён», once.
+    let unprotected = Observable<String?>(nil)
+    /// Starts tried again after a failure since the last one asked for (at most one).
+    private var retries = 0
 
     private var manager: NETunnelProviderManager?
     private var observers: [NSObjectProtocol] = []
@@ -124,13 +129,16 @@ final class TunnelController {
         }
         // 3.1.7: a failed start goes «connecting» → «disconnecting» → «disconnected»;
         // its error was only read from the first two and never shown.
-        if next == .connected { startRequested = false }
+        if next == .connected {
+            startRequested = false
+            retries = 0
+        }
         if next == .disconnected, state.value != .disconnected {
             if let message = AppGroup.defaults.string(forKey: SharedKey.lastTunnelError), !message.isEmpty {
                 AppGroup.defaults.removeObject(forKey: SharedKey.lastTunnelError)
-                lastError.value = TunnelText.localize(message)
-                // A start that fails is not retried by iOS over and over (3.1.11).
-                disableOnDemand()
+                // 3.3 (PT-08): one more try, then a warning that cannot be missed;
+                // On Demand is turned off only then (iOS would retry over and over, 3.1.11).
+                if !retryOnce() { failed(TunnelText.localize(message)) }
             } else if startRequested, AppGroup.defaults.double(forKey: SharedKey.tunnelStartedAt) == 0 {
                 // 3.1.14: the extension never ran (nothing written, no crash to
                 // report): the system says why, e.g. the extension is not signed
@@ -146,8 +154,8 @@ final class TunnelController {
                         text += " " + Lf("Нет доступа к общей группе приложения (%@): проверьте подпись приложения и расширения.", AppGroup.identifier)
                     }
                     DispatchQueue.main.async {
-                        self?.lastError.value = Lf("VPN не запустился: %@", "\(text)")
-                        self?.disableOnDemand()
+                        guard let self, !self.retryOnce() else { return }
+                        self.failed(Lf("VPN не запустился: %@", "\(text)"))
                     }
                 }
             }
@@ -261,6 +269,7 @@ final class TunnelController {
     private static let startGrace: TimeInterval = 10
 
     func start(config: String) {
+        retries = 0
         // 3.1.8: an error from an earlier start that was never shown (3.1.6 lost
         // them all) would come up as this start's; only a new one counts.
         AppGroup.defaults.removeObject(forKey: SharedKey.lastTunnelError)
@@ -345,6 +354,34 @@ final class TunnelController {
                 done()
             }
         }
+    }
+
+    /// 3.3 (PT-08): a failed start is tried once more with the stored
+    /// configuration, two seconds later. False when it was tried already.
+    private func retryOnce() -> Bool {
+        guard retries == 0, let manager else { return false }
+        retries += 1
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2) { [weak self] in
+            guard let self, self.state.value == .disconnected else { return }
+            self.startPending = Date()
+            self.state.set(.connecting)
+            do {
+                try manager.connection.startVPNTunnel()
+            } catch {
+                self.startPending = nil
+                self.failed(error.localizedDescription)
+            }
+            self.recheckStart()
+        }
+        return true
+    }
+
+    /// The start failed for good: On Demand off, and the owner is told the
+    /// traffic is not protected.
+    private func failed(_ reason: String) {
+        retries = 0
+        disableOnDemand()
+        unprotected.value = reason
     }
 
     /// Turns off the system's reconnection without stopping anything.

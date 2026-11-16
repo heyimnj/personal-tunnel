@@ -31,6 +31,8 @@ final class App {
         #else
         paths = nil
         #endif
+        // 3.3 (PT-08): before the store marks this install as run.
+        Prefs.seedKillSwitch(hasLegacyData: paths.map { FileManager.default.fileExists(atPath: $0.legacyDatabase.path) || FileManager.default.fileExists(atPath: $0.library.path) } ?? false)
         store = LibraryStore(paths: paths)
         if let paths { CoreClient.setUp(paths: paths) }
         tunnel.state.observe(self) { [weak self] state in

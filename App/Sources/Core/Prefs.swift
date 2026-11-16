@@ -197,6 +197,15 @@ enum Prefs {
         set { defaults.set(newValue, forKey: "pt.net.killSwitch") }
     }
 
+    /// 3.3 (PT-08, the owner's decision): the kill switch is on for a new install;
+    /// an install that ran before keeps what it had (off unless turned on). Runs
+    /// once at launch, before anything marks the install as run.
+    static func seedKillSwitch(hasLegacyData: Bool) {
+        guard defaults.object(forKey: "pt.net.killSwitch") == nil else { return }
+        let ranBefore = defaults.object(forKey: "pt.migrated.v1") != nil || hasLegacyData
+        killSwitch = !ranBefore
+    }
+
     /// «Защищённый DNS»: the system enforces the tunnel's routes.
     static var secureDNS: Bool {
         get { bool("pt.net.secureDNS", false) }
