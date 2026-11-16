@@ -70,7 +70,7 @@ final class App {
             if self.refreshWhenSettled, state == .connected || state == .disconnected {
                 self.refreshWhenSettled = false
                 // A moment for the tunnel's routes to settle.
-                DispatchQueue.main.asyncAfter(deadline: .now() + (state == .connected ? 1.5 : 0)) { [weak self] in self?.refreshAll() }
+                DispatchQueue.main.asyncAfter(deadline: .now() + (state == .connected ? 1.5 : 0)) { [weak self] in self?.refreshAll(automatic: true) }
             }
             if state == .connected {
                 self.core.start()
@@ -95,25 +95,18 @@ final class App {
             guard loaded, let self else { return }
             // 3.1.2: a new build may read subscriptions better (what a server is
             // made of is decided when it is imported): every subscription is
-            // fetched again once after an update.
+            // fetched again once after an update. 3.3 beta 4: and at every launch
+            // while «Автообновление подписок» is on (the owner's choice).
             let build = Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? ""
-            if Prefs.refreshedForBuild != build {
-                Prefs.refreshedForBuild = build
-                if self.library.subscriptions.contains(where: \.isRemote) {
-                    // 3.3 beta 4: not while the VPN is coming up or going down (after
-                    // an update iOS brings it back by itself): those downloads started
-                    // on one network and timed out on the other («The request timed
-                    // out»), and a manual refresh a minute later worked.
-                    if self.tunnel.state.value.isBusy {
-                        self.refreshWhenSettled = true
-                    } else {
-                        self.refreshAll()
-                    }
-                    return
-                }
-            }
+            let newBuild = Prefs.refreshedForBuild != build
+            Prefs.refreshedForBuild = build
+            if Prefs.autoUpdateSubscriptions || newBuild, self.refreshAutomatically() { return }
             self.autoPing()
         }
+        NotificationCenter.default.addObserver(forName: UIApplication.willEnterForegroundNotification, object: nil, queue: .main) { [weak self] _ in
+            self?.returnedToApp()
+        }
+        startAutoRefreshClock()
         tunnel.lastError.observe(self, fireNow: false) { [weak self] message in
             if let message { self?.notice.value = message }
         }
@@ -142,6 +135,60 @@ final class App {
     /// subscriptions are fetched once it has settled.
     private var refreshWhenSettled = false
 
+    // MARK: Automatic subscription updates (3.3 beta 4)
+
+    /// When subscriptions were last fetched on their own.
+    private var autoRefreshedAt: Date?
+    private var autoRefreshTimer: Timer?
+    /// A return to the app sooner than this after the last automatic update does
+    /// not fetch again (switching between apps).
+    static let autoRefreshPause: TimeInterval = 5 * 60
+    /// Each subscription is fetched again when its last update is this old, also
+    /// while the app stays open.
+    static let autoRefreshAge: TimeInterval = 24 * 60 * 60
+
+    /// Every remote subscription is fetched, quietly (failures go to the service
+    /// log), not while the VPN is coming up or going down: those downloads
+    /// started on one network and timed out on the other. False: nothing to fetch.
+    @discardableResult
+    private func refreshAutomatically() -> Bool {
+        guard library.subscriptions.contains(where: \.isRemote) else { return false }
+        autoRefreshedAt = Date()
+        if tunnel.state.value.isBusy {
+            refreshWhenSettled = true
+        } else {
+            refreshAll(automatic: true)
+        }
+        return true
+    }
+
+    /// Back in the app: the subscriptions again, unless that was a moment ago.
+    private func returnedToApp() {
+        guard Prefs.autoUpdateSubscriptions, tunnel.loaded.value else { return }
+        if let last = autoRefreshedAt, Date().timeIntervalSince(last) < Self.autoRefreshPause {
+            refreshStale()
+            return
+        }
+        refreshAutomatically()
+    }
+
+    /// Subscriptions not updated for a day, while the app is open (checked every half hour).
+    private func refreshStale() {
+        guard Prefs.autoUpdateSubscriptions, !tunnel.state.value.isBusy else { return }
+        let due = Date().addingTimeInterval(-Self.autoRefreshAge)
+        for subscription in library.subscriptions where subscription.isRemote && (subscription.updatedAt ?? .distantPast) < due {
+            refresh(subscription.id, automatic: true)
+        }
+    }
+
+    private func startAutoRefreshClock() {
+        autoRefreshTimer?.invalidate()
+        let timer = Timer(timeInterval: 30 * 60, repeats: true) { [weak self] _ in self?.refreshStale() }
+        timer.tolerance = 5 * 60
+        RunLoop.main.add(timer, forMode: .common)
+        autoRefreshTimer = timer
+    }
+
     /// Set while the tunnel is stopped to come straight back with another server.
     private var reconnecting = false
 
@@ -165,10 +212,17 @@ final class App {
             return
         }
         latency.cancel()
+        let session = tunnel.connectedSince.value
         tunnel.reload { [weak self] error in
             guard let self else { return }
             guard let error else {
                 self.core.note(L("Сервер сменён без перезапуска VPN."))
+                return
+            }
+            // 3.3 beta 4: the tunnel has started again meanwhile (iOS brings it back
+            // after a fall) with the stored configuration: already on this server.
+            if self.tunnel.connectedSince.value != session, self.tunnel.state.value != .disconnected {
+                self.core.note(Lf("Сервер не сменился без перезапуска (%@), но VPN уже запустился заново на нём.", error), level: 3)
                 return
             }
             self.core.note(Lf("Сервер не сменился без перезапуска (%@): VPN перезапускается.", error), level: 3)
@@ -347,8 +401,14 @@ final class App {
     }
 
     /// `attempt`: 1 for the quiet second try after a network error with the VPN on.
-    func refresh(_ id: Int64, attempt: Int = 0) {
+    /// `automatic`: not asked for (launch, return, a day old): its problems go to
+    /// the service log, not on screen.
+    func refresh(_ id: Int64, attempt: Int = 0, automatic: Bool = false) {
         guard let subscription = library.subscription(id), let url = subscription.url, !refreshing.value.contains(id) else { return }
+        let say = { [weak self] (text: String) in
+            guard let self else { return }
+            if automatic { self.core.note(text, level: 3) } else { self.notice.value = text }
+        }
         refreshing.value.insert(id)
         Task { @MainActor in
             defer { self.refreshing.value.remove(id) }
@@ -356,6 +416,7 @@ final class App {
                 let device = subscription.sendsDeviceIdentity ? SubscriptionService.device(hwid: subscription.hwid(device: DeviceIdentity.hwid)) : nil
                 let fetched = try await SubscriptionService.fetch(url: url, device: device)
                 self.logImport(fetched, name: subscription.name)
+                let before = self.library.subscription(id)?.nodes
                 self.store.update { library in
                     guard var current = library.subscription(id) else { return }
                     current.nodes = fetched.nodes
@@ -364,8 +425,10 @@ final class App {
                     current.warnings = fetched.summary.map { [$0] } ?? []
                     library.replace(current)
                 }
-                if self.library.activeSubscription?.id == id { self.reloadTunnel() }
-                if let summary = App.joined(fetched.summary, CertificateCheck.summary(fetched.nodes)) { self.notice.value = summary }
+                // 3.3 beta 4: the running tunnel reloads only when the servers changed
+                // (automatic updates come at every launch now).
+                if self.library.activeSubscription?.id == id, before != fetched.nodes { self.reloadTunnel() }
+                if let summary = App.joined(fetched.summary, CertificateCheck.summary(fetched.nodes)) { say(summary) }
                 if let updated = self.library.subscription(id) { self.autoPing(updated) }
             } catch let error as URLError where self.tunnel.state.value == .connecting {
                 // 3.3 beta 4: the VPN is coming up under the download: again once it is up.
@@ -375,14 +438,14 @@ final class App {
                 // 3.3 beta 4: the network changed under the download (the VPN came up
                 // or was restarted): one more try a moment later, without a message.
                 self.core.note(Lf("«%@»: сервер подписки не ответил (%@): ещё одна попытка.", subscription.name, error.localizedDescription), level: 3)
-                DispatchQueue.main.asyncAfter(deadline: .now() + 2) { [weak self] in self?.refresh(id, attempt: 1) }
+                DispatchQueue.main.asyncAfter(deadline: .now() + 2) { [weak self] in self?.refresh(id, attempt: 1, automatic: automatic) }
             } catch let error as URLError where !self.tunnel.state.value.isOn {
                 // Without the VPN the subscription server may be out of reach (blocked
                 // networks): try again through the tunnel once it is up.
                 self.retryThroughTunnel.insert(id)
-                self.notice.value = Lf("«%@»: сервер подписки не ответил (%@). Без VPN он может быть недоступен: подписка обновится сама после подключения.", subscription.name, error.localizedDescription)
+                say(Lf("«%@»: сервер подписки не ответил (%@). Без VPN он может быть недоступен: подписка обновится сама после подключения.", subscription.name, error.localizedDescription))
             } catch {
-                self.notice.value = "«\(subscription.name)»: \(error.localizedDescription)"
+                say("«\(subscription.name)»: \(error.localizedDescription)")
             }
         }
     }
@@ -412,8 +475,8 @@ final class App {
         }
     }
 
-    func refreshAll() {
-        for subscription in library.subscriptions where subscription.isRemote { refresh(subscription.id) }
+    func refreshAll(automatic: Bool = false) {
+        for subscription in library.subscriptions where subscription.isRemote { refresh(subscription.id, automatic: automatic) }
     }
 
     /// «Удалить все данные» (3.2.1): the VPN is stopped and its configuration

@@ -275,6 +275,13 @@ enum Prefs {
         return options
     }
 
+    /// 3.3 beta 4: «Автообновление подписок» — every subscription is fetched at each
+    /// launch and return to the app, and one a day old also while the app is open.
+    static var autoUpdateSubscriptions: Bool {
+        get { bool("pt.subscriptions.autoUpdate", true) }
+        set { defaults.set(newValue, forKey: "pt.subscriptions.autoUpdate") }
+    }
+
     /// The build that last fetched every subscription again (3.1.2).
     static var refreshedForBuild: String? {
         get { defaults.string(forKey: "pt.refresh.build") }

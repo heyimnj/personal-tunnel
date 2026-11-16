@@ -318,9 +318,18 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
         reasserting = true
         defer { reasserting = false }
         let configuration = try withXray(try readStoredConfiguration(paths), paths: paths)
+        // 3.3 beta 4: Xray-core keeps running when its part did not change (a change
+        // between servers sing-box runs itself). Each restart left memory behind, and
+        // five quick changes ended in a crash of the core.
+        let sameXray = xray != nil && configuration.xray != nil && configuration.xray?.serialized() == xrayRuntime?.serialized()
         xrayRuntime = configuration.xray
-        try startXray(paths)
+        if !sameXray { try startXray(paths) }
         try startService(configuration.config)
+        // What the previous instance held goes back to the system now, not at the
+        // next collection: every reload added about 2 MiB on the device.
+        #if TUNNEL_XRAY
+        PtbridgeFreeMemory()
+        #endif
     }
 
     /// Called by the core when it stops itself.

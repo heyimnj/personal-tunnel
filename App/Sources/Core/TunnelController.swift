@@ -454,6 +454,30 @@ final class TunnelController {
             completion(L("туннель не готов к перезагрузке"))
             return
         }
+        // 3.3 beta 4: one reload at a time. Asked again meanwhile (servers changed
+        // quickly), one more follows with the latest stored configuration and
+        // answers everyone who asked meanwhile: five reloads in eight seconds
+        // ended in a crash of the core on the device.
+        if reloadRunning {
+            reloadWaiting.append(completion)
+            return
+        }
+        reloadRunning = true
+        reloadOnce { [weak self] result in
+            completion(result)
+            guard let self else { return }
+            self.reloadRunning = false
+            let waiting = self.reloadWaiting
+            self.reloadWaiting = []
+            guard !waiting.isEmpty else { return }
+            self.reload { result in waiting.forEach { $0(result) } }
+        }
+    }
+
+    private var reloadRunning = false
+    private var reloadWaiting: [(String?) -> Void] = []
+
+    private func reloadOnce(_ completion: @escaping (String?) -> Void) {
         var answered = false
         let finish = { (result: String?) in
             guard !answered else { return }

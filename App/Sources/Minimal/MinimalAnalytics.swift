@@ -96,6 +96,8 @@ final class SpeedGraphView: UIView {
             layer.lineJoin = .round
             layer.lineCap = .round
         }
+        // Nothing is drawn outside the graph's own box.
+        layer.masksToBounds = true
         layer.addSublayer(grid)
         layer.addSublayer(down)
         layer.addSublayer(up)
@@ -130,7 +132,8 @@ final class SpeedGraphView: UIView {
         path.move(to: CGPoint(x: 0, y: base))
         if offset > 0 { path.addLine(to: CGPoint(x: CGFloat(offset) * step, y: base)) }
         for (index, sample) in samples.enumerated() {
-            let y = base - CGFloat(sample) / CGFloat(peak) * (bounds.height - 6)
+            let share = min(1, max(0, CGFloat(sample) / CGFloat(peak)))
+            let y = base - share * (bounds.height - 6)
             path.addLine(to: CGPoint(x: CGFloat(offset + index) * step, y: y))
         }
         return path.cgPath

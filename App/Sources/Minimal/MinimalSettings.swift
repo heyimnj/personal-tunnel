@@ -114,6 +114,10 @@ final class NetworkSettingsViewController: FormViewController {
             ] : []) + [
                 .note(L("Тест только показывает задержку и не меняет выбранный сервер. Его можно остановить в любой момент.")),
             ]),
+            FormSection(L("Подписки"), [
+                .toggle(title: L("Автообновление подписок"), get: { Prefs.autoUpdateSubscriptions }, set: { Prefs.autoUpdateSubscriptions = $0 }),
+                .note(L("Подписки обновляются сами при каждом открытии приложения и раз в 24 часа, пока оно открыто. Выключено — только вручную.")),
+            ]),
             FormSection(L("Подключение"), [
                 .toggle(title: L("Автоподключение"), get: { Prefs.autoConnect }, set: { Prefs.autoConnect = $0; App.shared.tunnel.applySettings() }),
                 .toggle(title: L("Неизвестные Wi-Fi"), get: { Prefs.unknownWiFi }, set: { Prefs.unknownWiFi = $0; App.shared.tunnel.applySettings() }),

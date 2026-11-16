@@ -629,3 +629,7 @@
 /* 3.3 beta 4 */
 "«%@»: сервер подписки не ответил (%@), пока VPN подключался: повтор после подключения." = "“%@”: the subscription server did not answer (%@) while the VPN was connecting: trying again once it is connected.";
 "«%@»: сервер подписки не ответил (%@): ещё одна попытка." = "“%@”: the subscription server did not answer (%@): trying once more.";
+"Сервер не сменился без перезапуска (%@), но VPN уже запустился заново на нём." = "The server did not change without a restart (%@), but the VPN has already started again on it.";
+"ПОДПИСКИ" = "SUBSCRIPTIONS";
+"Автообновление подписок" = "Update subscriptions automatically";
+"Подписки обновляются сами при каждом открытии приложения и раз в 24 часа, пока оно открыто. Выключено — только вручную." = "Subscriptions update themselves every time the app is opened, and every 24 hours while it stays open. Off: only by hand.";

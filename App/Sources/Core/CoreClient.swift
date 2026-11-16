@@ -200,6 +200,10 @@ final class CoreClient {
         var value = value
         // A new tunnel starts its count again from zero; so does the base.
         if value.uplinkTotal < totalsBase.up || value.downlinkTotal < totalsBase.down { totalsBase = (0, 0) }
+        // 3.3 beta 4: a reload starts the core's counters again, and its first rate
+        // came out negative: the graph drew far below its card.
+        value.uplink = max(0, value.uplink)
+        value.downlink = max(0, value.downlink)
         rawTotals = (value.uplinkTotal, value.downlinkTotal)
         value.uplinkTotal -= totalsBase.up
         value.downlinkTotal -= totalsBase.down

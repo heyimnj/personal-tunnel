@@ -463,6 +463,10 @@ final class ClassicSettingsViewController: ClassicPage {
             toggle(L("Автопинг"), Prefs.autoPing) { Prefs.autoPing = $0 },
             Classic.body(L("Задержка серверов проверяется сама при открытии приложения и после обновления подписки."), 12, .regular, .secondaryLabel, lines: 0),
         ] as [UIView] : [])))
+        content.addArrangedSubview(section(L("ПОДПИСКИ"), [
+            toggle(L("Автообновление подписок"), Prefs.autoUpdateSubscriptions) { Prefs.autoUpdateSubscriptions = $0 },
+            Classic.body(L("Подписки обновляются сами при каждом открытии приложения и раз в 24 часа, пока оно открыто. Выключено — только вручную."), 12, .regular, .secondaryLabel, lines: 0),
+        ], spacing: 14))
         content.addArrangedSubview(section(L("ПОДКЛЮЧЕНИЕ"), [
             toggle(L("Автоподключение"), Prefs.autoConnect) { Prefs.autoConnect = $0; App.shared.tunnel.applySettings() },
             toggle(L("Неизвестные Wi-Fi"), Prefs.unknownWiFi) { Prefs.unknownWiFi = $0; App.shared.tunnel.applySettings() },
