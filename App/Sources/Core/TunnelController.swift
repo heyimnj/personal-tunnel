@@ -168,6 +168,29 @@ final class TunnelController {
     /// The extension clears its start time when it is stopped. Still there with the
     /// tunnel down means the system ended it without a stop.
     private func checkAbnormalEnd() {
+        // 3.2.1: not at once. A «disconnected» can be a moment's news (a stop that is
+        // still running, a configuration being saved, a stale connection object):
+        // the tunnel ran on for 45 minutes after one such report in 3.3 beta 4, and
+        // turning the VPN off showed one in beta 5. Three seconds later the system
+        // is asked again, and the extension has had time to note its stop.
+        guard AppGroup.defaults.double(forKey: SharedKey.tunnelStartedAt) > 0, !abnormalCheckPending else { return }
+        abnormalCheckPending = true
+        DispatchQueue.main.asyncAfter(deadline: .now() + 3) { [weak self] in
+            NETunnelProviderManager.loadAllFromPreferences { managers, _ in
+                DispatchQueue.main.async {
+                    guard let self else { return }
+                    self.abnormalCheckPending = false
+                    let status = managers?.first?.connection.status ?? .disconnected
+                    guard self.state.value == .disconnected, status == .disconnected || status == .invalid else { return }
+                    self.reportAbnormalEnd()
+                }
+            }
+        }
+    }
+
+    private var abnormalCheckPending = false
+
+    private func reportAbnormalEnd() {
         let defaults = AppGroup.defaults
         let started = defaults.double(forKey: SharedKey.tunnelStartedAt)
         guard started > 0 else { return }

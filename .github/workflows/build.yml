@@ -208,7 +208,7 @@ jobs:
           set -euo pipefail
           VERSION="$(grep '^MARKETING_VERSION' Config/Base.xcconfig | cut -d= -f2 | tr -d ' ')"
           BUILD="$(grep '^CURRENT_PROJECT_VERSION' Config/Base.xcconfig | cut -d= -f2 | tr -d ' ')"
-          NAME="PTBeta-${VERSION//./_}-${BUILD}-tunnel-${TUNNEL_CORE}-unsigned.ipa"
+          NAME="PersonalTunnel-${VERSION//./_}-${BUILD}-tunnel-${TUNNEL_CORE}-unsigned.ipa"
           APP="build/DerivedData/Build/Products/Release-iphoneos/PersonalTunnel.app"
           test -d "$APP/PlugIns/PacketTunnel.appex"
           test -f "$APP/PlugIns/PacketTunnel.appex/Rules/ad-block.srs"

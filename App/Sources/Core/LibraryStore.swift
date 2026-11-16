@@ -155,11 +155,13 @@ final class LibraryStore {
         // 3.3 (PT-06): no server's address leaves the tunnel any more (3.1.2 sent
         // every app's traffic to them around it); the app's core is bound to the
         // physical interface for its tests instead.
-        // 3.1.6: subscription panels through the VPN (not the ones that are servers too).
-        let servers = Set(ConfigBuilder.serverHosts(of: current.subscriptions))
+        // 3.1.6: subscription panels through the VPN. 3.2.1: the ones that are
+        // servers too as well — they were left out for the servers' own direct rules,
+        // gone since PT-06, so a panel on a server's address followed the Russian
+        // bypass outside the tunnel and timed out there (dial en0: i/o timeout).
         options.subscriptionHosts = Array(Set(current.subscriptions.filter(\.isRemote).compactMap { subscription in
             subscription.url.flatMap { URL(string: $0.trimmingCharacters(in: .whitespacesAndNewlines))?.host?.lowercased() }
-        }).subtracting(servers)).sorted()
+        })).sorted()
         let selected = current.selectedNodeID(in: subscription)
         // 3.1.6: only what the tunnel runs (the chosen server, or all with automatic selection).
         let running = ConfigBuilder.tunnelSubscription(subscription, selected: selected, options: options)

@@ -405,9 +405,9 @@ final class App {
     /// the service log, not on screen.
     func refresh(_ id: Int64, attempt: Int = 0, automatic: Bool = false) {
         guard let subscription = library.subscription(id), let url = subscription.url, !refreshing.value.contains(id) else { return }
-        let say = { [weak self] (text: String) in
+        let say = { [weak self] (text: String, level: Int32) in
             guard let self else { return }
-            if automatic { self.core.note(text, level: 3) } else { self.notice.value = text }
+            if automatic { self.core.note(text, level: level) } else { self.notice.value = text }
         }
         refreshing.value.insert(id)
         Task { @MainActor in
@@ -428,24 +428,26 @@ final class App {
                 // 3.3 beta 4: the running tunnel reloads only when the servers changed
                 // (automatic updates come at every launch now).
                 if self.library.activeSubscription?.id == id, before != fetched.nodes { self.reloadTunnel() }
-                if let summary = App.joined(fetched.summary, CertificateCheck.summary(fetched.nodes)) { say(summary) }
+                if let summary = App.joined(fetched.summary, CertificateCheck.summary(fetched.nodes)) { say(summary, 3) }
                 if let updated = self.library.subscription(id) { self.autoPing(updated) }
             } catch let error as URLError where self.tunnel.state.value == .connecting {
                 // 3.3 beta 4: the VPN is coming up under the download: again once it is up.
                 self.retryThroughTunnel.insert(id)
-                self.core.note(Lf("«%@»: сервер подписки не ответил (%@), пока VPN подключался: повтор после подключения.", subscription.name, error.localizedDescription), level: 3)
+                self.core.note(Lf("«%@»: сервер подписки не ответил (%@), пока VPN подключался: повтор после подключения.", subscription.name, error.localizedDescription), level: 4)
             } catch let error as URLError where self.tunnel.state.value.isOn && attempt == 0 {
                 // 3.3 beta 4: the network changed under the download (the VPN came up
                 // or was restarted): one more try a moment later, without a message.
-                self.core.note(Lf("«%@»: сервер подписки не ответил (%@): ещё одна попытка.", subscription.name, error.localizedDescription), level: 3)
+                self.core.note(Lf("«%@»: сервер подписки не ответил (%@): ещё одна попытка.", subscription.name, error.localizedDescription), level: 4)
                 DispatchQueue.main.asyncAfter(deadline: .now() + 2) { [weak self] in self?.refresh(id, attempt: 1, automatic: automatic) }
             } catch let error as URLError where !self.tunnel.state.value.isOn {
                 // Without the VPN the subscription server may be out of reach (blocked
                 // networks): try again through the tunnel once it is up.
                 self.retryThroughTunnel.insert(id)
-                say(Lf("«%@»: сервер подписки не ответил (%@). Без VPN он может быть недоступен: подписка обновится сама после подключения.", subscription.name, error.localizedDescription))
+                // 3.2.1: an automatic update notes this as information: it is
+                // expected on a network that blocks the panel, and taken care of.
+                say(Lf("«%@»: сервер подписки не ответил (%@). Без VPN он может быть недоступен: подписка обновится сама после подключения.", subscription.name, error.localizedDescription), 4)
             } catch {
-                say("«\(subscription.name)»: \(error.localizedDescription)")
+                say("«\(subscription.name)»: \(error.localizedDescription)", 3)
             }
         }
     }
@@ -471,7 +473,8 @@ final class App {
         guard !ids.isEmpty else { return }
         // A moment for the tunnel's routes to settle.
         DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { [weak self] in
-            for id in ids { self?.refresh(id) }
+            // 3.2.1: quietly; the first failure has already been reported.
+            for id in ids { self?.refresh(id, automatic: true) }
         }
     }
 

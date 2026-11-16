@@ -84,7 +84,7 @@ Personal Tunnel — VPN-клиент для iPhone. Серверы и подпи
 **Как получается HWID.** У iPhone есть свой идентификатор: случайный (UUID без дефисов), созданный при первом
 обращении. Если он был ещё в прежних версиях, он сохраняется: тогда он получен из `identifierForVendor` или перенесён
 из 1.x. Хранится только в Keychain, «только на этом устройстве»: в резервные копии он не попадает и на другой iPhone не
-переезжает. Подписка, добавленная начиная с 3.3, отправляет не его, а свой HWID: HMAC-SHA256 от него и хоста панели,
+переезжает. Подписка, добавленная начиная с 3.2.1, отправляет не его, а свой HWID: HMAC-SHA256 от него и хоста панели,
 первые 32 символа. Разные панели не могут сопоставить ваше устройство по HWID. Подписки, добавленные раньше,
 отправляют прежний общий HWID, чтобы панели не посчитали iPhone новым устройством.
 
@@ -180,7 +180,7 @@ VPN прячет ваш трафик от провайдера интернет�
 
 ---
 
-Действует для **Personal Tunnel 3.3 (PTBeta, beta 3, сборка 252)**. Дата: **16 ноября 2026 г.** При изменении
+Действует для **Personal Tunnel 3.2.1 (сборка 255)**. Дата: **16 ноября 2026 г.** При изменении
 поведения приложения политика обновляется вместе с ним.
 
 ---
@@ -270,7 +270,7 @@ followed: the download stops.
 **How the HWID is made.** The iPhone has an identifier of its own: random (a UUID without dashes), made when first
 needed. If it existed in an earlier version it is kept; it then came from `identifierForVendor` or was carried over
 from 1.x. It is stored only in the Keychain, “this device only”: it does not go into backups or move to another iPhone.
-A subscription added from 3.3 on does not send it but an HWID of its own: HMAC-SHA256 of it and the panel's host, the
+A subscription added from 3.2.1 on does not send it but an HWID of its own: HMAC-SHA256 of it and the panel's host, the
 first 32 characters. Different panels cannot match your device by its HWID. Subscriptions added earlier send the
 former shared HWID, so panels do not count the iPhone as a new device.
 
@@ -366,5 +366,5 @@ Left as it is on purpose (details in `audit/security-2026-11.md`):
 
 ---
 
-Applies to **Personal Tunnel 3.3 (PTBeta, beta 3, build 252)**. Date: **16 November 2026**. The policy is updated
+Applies to **Personal Tunnel 3.2.1 (build 255)**. Date: **16 November 2026**. The policy is updated
 whenever the app's behaviour changes.
