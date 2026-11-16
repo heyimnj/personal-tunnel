@@ -20,8 +20,8 @@ final class ShareLinkTests: XCTestCase {
         XCTAssertEqual(node.outbound.at("tls", "reality", "short_id"), "6ba85179e30d4fc2")
         XCTAssertEqual(node.outbound.at("tls", "utls", "fingerprint"), "chrome")
         XCTAssertEqual(node.link, link)
-        XCTAssertEqual(ProtocolFacts(object: node.outbound).summary, "VLESS · REALITY · TCP/RAW · Vision")
-        XCTAssertEqual(ProtocolFacts(object: node.outbound).badges, ["VLESS", "Reality", "TCP", "Vision"])
+        XCTAssertEqual(ProtocolFacts(object: node.outbound).summary, "VLESS · REALITY · TCP/RAW · Vision · sing-box")
+        XCTAssertEqual(ProtocolFacts(object: node.outbound).badges, ["VLESS", "Reality", "TCP", "Vision", "sing-box"])
     }
 
     func testVLESSRealityNeedsItsKey() {
@@ -38,14 +38,14 @@ final class ShareLinkTests: XCTestCase {
         XCTAssertEqual(node.outbound.at("transport", "headers", "Host"), "cdn.example.org")
         XCTAssertEqual(node.outbound.at("tls", "insecure"), true)
         XCTAssertEqual(node.outbound.at("tls", "alpn"), ["h2", "http/1.1"])
-        XCTAssertEqual(ProtocolFacts(object: node.outbound).badges, ["VLESS", "TLS", "WebSocket"])
+        XCTAssertEqual(ProtocolFacts(object: node.outbound).badges, ["VLESS", "TLS", "WebSocket", "sing-box"])
     }
 
     func testVLESSGRPCAndXHTTP() throws {
         let grpc = try ShareLink.parse("vless://uuid@h.example:443?security=reality&pbk=\(realityKey)&sid=&sni=h.example&type=grpc&serviceName=grpc-svc#Finland%201")
         XCTAssertEqual(grpc.outbound.at("transport", "type"), "grpc")
         XCTAssertEqual(grpc.outbound.at("transport", "service_name"), "grpc-svc")
-        XCTAssertEqual(ProtocolFacts(object: grpc.outbound).badges, ["VLESS", "Reality", "gRPC"])
+        XCTAssertEqual(ProtocolFacts(object: grpc.outbound).badges, ["VLESS", "Reality", "gRPC", "sing-box"])
 
         let extra = TextCoding.percentEncode(#"{"xPaddingBytes":"100-1000","noGRPCHeader":true,"scMaxEachPostBytes":{"from":500000,"to":1000000},"xmux":{"maxConcurrency":"16-32","hKeepAlivePeriod":30},"headers":{"X-Test":"1"}}"#)
         let xhttp = try ShareLink.parse("vless://uuid@h.example:443?security=tls&sni=h.example&type=xhttp&host=h.example&path=%2Fxh&mode=packet-up&extra=\(extra)#X")
@@ -112,7 +112,7 @@ final class ShareLinkTests: XCTestCase {
         XCTAssertEqual(node.outbound["server_ports"], ["443:443", "20000:30000"])
         XCTAssertEqual(node.outbound.at("obfs", "type"), "salamander")
         XCTAssertEqual(node.outbound.at("tls", "insecure"), true)
-        XCTAssertEqual(ProtocolFacts(object: node.outbound).summary, "HYSTERIA2 · TLS · QUIC")
+        XCTAssertEqual(ProtocolFacts(object: node.outbound).summary, "HYSTERIA2 · TLS · QUIC · sing-box")
         let short = try ShareLink.parse("hy2://pass@1.1.1.1:8443#x")
         XCTAssertNil(short.outbound.at("tls", "server_name"))
         XCTAssertNil(short.outbound["server_ports"])

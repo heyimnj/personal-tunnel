@@ -249,7 +249,7 @@ final class ImportTests: XCTestCase {
         XCTAssertEqual(group.outbound["outbounds"], ["Самый быстрый | Авто · 1", "Самый быстрый | Авто · 2"])
         XCTAssertEqual(group.members.map { $0["tag"]?.stringValue }, ["Самый быстрый | Авто · 1", "Самый быстрый | Авто · 2"])
         XCTAssertEqual(group.address?.host, "a.example.net")
-        XCTAssertEqual(group.facts.badges, ["VLESS", "TLS", "WebSocket"])
+        XCTAssertEqual(group.facts.badges, ["VLESS", "TLS", "WebSocket", "sing-box"])
         XCTAssertFalse(group.isUDPBased)
         XCTAssertTrue(nodes[3].isUDPBased)
     }

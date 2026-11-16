@@ -15,10 +15,16 @@ public struct ProtocolFacts: Hashable, Sendable {
     /// Run by Xray-core instead of sing-box.
     public var xray = false
 
+    /// The core's tag (3.1.13): every server shows which core runs it, and the
+    /// filter bar can narrow a subscription to either.
+    public static let xrayBadge = "Xray"
+    public static let singBoxBadge = "sing-box"
+    public var coreBadge: String { xray ? Self.xrayBadge : Self.singBoxBadge }
+
     /// The line the Classic interface prints under a server.
     public var summary: String {
         if isMixedGroup { return CoreText.t("Группа · разные протоколы") }
-        return ([proto, security, transport] + (flow.map { [$0] } ?? []) + (xray ? ["Xray"] : [])).joined(separator: " · ")
+        return ([proto, security, transport] + (flow.map { [$0] } ?? []) + [coreBadge]).joined(separator: " · ")
     }
 
     /// Short tags for the Minimal interface, in display order.
@@ -33,7 +39,7 @@ public struct ProtocolFacts: Hashable, Sendable {
         }
         result.append(transport == "TCP/RAW" ? "TCP" : transport)
         if let flow { result.append(flow) }
-        if xray { result.append("Xray") }
+        result.append(coreBadge)
         return result
     }
 

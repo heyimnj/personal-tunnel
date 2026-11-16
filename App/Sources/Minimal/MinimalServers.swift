@@ -19,7 +19,7 @@ final class BadgeRow: UIView {
         guard badges != shown else { return }
         shown = badges
         while labels.count < badges.count {
-            let color = BadgeRow.colors[labels.count % BadgeRow.colors.count]
+            let color = BadgeRow.colors[labels.count % 4]
             let pill = UIView()
             pill.backgroundColor = color.withAlphaComponent(0.13)
             pill.layer.cornerRadius = 8.5
@@ -34,8 +34,23 @@ final class BadgeRow: UIView {
         widths = badges.map { ceil(($0 as NSString).size(withAttributes: [.font: BadgeRow.font]).width) + 12 }
         for (index, label) in labels.enumerated() {
             label.text = index < badges.count ? badges[index] : nil
+            guard index < badges.count else { continue }
+            // The core tag (3.1.13) keeps its own colour wherever it falls in the row.
+            let color = BadgeRow.color(badges[index], at: index)
+            if label.textColor != color {
+                label.textColor = color
+                pills[index].backgroundColor = color.withAlphaComponent(0.13)
+            }
         }
         setNeedsLayout()
+    }
+
+    private static func color(_ badge: String, at index: Int) -> UIColor {
+        switch badge {
+        case ProtocolFacts.xrayBadge: return .systemTeal
+        case ProtocolFacts.singBoxBadge: return .systemIndigo
+        default: return colors[index % 4]
+        }
     }
 
     override func layoutSubviews() {
