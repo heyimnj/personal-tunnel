@@ -1,3 +1,17 @@
+# Следующая сессия: PTBeta 3.3, beta 2 (251)
+
+## 3.3, beta 2 (251): поверх beta 1, та же ветка
+
+- Связь sing-box ↔ Xray-core без локального порта: выход `xray-local` (core/bridge) передаёт соединения в Xray-core
+  того же процесса (`xray.Dial`/`DialUDP`), патч ядра 0005. Unix-сокет не подошёл: SOCKS UDP в Xray-core по нему не
+  работает. Случайные порты и пароли beta 1 убраны.
+- Данные 1.x исключены из бэкапа (не удаляются).
+- Attestation IPA в CI.
+- Beta 1 (250) отправлена владельцу файлом.
+
+Чек-лист beta 1 ниже действует; к нему для beta 2: Xray-серверы — сайты, UDP (звонок в мессенджере, QUIC), пинг,
+смена Wi-Fi ↔ LTE; бэкап Finder без `settings.db`/`configs/`.
+
 # Следующая сессия: PTBeta 3.3, beta 1 (250) — исправления аудита безопасности
 
 ## 3.3, beta 1 (250): ветка `claude/personal-tunnel-security-audit-tg4mo8`

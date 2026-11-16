@@ -102,16 +102,16 @@ Personal Tunnel — VPN-клиент для iPhone. Серверы и подпи
 | Конфигурация, которую запускает VPN | там же: `PersonalTunnel/tunnel.json`, `tunnel-xray.json` | «до первой разблокировки» (VPN по требованию запускается и на заблокированном iPhone) | нет |
 | Журнал расширения | `PersonalTunnel/tunnel-events.log` | то же | нет |
 | Журнал Xray-core, отчёты о падениях ядра (хранятся 7 дней) | `Library/Caches/…` в App Group | то же | нет |
-| Данные версии 1.x, если вы обновлялись с неё | App Group: `settings.db`, `configs/` — не удаляются при обновлении | то же | да |
+| Данные версии 1.x, если вы обновлялись с неё | App Group: `settings.db`, `configs/` — не удаляются при обновлении | то же | нет |
 | HWID | Keychain, «только на этом устройстве» | Keychain iOS | нет |
 | Настройки, избранное, порядок и фильтры серверов (без ключей) | настройки приложения (UserDefaults) | — | да |
 | Шрифт, который вы выбрали сами | папка приложения `Application Support/Fonts` | — | да |
 | Статистика трафика, результаты пинга, журнал ядра на экране | только в памяти, пропадают при закрытии приложения | — | — |
 
 Ключи хранятся в JSON без дополнительного шифрования, под защитой файлов iOS. Ядро больше не делает своих копий
-конфигурации (`configuration.json`), а сделанные прежними версиями удаляются при запуске. Связь между ядрами sing-box и
-Xray-core внутри iPhone идёт через локальный порт со случайным номером и паролем, которые меняются при каждом запуске
-VPN и хранятся только в памяти.
+конфигурации (`configuration.json`), а сделанные прежними версиями удаляются при запуске. Ядра sing-box и Xray-core
+работают в одном процессе и передают соединения друг другу в памяти: локального порта, к которому могло бы
+подключиться другое приложение, нет.
 
 «Резервные копии» в настройках создают файл со всеми ключами — храните его как пароль. Временная копия удаляется сразу
 после сохранения. Восстановление из копии сначала спрашивает подтверждение. Ссылки, скопированные приложением, видны
@@ -171,16 +171,15 @@ VPN прячет ваш трафик от провайдера интернет�
 
 Сервер без проверки сертификата отмечен в списке как «сертификат не проверяется»: соединение с ним можно перехватить.
 
-Что ещё не сделано (подробно — в `audit/security-2026-11.md`):
-- локальный порт между ядрами защищён паролем, но другое приложение может найти открытый порт и по нему догадаться,
-  что VPN включён (Unix-сокет вместо порта требует правки ядра);
-- приложение по-прежнему представляется клиентами INCY и Happ;
-- ключи хранятся в файлах под защитой iOS, а не в Keychain;
-- данные 1.x при обновлении не удаляются и попадают в резервную копию.
+Что сознательно оставлено как есть (подробно — в `audit/security-2026-11.md`):
+- приложение представляется клиентами INCY и Happ — иначе часть панелей не отдаёт серверы;
+- ключи хранятся в файлах под защитой iOS, а не в Keychain: расширению они нужны и на заблокированном iPhone, так что
+  Keychain дал бы ту же защиту;
+- данные 1.x при обновлении не удаляются (остаются для отката), но в резервные копии не попадают.
 
 ---
 
-Действует для **Personal Tunnel 3.3 (PTBeta, beta 1, сборка 250)**. Дата: **16 ноября 2026 г.** При изменении
+Действует для **Personal Tunnel 3.3 (PTBeta, beta 2, сборка 251)**. Дата: **16 ноября 2026 г.** При изменении
 поведения приложения политика обновляется вместе с ним.
 
 ---
@@ -288,16 +287,15 @@ former shared HWID, so panels do not count the iPhone as a new device.
 | The configuration the VPN runs | same place: `PersonalTunnel/tunnel.json`, `tunnel-xray.json` | “until first unlock” (On Demand starts the VPN on a locked iPhone too) | no |
 | The extension's log | `PersonalTunnel/tunnel-events.log` | same | no |
 | Xray-core's log, core crash reports (kept 7 days) | `Library/Caches/…` in the App Group | same | no |
-| Data of version 1.x, if you updated from it | App Group: `settings.db`, `configs/`, not deleted by updates | same | yes |
+| Data of version 1.x, if you updated from it | App Group: `settings.db`, `configs/`, not deleted by updates | same | no |
 | HWID | Keychain, “this device only” | iOS Keychain | no |
 | Settings, favourites, server order and filters (no keys) | app settings (UserDefaults) | — | yes |
 | A font you picked yourself | the app's `Application Support/Fonts` folder | — | yes |
 | Traffic statistics, ping results, the on-screen core log | memory only; gone when the app closes | — | — |
 
 Keys are stored as JSON with no encryption beyond iOS file protection. The core no longer makes copies of the
-configuration (`configuration.json`), and those earlier versions made are deleted at launch. Inside the iPhone,
-sing-box and Xray-core talk over a local port with a random number and password, both new at every VPN start and kept
-in memory only.
+configuration (`configuration.json`), and those earlier versions made are deleted at launch. sing-box and Xray-core run
+in one process and hand connections to each other in memory: there is no local port another app could connect to.
 
 “Backups” in Settings creates a file with every key: keep it like a password. The temporary copy is deleted right
 after it is saved. Restoring a backup asks first. Links the app copies stay on this iPhone (no Universal Clipboard)
@@ -358,14 +356,13 @@ Outside the VPN, and so visible to your internet provider:
 A server whose certificate is not checked is marked “certificate not checked” in the list: connections to it can be
 intercepted.
 
-Not done yet (details in `audit/security-2026-11.md`):
-- the local port between the cores is password-protected, but another app can still find an open port and guess from
-  it that a VPN is on (a Unix socket instead of a port needs a change to the core);
-- the app still introduces itself as the INCY and Happ clients;
-- keys are stored in files under iOS protection, not in the Keychain;
-- 1.x data is not deleted by updates and goes into backups.
+Left as it is on purpose (details in `audit/security-2026-11.md`):
+- the app introduces itself as the INCY and Happ clients: otherwise some panels give no servers;
+- keys are stored in files under iOS protection, not in the Keychain: the extension needs them on a locked iPhone too,
+  so the Keychain would give the same protection;
+- 1.x data is not deleted by updates (kept for a way back), but it does not go into backups.
 
 ---
 
-Applies to **Personal Tunnel 3.3 (PTBeta, beta 1, build 250)**. Date: **16 November 2026**. The policy is updated
+Applies to **Personal Tunnel 3.3 (PTBeta, beta 2, build 251)**. Date: **16 November 2026**. The policy is updated
 whenever the app's behaviour changes.
