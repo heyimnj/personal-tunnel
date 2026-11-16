@@ -451,3 +451,36 @@ final class AppGroupProfileTests: XCTestCase {
         XCTAssertEqual(AppGroup.groups(inProfile: Data([1, 2, 3])), [])
     }
 }
+
+/// 3.1.14: VLESS REALITY over gRPC runs in Xray-core whatever form it came in.
+final class RealityGRPCInXrayTests: XCTestCase {
+    static let link = "vless://11111111-2222-3333-4444-555555555555@g.example.com:443?security=reality&pbk=frA_WzVIkA2NPG1EUvGDN8WoFAneqhPgaBGe9FvsaKc&sid=ab&sni=www.example.com&fp=firefox&type=grpc&serviceName=svc#G"
+
+    func testLinkImportsAsXrayBacked() throws {
+        let nodes = NodeAssembler.assemble([try ShareLink.parse(Self.link)])
+        XCTAssertEqual(nodes[0].type, XrayBacked.type)
+        XCTAssertEqual(nodes[0].outbound["server"], "g.example.com")
+        XCTAssertEqual(nodes[0].facts.badges.last, "Xray")
+        let proxy = try XCTUnwrap(nodes[0].outbound.at("xray", "outbounds")?.arrayValue?.first)
+        XCTAssertEqual(proxy.at("streamSettings", "network"), "grpc")
+        XCTAssertEqual(proxy.at("streamSettings", "security"), "reality")
+        XCTAssertEqual(proxy.at("streamSettings", "grpcSettings", "serviceName"), "svc")
+        XCTAssertEqual(proxy.at("streamSettings", "realitySettings", "serverName"), "www.example.com")
+        XCTAssertEqual(proxy.at("streamSettings", "realitySettings", "shortId"), "ab")
+        XCTAssertEqual(proxy.at("streamSettings", "realitySettings", "fingerprint"), "firefox")
+    }
+
+    func testSavedSingBoxServerRunsInXray() throws {
+        var outbound = try ShareLink.parse(Self.link).outbound
+        outbound["tag"] = "G"
+        let saved = ServerNode(id: "G", name: "G", outbound: outbound)
+        XCTAssertEqual(saved.type, "vless")
+        XCTAssertEqual(saved.facts.badges.last, "Xray")
+        let subscription = Subscription(id: 1, name: "S", nodes: [saved])
+        let config = try ConfigBuilder.build(subscription: subscription, selected: nil, options: TunnelOptions())
+        let hop = try XCTUnwrap(config["outbounds"]?.arrayValue?.first { $0["tag"] == "G" })
+        XCTAssertEqual(hop["type"], "socks")
+        let runtime = try XCTUnwrap(ConfigBuilder.xrayRuntime(subscription: subscription))
+        XCTAssertTrue(runtime["outbounds"]?.arrayValue?.contains { $0.at("streamSettings", "grpcSettings", "serviceName") == "svc" } ?? false)
+    }
+}

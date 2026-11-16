@@ -45,7 +45,7 @@ final class ShareLinkTests: XCTestCase {
         let grpc = try ShareLink.parse("vless://uuid@h.example:443?security=reality&pbk=\(realityKey)&sid=&sni=h.example&type=grpc&serviceName=grpc-svc#Finland%201")
         XCTAssertEqual(grpc.outbound.at("transport", "type"), "grpc")
         XCTAssertEqual(grpc.outbound.at("transport", "service_name"), "grpc-svc")
-        XCTAssertEqual(ProtocolFacts(object: grpc.outbound).badges, ["VLESS", "Reality", "gRPC", "sing-box"])
+        XCTAssertEqual(ProtocolFacts(object: grpc.outbound).badges, ["VLESS", "Reality", "gRPC", "Xray"])
 
         let extra = TextCoding.percentEncode(#"{"xPaddingBytes":"100-1000","noGRPCHeader":true,"scMaxEachPostBytes":{"from":500000,"to":1000000},"xmux":{"maxConcurrency":"16-32","hKeepAlivePeriod":30},"headers":{"X-Test":"1"}}"#)
         let xhttp = try ShareLink.parse("vless://uuid@h.example:443?security=tls&sni=h.example&type=xhttp&host=h.example&path=%2Fxh&mode=packet-up&extra=\(extra)#X")

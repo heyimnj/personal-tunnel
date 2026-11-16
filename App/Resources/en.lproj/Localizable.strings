@@ -552,3 +552,5 @@
 "мин" = "min";
 "Настройки серверов" = "Server settings";
 "В группе должен остаться хотя бы один сервер." = "At least one server must stay in the group.";
+"VPN не запустился: %@" = "The VPN did not start: %@";
+"нет доступа" = "no access";
