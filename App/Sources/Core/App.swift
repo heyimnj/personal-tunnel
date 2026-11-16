@@ -361,7 +361,9 @@ final class App {
             DeviceIdentity.erase()
             Prefs.eraseServerData()
             let group = AppGroup.defaults
-            for key in [SharedKey.lastTunnelError, SharedKey.tunnelStartedAt, SharedKey.tunnelMemory] { group.removeObject(forKey: key) }
+            for key in [SharedKey.lastTunnelError, SharedKey.tunnelStartedAt, SharedKey.tunnelMemory, SharedKey.diagnosticLogUntil] { group.removeObject(forKey: key) }
+            // 3.3: a link the app copied may still be on the clipboard (two minutes at most).
+            Clipboard.clearOwn()
             // A beat for the extension to finish writing its last lines before they go.
             DispatchQueue.main.asyncAfter(deadline: .now() + 1) {
                 self.store.eraseAll {

@@ -71,8 +71,20 @@ final class ImportConfirmViewController: FormViewController {
 /// to the clipboard of this iPhone only (no Universal Clipboard) and leave it
 /// after two minutes.
 enum Clipboard {
+    /// The clipboard's change count right after the app's own copy.
+    private static var ownChange: Int?
+
     static func copySecret(_ text: String) {
         UIPasteboard.general.setItems([[UTType.utf8PlainText.identifier: text]],
                                       options: [.localOnly: true, .expirationDate: Date().addingTimeInterval(120)])
+        ownChange = UIPasteboard.general.changeCount
+    }
+
+    /// Empties the clipboard if it still holds what the app copied (without
+    /// reading it, so iOS asks nothing).
+    static func clearOwn() {
+        guard let ownChange, UIPasteboard.general.changeCount == ownChange else { return }
+        UIPasteboard.general.items = []
+        self.ownChange = nil
     }
 }
