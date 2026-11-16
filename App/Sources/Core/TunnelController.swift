@@ -126,6 +126,8 @@ final class TunnelController {
             if let message = AppGroup.defaults.string(forKey: SharedKey.lastTunnelError), !message.isEmpty {
                 AppGroup.defaults.removeObject(forKey: SharedKey.lastTunnelError)
                 lastError.value = TunnelText.localize(message)
+                // A start that fails is not retried by iOS over and over (3.1.11).
+                disableOnDemand()
             }
         }
         state.set(next)
@@ -164,7 +166,8 @@ final class TunnelController {
     }
 
     /// Writes the app's routing choices into the system configuration.
-    private func configure(_ manager: NETunnelProviderManager) {
+    /// `keepAlive`: the VPN is on by the owner's wish (being started, or running).
+    private func configure(_ manager: NETunnelProviderManager, keepAlive: Bool) {
         let proto = (manager.protocolConfiguration as? NETunnelProviderProtocol) ?? NETunnelProviderProtocol()
         proto.providerBundleIdentifier = TunnelController.providerIdentifier
         proto.serverAddress = TunnelController.appName
@@ -181,7 +184,16 @@ final class TunnelController {
         manager.protocolConfiguration = proto
         manager.localizedDescription = TunnelController.appName
         manager.isEnabled = true
-        if Prefs.autoConnect {
+        if keepAlive {
+            // 3.1.11: while the VPN is on, iOS itself brings it back when the system
+            // ends the extension (a night left on ended with «The system ended the
+            // tunnel without stopping it» and no VPN in the morning). A stop from the
+            // app turns this off first (`stop`); a stop in iOS Settings turns it off too.
+            let any = NEOnDemandRuleConnect()
+            any.interfaceTypeMatch = .any
+            manager.onDemandRules = [any]
+            manager.isOnDemandEnabled = true
+        } else if Prefs.autoConnect {
             let wifi = NEOnDemandRuleConnect()
             wifi.interfaceTypeMatch = .wiFi
             let cellular = NEOnDemandRuleConnect()
@@ -194,11 +206,11 @@ final class TunnelController {
         }
     }
 
-    private func prepared(_ completion: @escaping (Result<NETunnelProviderManager, Error>) -> Void) {
+    private func prepared(keepAlive: Bool, _ completion: @escaping (Result<NETunnelProviderManager, Error>) -> Void) {
         load { [weak self] existing in
             guard let self else { return }
             let manager = existing ?? NETunnelProviderManager()
-            self.configure(manager)
+            self.configure(manager, keepAlive: keepAlive)
             manager.saveToPreferences { error in
                 if let error {
                     DispatchQueue.main.async { completion(.failure(error)) }
@@ -243,7 +255,7 @@ final class TunnelController {
                 return
             default: break
             }
-            self.prepared { [weak self] result in
+            self.prepared(keepAlive: true) { [weak self] result in
                 guard let self else { return }
                 switch result {
                 case let .failure(error):
@@ -289,10 +301,18 @@ final class TunnelController {
         }
     }
 
+    /// Turns off the system's reconnection without stopping anything.
+    private func disableOnDemand() {
+        guard let manager, manager.isOnDemandEnabled else { return }
+        manager.isOnDemandEnabled = false
+        manager.saveToPreferences { _ in }
+    }
+
     /// Applies changed routing switches to the stored configuration.
     func applySettings() {
         guard manager != nil else { return }
-        prepared { _ in }
+        let state = self.state.value
+        prepared(keepAlive: state.isOn || state == .connecting) { _ in }
     }
 
     /// Asks the running tunnel to load the stored configuration again.
