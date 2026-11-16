@@ -78,6 +78,8 @@ public struct ProtocolFacts: Hashable, Sendable {
         let raw = object.at("transport", "type")?.stringValue?.lowercased() ?? (isQUIC ? "quic" : "tcp")
         transport = ProtocolFacts.transportNames[raw] ?? raw
         flow = object["flow"]?.stringValue == "xtls-rprx-vision" ? "Vision" : nil
+        // Saved before 3.1.14 as sing-box, run by Xray-core now (`XrayBacked.promoted`).
+        xray = XrayBacked.belongsInXray(object)
     }
 }
 

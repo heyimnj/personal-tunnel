@@ -34,6 +34,8 @@ final class TunnelController {
     /// yet (3.0.6): until then a «disconnected» read is the status before the start,
     /// not its end, and the button keeps showing the connection.
     private var startPending: Date?
+    /// The app asked for a start that has not reached «connected» yet.
+    private var startRequested = false
     private var reloading = false
 
     init() {
@@ -122,13 +124,28 @@ final class TunnelController {
         }
         // 3.1.7: a failed start goes «connecting» → «disconnecting» → «disconnected»;
         // its error was only read from the first two and never shown.
+        if next == .connected { startRequested = false }
         if next == .disconnected, state.value != .disconnected {
             if let message = AppGroup.defaults.string(forKey: SharedKey.lastTunnelError), !message.isEmpty {
                 AppGroup.defaults.removeObject(forKey: SharedKey.lastTunnelError)
                 lastError.value = TunnelText.localize(message)
                 // A start that fails is not retried by iOS over and over (3.1.11).
                 disableOnDemand()
+            } else if startRequested, AppGroup.defaults.double(forKey: SharedKey.tunnelStartedAt) == 0 {
+                // 3.1.14: the extension never ran (nothing written, no crash to
+                // report): the system says why, e.g. the extension is not signed
+                // for the VPN or cannot be found. PTBeta went «connecting» → «not
+                // connected» with nothing shown at all.
+                manager?.connection.fetchLastDisconnectError { [weak self] error in
+                    guard let error else { return }
+                    let text = Redactor.redact(error.localizedDescription)
+                    DispatchQueue.main.async {
+                        self?.lastError.value = Lf("VPN не запустился: %@", "\(text)")
+                        self?.disableOnDemand()
+                    }
+                }
             }
+            startRequested = false
         }
         state.set(next)
         if next == .disconnected { checkAbnormalEnd() }
@@ -235,6 +252,7 @@ final class TunnelController {
         // 3.1.8: an error from an earlier start that was never shown (3.1.6 lost
         // them all) would come up as this start's; only a new one counts.
         AppGroup.defaults.removeObject(forKey: SharedKey.lastTunnelError)
+        startRequested = true
         state.set(.connecting)
         startPending = Date()
         load { [weak self] existing in

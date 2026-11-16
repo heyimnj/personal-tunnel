@@ -88,6 +88,8 @@ public enum NodeAssembler {
             }
             var main = relink(item.outbound)
             main["tag"] = .string(tag)
+            // 3.1.14: REALITY over gRPC goes to Xray-core, from a link as from Xray JSON.
+            if item.members.isEmpty, let backed = XrayBacked.promoted(main, name: item.name) { main = backed }
             let members = item.members.map { member -> JSONValue in
                 var member = relink(member)
                 if let old = member["tag"]?.stringValue, let new = rename[old] { member["tag"] = .string(new) }

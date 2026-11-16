@@ -262,3 +262,46 @@ public extension XrayBacked {
         return result
     }
 }
+
+public extension XrayBacked {
+    /// 3.1.14: servers sing-box cannot hold up that Xray-core runs (as in Happ),
+    /// whatever form they came in — a share link, Xray JSON, or a library written
+    /// before: VLESS REALITY over gRPC. sing-box's gRPC to such panels ended in
+    /// «io: read/write on closed pipe» or a timeout with both cores.
+    static func belongsInXray(_ object: JSONValue) -> Bool {
+        object["type"]?.stringValue?.lowercased() == "vless"
+            && object.at("tls", "reality", "enabled")?.boolValue == true
+            && object.at("transport", "type")?.stringValue?.lowercased() == "grpc"
+    }
+
+    /// The same server as an Xray-backed one, written from its own fields
+    /// (the editor's mapping, `apply`). Nil when it does not belong in Xray or
+    /// cannot be described.
+    static func promoted(_ object: JSONValue, name: String) -> JSONValue? {
+        guard belongsInXray(object), let draft = ServerDraft(outbound: object, name: name),
+              let host = object["server"]?.stringValue, let port = object["server_port"]?.intValue else { return nil }
+        let template: JSONValue = [
+            "type": .string(type),
+            "server": .string(host),
+            "server_port": .int(Int64(port)),
+            "xray": ["outbounds": [[
+                "protocol": "vless",
+                "tag": "proxy",
+                "settings": ["vnext": [["address": .string(host), "port": .int(Int64(port)),
+                                        "users": [["id": "", "encryption": "none"]]]]],
+                "streamSettings": [:],
+            ]]],
+        ]
+        guard var result = try? apply(draft, to: template), result["type"]?.stringValue == type else { return nil }
+        if let tag = object["tag"] { result["tag"] = tag }
+        return result
+    }
+
+    /// A library server moved into Xray when it belongs there (its members are kept).
+    static func promoted(_ node: ServerNode) -> ServerNode {
+        guard node.members.isEmpty, let outbound = promoted(node.outbound, name: node.name) else { return node }
+        var node = node
+        node.outbound = outbound
+        return node
+    }
+}

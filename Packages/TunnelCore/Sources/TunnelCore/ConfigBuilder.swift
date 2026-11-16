@@ -93,7 +93,8 @@ public enum ConfigBuilder {
 
     public static func build(subscription: Subscription, selected: String?, options: TunnelOptions,
                              xrayPortBase: Int = XrayBacked.tunnelPortBase) throws -> JSONValue {
-        let nodes = subscription.nodes
+        // 3.1.14: servers saved before they were moved into Xray-core go there too.
+        let nodes = subscription.nodes.map(XrayBacked.promoted)
         // Xray-backed servers become SOCKS hops to the Xray instance beside sing-box.
         let xrayPorts = XrayBacked.runtime(nodes, portBase: xrayPortBase)?.ports ?? [:]
         guard !nodes.isEmpty else { throw ImportError(CoreText.f("В подписке «%@» нет серверов.", "\(subscription.name)")) }
@@ -537,7 +538,7 @@ public enum ConfigBuilder {
     /// The Xray configuration the tunnel runs beside sing-box, when the subscription
     /// has servers only Xray-core can run.
     public static func xrayRuntime(subscription: Subscription, portBase: Int = XrayBacked.tunnelPortBase) -> JSONValue? {
-        XrayBacked.runtime(subscription.nodes, portBase: portBase)?.config
+        XrayBacked.runtime(subscription.nodes.map(XrayBacked.promoted), portBase: portBase)?.config
     }
 
     /// Tags the selector offers, in order (without the `auto` group).

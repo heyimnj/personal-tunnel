@@ -258,7 +258,9 @@ final class ServiceLogViewController: UIViewController, UITableViewDataSource, U
     /// stops), which outlives the extension. Addresses and keys are removed.
     @objc private func copyAll() {
         let levels = ServiceLogViewController.levels
-        var text = ["Personal Tunnel \(AboutViewController.version), " + L("ядро туннеля") + ": \(CoreInfo.tunnelCore)", ""]
+        var text = ["Personal Tunnel \(AboutViewController.version), " + L("ядро туннеля") + ": \(CoreInfo.tunnelCore)",
+                    // 3.1.14: which shared container the app really got (a signing tool may give another).
+                    "App Group: \(AppGroup.identifier)" + (App.shared.paths == nil ? " — " + L("нет доступа") : ""), ""]
         text += App.shared.core.logs.map { line in
             let level = levels.indices.contains(Int(line.level)) ? levels[Int(line.level)] : "LOG"
             return "\(level) \(line.text)"

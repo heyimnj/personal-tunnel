@@ -71,7 +71,34 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
             self.event("остановка, причина \(reason.rawValue)")
             self.shutDown()
             AppGroup.defaults.removeObject(forKey: SharedKey.tunnelStartedAt)
-            completionHandler()
+            // 3.1.14: turned off by the owner (Control Center, Settings, the app) or
+            // replaced by another VPN: iOS must not bring it back on demand. Control
+            // Center left On Demand on, and the VPN came back a few seconds later.
+            // A tunnel the system ends without stopping it (the memory limit) gets no
+            // stop at all, so On Demand still restarts that one.
+            guard reason == .userInitiated || reason == .superceded else {
+                completionHandler()
+                return
+            }
+            Self.disableOnDemand(completionHandler)
+        }
+    }
+
+    /// Turns off this tunnel's On Demand in the system configuration, then calls back.
+    private static func disableOnDemand(_ done: @escaping () -> Void) {
+        let finish = OnceFlag()
+        let complete = { if finish.claim() { done() } }
+        // The stop is not held up for long whatever happens.
+        DispatchQueue.global().asyncAfter(deadline: .now() + 3, execute: complete)
+        NETunnelProviderManager.loadAllFromPreferences { managers, _ in
+            let own = Bundle.main.bundleIdentifier
+            guard let manager = managers?.first(where: { ($0.protocolConfiguration as? NETunnelProviderProtocol)?.providerBundleIdentifier == own }),
+                  manager.isOnDemandEnabled else {
+                complete()
+                return
+            }
+            manager.isOnDemandEnabled = false
+            manager.saveToPreferences { _ in complete() }
         }
     }
 
