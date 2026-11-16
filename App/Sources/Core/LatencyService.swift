@@ -208,16 +208,16 @@ final class LocalCoreProbes: LatencyProbes, @unchecked Sendable {
     /// 3.1.15: Xray-core's log for this run («info»: only there does Xray say why a
     /// server failed) and each Xray-backed server's local port, by test tag.
     private let xrayLog: URL
-    private let xrayPorts: [String: Int]
+    private let xrayPrefixes: [String: String]
     /// Receives the core's own words for the first few failures of a run.
     var report: ((String) -> Void)?
     private let samples = FailureSamples()
 
-    private init(probers: [Int64: PtbridgeProber], xrays: [PtbridgeXrayInstance], xrayLog: URL, xrayPorts: [String: Int]) {
+    private init(probers: [Int64: PtbridgeProber], xrays: [PtbridgeXrayInstance], xrayLog: URL, xrayPrefixes: [String: String]) {
         self.probers = probers
         self.xrays = xrays
         self.xrayLog = xrayLog
-        self.xrayPorts = xrayPorts
+        self.xrayPrefixes = xrayPrefixes
     }
 
     /// Starts a core for every subscription; those that do not start are
@@ -227,26 +227,28 @@ final class LocalCoreProbes: LatencyProbes, @unchecked Sendable {
         var probers: [Int64: PtbridgeProber] = [:]
         var xrays: [PtbridgeXrayInstance] = []
         var failed: [Int64: String] = [:]
-        var xrayPorts: [String: Int] = [:]
+        var xrayPrefixes: [String: String] = [:]
         let xrayLog = FileManager.default.temporaryDirectory.appendingPathComponent("xray-probe-\(UUID().uuidString).log")
         for subscription in subscriptions {
-            // 3.3 (PT-02): each Xray server behind a random local port and login,
-            // made for this run only and kept in memory.
-            let links = XrayBacked.links(for: subscription.nodes.map(XrayBacked.promoted))
+            // 3.3 beta 2 (PT-02): the subscription's own Xray instance in the app's
+            // process; its servers' `xray-local` outbounds name it (no local port).
+            let instance = XrayBacked.appInstance(subscription.id)
             do {
-                if let runtime = ConfigBuilder.xrayRuntime(subscription: subscription, links: links) {
+                if let runtime = ConfigBuilder.xrayRuntime(subscription: subscription, instance: instance) {
                     // One log for every instance of the run: Xray keeps one log per process.
                     let config = XrayBacked.prepare(runtime, interface: interface, logPath: xrayLog.path, level: "info")
                     var error: NSError?
-                    if let xray = PtbridgeStartXray(config.serialized(pretty: false), &error), error == nil {
+                    if let xray = PtbridgeStartXray(instance, config.serialized(pretty: false), &error), error == nil {
                         xrays.append(xray)
-                        for (id, link) in links { xrayPorts["\(subscription.id):\(id)"] = link.port }
+                        for (id, prefix) in XrayBacked.prefixes(for: subscription.nodes.map(XrayBacked.promoted), instance: instance) {
+                            xrayPrefixes["\(subscription.id):\(id)"] = prefix
+                        }
                     } else {
                         failed[subscription.id] = Lf("Xray-core не запустился: %@", error?.localizedDescription ?? "—")
                         continue
                     }
                 }
-                let config = try ConfigBuilder.probe(subscription: subscription, options: options, xrayLinks: links, interface: interface).serialized(pretty: false)
+                let config = try ConfigBuilder.probe(subscription: subscription, options: options, interface: interface).serialized(pretty: false)
                 var error: NSError?
                 if let prober = PtbridgeNewProber(config, &error), error == nil {
                     probers[subscription.id] = prober
@@ -257,7 +259,7 @@ final class LocalCoreProbes: LatencyProbes, @unchecked Sendable {
                 failed[subscription.id] = (error as? ImportError)?.message ?? error.localizedDescription
             }
         }
-        return (LocalCoreProbes(probers: probers, xrays: xrays, xrayLog: xrayLog, xrayPorts: xrayPorts), failed)
+        return (LocalCoreProbes(probers: probers, xrays: xrays, xrayLog: xrayLog, xrayPrefixes: xrayPrefixes), failed)
     }
 
     func close() {
@@ -275,11 +277,11 @@ final class LocalCoreProbes: LatencyProbes, @unchecked Sendable {
     /// Xray-core's own reason for the last failure through an Xray-backed server.
     /// Xray may still be retrying when sing-box's test gives up: read again once.
     private func xrayReason(_ tag: String) -> String? {
-        guard let port = xrayPorts[tag] else { return nil }
+        guard let prefix = xrayPrefixes[tag] else { return nil }
         for attempt in 0 ..< 2 {
             if attempt > 0 { Thread.sleep(forTimeInterval: 1.5) }
             guard let data = try? Data(contentsOf: xrayLog) else { continue }
-            if let reason = XrayBacked.failure(inLog: String(decoding: data, as: UTF8.self), port: port) { return reason }
+            if let reason = XrayBacked.failure(inLog: String(decoding: data, as: UTF8.self), prefix: prefix) { return reason }
         }
         return nil
     }

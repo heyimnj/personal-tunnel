@@ -56,6 +56,23 @@ func NewProber(configJSON string) (*Prober, error) {
 	return &Prober{instance: instance, ctx: ctx, cancel: cancel}, nil
 }
 
+// CheckConfig reports whether sing-box accepts a configuration, without
+// starting it — what `sing-box check` does, with the types this library adds
+// (`xray-local`), which the plain sing-box binary does not know.
+func CheckConfig(configJSON string) error {
+	ctx, cancel := context.WithCancel(include.Context(context.Background()))
+	defer cancel()
+	options, err := json.UnmarshalExtendedContext[option.Options](ctx, []byte(configJSON))
+	if err != nil {
+		return err
+	}
+	instance, err := box.New(box.Options{Context: ctx, Options: options})
+	if err != nil {
+		return err
+	}
+	return instance.Close()
+}
+
 // ProbeResult is one measurement: Delay in milliseconds, or Error.
 type ProbeResult struct {
 	Delay int32

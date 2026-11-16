@@ -1,0 +1,28 @@
+diff --git a/include/registry.go b/include/registry.go
+index a5b9a82..0d08244 100644
+--- a/include/registry.go
++++ b/include/registry.go
+@@ -115,10 +115,23 @@ func OutboundRegistry() *outbound.Registry {
+ 
+ 	registerQUICOutbounds(registry)
+ 	registerStubForRemovedOutbounds(registry)
++	// lx:begin external-outbounds
++	for _, register := range ExternalOutbounds {
++		register(registry)
++	}
++	// lx:end
+ 
+ 	return registry
+ }
+ 
++// lx:begin external-outbounds
++// ExternalOutbounds are outbound types a program linking sing-box adds itself
++// (Personal Tunnel: `xray-local`, a hop into the Xray-core instance in the same
++// process, without a local port). Registered in init(), before any box starts.
++var ExternalOutbounds []func(*outbound.Registry)
++
++// lx:end
++
+ func EndpointRegistry() *endpoint.Registry {
+ 	registry := endpoint.NewRegistry()
+ 

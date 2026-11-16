@@ -78,6 +78,8 @@ jobs:
           for file in build/fixtures/*.json; do
             # Xray's own configurations are checked by the bridge's tests (Xray-core).
             case "$(basename "$file")" in xray-runtime-*) continue ;; esac
+            # 3.3: xray-local (core/bridge) — проверяются тестами моста, обычный sing-box этот тип не знает.
+            if grep -q '"xray-local"' "$file"; then echo "bridge $(basename "$file")"; continue; fi
             if output="$(build/sing-box-check check -c "$file" 2>&1)"; then
               echo "ok   $(basename "$file")"
             else

@@ -74,6 +74,34 @@ func TestProberStartsOnProbeFixtures(t *testing.T) {
 	}
 }
 
+// 3.3 beta 2: configurations with `xray-local` outbounds (the tunnel's and the
+// app's, from tunnelcore-fixtures) are checked here: the plain sing-box binary
+// CI checks the others with does not know the type.
+func TestXrayLocalFixturesAreAccepted(t *testing.T) {
+	folder := os.Getenv("PT_PROBE_FIXTURES")
+	if folder == "" {
+		t.Skip("PT_PROBE_FIXTURES not set")
+	}
+	files, _ := filepath.Glob(filepath.Join(folder, "*.json"))
+	checked := 0
+	for _, file := range files {
+		content, err := os.ReadFile(file)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !strings.Contains(string(content), `"xray-local"`) {
+			continue
+		}
+		checked++
+		if err := CheckConfig(string(content)); err != nil {
+			t.Errorf("%s: %v", filepath.Base(file), err)
+		}
+	}
+	if checked < 2 {
+		t.Fatalf("only %d configurations with xray-local in %s", checked, folder)
+	}
+}
+
 func TestSetGCPercent(t *testing.T) {
 	previous := SetGCPercent(50)
 	defer SetGCPercent(previous)

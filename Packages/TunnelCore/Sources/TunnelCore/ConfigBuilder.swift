@@ -97,15 +97,14 @@ public enum ConfigBuilder {
         public static let pathPrefix = "@rules/"
     }
 
-    /// `xrayLinks`: how sing-box reaches each Xray-backed server (3.3: random port
-    /// and login); new ones when not given. The Xray side must be made with the
-    /// same links: `tunnel(subscription:selected:options:)` makes both.
+    /// `xrayInstance`: the Xray-core instance (in the same process) the
+    /// Xray-backed servers' `xray-local` outbounds hand connections to.
     public static func build(subscription: Subscription, selected: String?, options: TunnelOptions,
-                             xrayLinks: LocalLinks? = nil) throws -> JSONValue {
+                             xrayInstance: String = XrayBacked.tunnelInstance) throws -> JSONValue {
         // 3.1.14: servers saved before they were moved into Xray-core go there too.
         let nodes = subscription.nodes.map(XrayBacked.promoted)
-        // Xray-backed servers become SOCKS hops to the Xray instance beside sing-box.
-        let xrayLinks = xrayLinks ?? XrayBacked.links(for: nodes)
+        // Xray-backed servers become `xray-local` outbounds into the Xray instance beside sing-box.
+        let xrayInbounds = XrayBacked.inbounds(for: nodes)
         guard !nodes.isEmpty else { throw ImportError(CoreText.f("В подписке «%@» нет серверов.", "\(subscription.name)")) }
 
         var outbounds: [JSONValue] = []
@@ -174,8 +173,8 @@ public enum ConfigBuilder {
             var main = CertificatePins.carry(link: node.link, into: Carried.adapt(node.outbound, known: known))
             var members = node.members
             if node.type == XrayBacked.type {
-                guard let link = xrayLinks[node.id] else { continue }
-                main = XrayBacked.socks(tag: node.id, link: link)
+                guard let inbound = xrayInbounds[node.id] else { continue }
+                main = XrayBacked.local(tag: node.id, instance: xrayInstance, inbound: inbound)
                 members = []
             }
             if let unwrap = unwrapped[node.id] {
@@ -409,8 +408,8 @@ public enum ConfigBuilder {
     /// `interface`: with the VPN on, the physical interface (Wi-Fi, cellular) every
     /// connection of the app's core is bound to, so it measures the server itself
     /// and not through the tunnel (3.3, PT-06). Nil: the system's routes.
-    public static func probe(subscription: Subscription, options: TunnelOptions, xrayLinks: LocalLinks? = nil, interface: String? = nil) throws -> JSONValue {
-        var config = try build(subscription: subscription, selected: nil, options: options, xrayLinks: xrayLinks)
+    public static func probe(subscription: Subscription, options: TunnelOptions, interface: String? = nil) throws -> JSONValue {
+        var config = try build(subscription: subscription, selected: nil, options: options, xrayInstance: XrayBacked.appInstance(subscription.id))
         let own: Set<String> = [selectorTag, autoTag]
         config["outbounds"] = .array((config["outbounds"]?.arrayValue ?? []).filter { !own.contains($0["tag"]?.stringValue ?? "") })
         config["inbounds"] = nil
@@ -566,20 +565,15 @@ public enum ConfigBuilder {
         return config
     }
 
-    /// The Xray configuration the tunnel runs beside sing-box, when the subscription
-    /// has servers only Xray-core can run; `links` are the ones sing-box was given.
-    public static func xrayRuntime(subscription: Subscription, links: LocalLinks) -> JSONValue? {
-        XrayBacked.runtime(subscription.nodes.map(XrayBacked.promoted), links: links)
+    /// The Xray configuration beside sing-box, when the subscription has servers
+    /// only Xray-core can run: the tunnel's, or the app's own for measuring.
+    public static func xrayRuntime(subscription: Subscription, instance: String = XrayBacked.tunnelInstance) -> JSONValue? {
+        XrayBacked.runtime(subscription.nodes.map(XrayBacked.promoted), instance: instance)
     }
 
-    /// 3.3 (PT-01): sing-box's configuration and the Xray one beside it, made with
-    /// the same new local links.
-    public static func tunnel(subscription: Subscription, selected: String?, options: TunnelOptions) throws
-        -> (config: JSONValue, xray: JSONValue?, links: LocalLinks)
-    {
-        let links = XrayBacked.links(for: subscription.nodes.map(XrayBacked.promoted))
-        let config = try build(subscription: subscription, selected: selected, options: options, xrayLinks: links)
-        return (config, xrayRuntime(subscription: subscription, links: links), links)
+    /// sing-box's configuration and the Xray one beside it.
+    public static func tunnel(subscription: Subscription, selected: String?, options: TunnelOptions) throws -> (config: JSONValue, xray: JSONValue?) {
+        (try build(subscription: subscription, selected: selected, options: options), xrayRuntime(subscription: subscription))
     }
 
     /// Tags the selector offers, in order (without the `auto` group).

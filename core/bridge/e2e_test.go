@@ -2,6 +2,7 @@ package ptbridge
 
 import (
 	"bytes"
+	"context"
 	"crypto/ecdh"
 	"crypto/rand"
 	"crypto/tls"
@@ -13,7 +14,9 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
+	M "github.com/sagernet/sing/common/metadata"
 	xray "github.com/xtls/xray-core/core"
 	"github.com/xtls/xray-core/infra/conf/serial"
 )
@@ -105,14 +108,30 @@ func TestSingBoxReachesXrayServers(t *testing.T) {
 	}
 }
 
-// A server only Xray-core can run (a sudoku mask the server undoes): the app's
-// Xray instance serves it on a local SOCKS port, sing-box reaches it through
-// that port — the path the tunnel and the app's measurements take.
+// A server only Xray-core can run (a sudoku mask the server undoes): sing-box
+// hands connections to the Xray instance in the same process through an
+// `xray-local` outbound (3.3, PT-01: no local port) — the path the tunnel and
+// the app's measurements take. TCP (a URL test) and UDP (an echo) get through.
 func TestSingBoxReachesXrayOnlyServerThroughLocalXray(t *testing.T) {
 	target := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusNoContent) }))
 	defer target.Close()
+	echo, err := net.ListenPacket("udp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer echo.Close()
+	go func() {
+		buffer := make([]byte, 1500)
+		for {
+			n, from, err := echo.ReadFrom(buffer)
+			if err != nil {
+				return
+			}
+			echo.WriteTo(buffer[:n], from)
+		}
+	}()
 	uuid := "11111111-2222-3333-4444-555555555555"
-	serverPort, localPort := freePort(t), freePort(t)
+	serverPort := freePort(t)
 	mask := `"finalmask": {"tcp": [{"type": "sudoku", "settings": {"password": "mask"}}]}`
 	startXray(t, fmt.Sprintf(`{
 		"log": {"loglevel": "warning"},
@@ -121,30 +140,26 @@ func TestSingBoxReachesXrayOnlyServerThroughLocalXray(t *testing.T) {
 		"outbounds": [{"protocol": "freedom", "settings": {"finalRules": [{"action": "allow"}]}}]
 	}`, serverPort, uuid, mask))
 
-	// What XrayBacked.runtime writes for one server (3.3, PT-01: behind a login).
-	user, pass := "0123456789abcdef0123456789abcdef", "fedcba9876543210fedcba9876543210"
-	client, err := StartXray(fmt.Sprintf(`{
+	// What XrayBacked.runtime writes for one server: no inbounds, routing by the inbound tag.
+	client, err := StartXray("e2e", fmt.Sprintf(`{
 		"log": {"loglevel": "warning"},
-		"inbounds": [{"tag": "in0", "listen": "127.0.0.1", "port": %d, "protocol": "socks",
-		  "settings": {"auth": "password", "accounts": [{"user": "%s", "pass": "%s"}], "udp": true, "ip": "127.0.0.1"}}],
 		"outbounds": [{"protocol": "blackhole", "tag": "pt-block"},
 		  {"tag": "n0-proxy", "protocol": "vless", "settings": {"vnext": [{"address": "127.0.0.1", "port": %d, "users": [{"id": "%s", "encryption": "none"}]}]},
 		   "streamSettings": {"network": "raw", %s}}],
 		"routing": {"domainStrategy": "AsIs", "rules": [{"type": "field", "inboundTag": ["in0"], "outboundTag": "n0-proxy"}]}
-	}`, localPort, user, pass, serverPort, uuid, mask))
+	}`, serverPort, uuid, mask))
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer client.Close()
 
-	prober, err := NewProber(fmt.Sprintf(`{
+	prober, err := NewProber(`{
 		"log": {"level": "warn"},
-		"outbounds": [{"type": "socks", "tag": "sudoku", "server": "127.0.0.1", "server_port": %d, "version": "5", "username": "%s", "password": "%s"},
-		  {"type": "socks", "tag": "stranger", "server": "127.0.0.1", "server_port": %d, "version": "5"},
-		  {"type": "socks", "tag": "wrong", "server": "127.0.0.1", "server_port": %d, "version": "5", "username": "%s", "password": "guess"},
+		"outbounds": [{"type": "xray-local", "tag": "sudoku", "instance": "e2e", "inbound": "in0"},
+		  {"type": "xray-local", "tag": "nobody", "instance": "not-running", "inbound": "in0"},
 		  {"type": "direct", "tag": "direct"}],
 		"route": {"final": "direct"}
-	}`, localPort, user, pass, localPort, localPort, user))
+	}`)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -152,13 +167,39 @@ func TestSingBoxReachesXrayOnlyServerThroughLocalXray(t *testing.T) {
 	if result := prober.Test("sudoku", target.URL, 5000); result.Error != "" {
 		t.Fatalf("sudoku: %s", result.Error)
 	} else {
-		t.Logf("sudoku through local Xray: %d ms", result.Delay)
+		t.Logf("sudoku through Xray in the same process: %d ms", result.Delay)
 	}
-	// Another app on the device, without the login or with a wrong one, gets nothing.
-	for _, tag := range []string{"stranger", "wrong"} {
-		if result := prober.Test(tag, target.URL, 3000); result.Error == "" {
-			t.Fatalf("%s: the local SOCKS port let a connection through without the login", tag)
+	if result := prober.Test("nobody", target.URL, 3000); result.Error == "" {
+		t.Fatal("an outbound naming no running instance got through")
+	}
+
+	outbound, found := prober.instance.Outbound().Outbound("sudoku")
+	if !found {
+		t.Fatal("no sudoku outbound")
+	}
+	packets, err := outbound.ListenPacket(context.Background(), M.SocksaddrFromNet(echo.LocalAddr()))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer packets.Close()
+	if _, err := packets.WriteTo([]byte("ping over xray"), echo.LocalAddr()); err != nil {
+		t.Fatal(err)
+	}
+	reply := make(chan string, 1)
+	go func() {
+		buffer := make([]byte, 1500)
+		n, _, err := packets.ReadFrom(buffer)
+		if err == nil {
+			reply <- string(buffer[:n])
 		}
+	}()
+	select {
+	case text := <-reply:
+		if text != "ping over xray" {
+			t.Fatalf("UDP echo through Xray: %q", text)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("UDP through Xray in the same process: no echo in 5 s")
 	}
 }
 

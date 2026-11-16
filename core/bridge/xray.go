@@ -8,15 +8,19 @@ import (
 	"github.com/xtls/xray-core/infra/conf/serial"
 )
 
-// XrayInstance runs the servers only Xray-core understands, each behind a local
-// SOCKS port that sing-box connects to (TunnelCore's XrayBacked.runtime).
+// XrayInstance runs the servers only Xray-core understands. sing-box reaches
+// each of them through an `xray-local` outbound naming this instance (3.3: in
+// memory, no local port; TunnelCore's XrayBacked.runtime).
 type XrayInstance struct {
 	access   sync.Mutex
+	name     string
 	instance *xray.Instance
 }
 
-// StartXray starts Xray-core with a JSON configuration.
-func StartXray(configJSON string) (*XrayInstance, error) {
+// StartXray starts Xray-core with a JSON configuration under `name`, the
+// instance `xray-local` outbounds name. A new instance under a name replaces the
+// old one for new connections.
+func StartXray(name string, configJSON string) (*XrayInstance, error) {
 	config, err := serial.LoadJSONConfig(bytes.NewBufferString(configJSON))
 	if err != nil {
 		return nil, err
@@ -29,7 +33,8 @@ func StartXray(configJSON string) (*XrayInstance, error) {
 		instance.Close()
 		return nil, err
 	}
-	return &XrayInstance{instance: instance}, nil
+	registerInstance(name, instance)
+	return &XrayInstance{name: name, instance: instance}, nil
 }
 
 // CheckXray reports whether Xray-core accepts a configuration, without starting it.
@@ -45,7 +50,7 @@ func CheckXray(configJSON string) error {
 	return instance.Close()
 }
 
-// Close stops the instance; its ports are free afterwards.
+// Close stops the instance and takes its name back.
 func (x *XrayInstance) Close() {
 	if x == nil {
 		return
@@ -53,6 +58,7 @@ func (x *XrayInstance) Close() {
 	x.access.Lock()
 	defer x.access.Unlock()
 	if x.instance != nil {
+		unregisterInstance(x.name, x.instance)
 		x.instance.Close()
 		x.instance = nil
 	}

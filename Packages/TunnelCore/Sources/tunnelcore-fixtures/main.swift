@@ -186,20 +186,20 @@ guard xraySubscription.nodes.filter({ $0.type == XrayBacked.type }).count == 2 e
     exit(1)
 }
 try write("xray-only-servers", xraySubscription)
-// 3.3 (PT-01): the sing-box hops and the Xray inbounds share random ports and logins;
-// the bridge's tests load the Xray side, `sing-box check` the other.
-for name in ["tunnel", "app"] {
-    let made = try ConfigBuilder.tunnel(subscription: xraySubscription, selected: nil, options: TunnelOptions())
-    let runtime = made.xray!
-    let text = runtime.serialized(pretty: true)
-    guard !text.contains("noauth"), made.links.count == 2, made.links.values.allSatisfy({ link in
-        made.config["outbounds"]?.arrayValue?.contains { $0["server_port"]?.intValue == link.port && $0["username"]?.stringValue == link.username && $0["password"]?.stringValue == link.password } ?? false
-    }) else {
-        FileHandle.standardError.write(Data("xray runtime: a local SOCKS port without the hop's login\n".utf8))
+// 3.3 beta 2 (PT-01): sing-box's side goes into the Xray instance in the same
+// process (`xray-local`, checked by the bridge's tests, which register the type);
+// the Xray side has no inbounds (loaded by Xray-core in the bridge's tests).
+for (name, instance) in [("tunnel", XrayBacked.tunnelInstance), ("app", XrayBacked.appInstance(xraySubscription.id))] {
+    let config = name == "tunnel" ? try ConfigBuilder.build(subscription: xraySubscription, selected: nil, options: TunnelOptions())
+        : try ConfigBuilder.probe(subscription: xraySubscription, options: TunnelOptions())
+    let runtime = ConfigBuilder.xrayRuntime(subscription: xraySubscription, instance: instance)!
+    let hops = (config["outbounds"]?.arrayValue ?? []).filter { $0["type"]?.stringValue == XrayBacked.localType }
+    guard runtime["inbounds"] == nil, hops.count == 2, hops.allSatisfy({ $0["instance"]?.stringValue == instance }) else {
+        FileHandle.standardError.write(Data("xray runtime: sing-box's hops do not go into the instance in the same process\n".utf8))
         exit(1)
     }
-    try text.write(to: output.appendingPathComponent("xray-runtime-\(name).json"), atomically: true, encoding: .utf8)
-    try ConfigBuilder.relocateRuleSets(in: made.config, directory: rules).serialized(pretty: true).write(to: output.appendingPathComponent("xray-hops-\(name).json"), atomically: true, encoding: .utf8)
+    try runtime.serialized(pretty: true).write(to: output.appendingPathComponent("xray-runtime-\(name).json"), atomically: true, encoding: .utf8)
+    try ConfigBuilder.relocateRuleSets(in: config, directory: rules).serialized(pretty: true).write(to: output.appendingPathComponent("xray-hops-\(name).json"), atomically: true, encoding: .utf8)
     written += 2
 }
 print("written \(written) configurations to \(output.path)")
