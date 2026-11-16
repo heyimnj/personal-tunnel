@@ -106,6 +106,8 @@ public enum SharedKey {
     public static let tunnelStartedAt = "pt.tunnel.startedAt"
     /// The extension's last memory sample (`MemorySample`, JSON).
     public static let tunnelMemory = "pt.tunnel.memory"
+    /// 3.3 (PT-16): end of «Подробный журнал для диагностики», seconds since 1970.
+    public static let diagnosticLogUntil = "pt.log.diagnosticUntil"
 }
 
 /// Start options and messages the app sends to the packet tunnel.

@@ -246,7 +246,8 @@ enum Prefs {
 
     static var tunnelOptions: TunnelOptions {
         var options = TunnelOptions()
-        options.logLevel = verboseLog ? "trace" : "info"
+        // 3.3 (PT-16): «warn» unless a diagnostic half hour is running.
+        options.logLevel = verboseLog ? "trace" : (diagnosticLogActive ? "info" : "warn")
         options.adBlocking = adBlocking
         options.adBlockLevel = adBlockLevel
         options.blockEncryptedDNS = blockEncryptedDNS
@@ -266,6 +267,20 @@ enum Prefs {
         get { defaults.bool(forKey: "pt.migrated.v1") }
         set { defaults.set(newValue, forKey: "pt.migrated.v1") }
     }
+
+    /// 3.3 (PT-16): end of «Подробный журнал для диагностики» (in the group: the
+    /// extension ends it too).
+    static var diagnosticLogUntil: Date? {
+        get {
+            let value = AppGroup.defaults.double(forKey: SharedKey.diagnosticLogUntil)
+            return value > 0 ? Date(timeIntervalSince1970: value) : nil
+        }
+        set {
+            if let newValue { AppGroup.defaults.set(newValue.timeIntervalSince1970, forKey: SharedKey.diagnosticLogUntil) } else { AppGroup.defaults.removeObject(forKey: SharedKey.diagnosticLogUntil) }
+        }
+    }
+
+    static var diagnosticLogActive: Bool { (diagnosticLogUntil ?? .distantPast) > Date() }
 
     // MARK: Privacy (3.2.1)
 

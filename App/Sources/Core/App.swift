@@ -157,6 +157,24 @@ final class App {
         if changed { switchServer() }
     }
 
+    /// 3.3 (PT-16): «Подробный журнал для диагностики» — the core logs at «info»
+    /// (every connection) for 30 minutes, then goes back to «warn» by itself.
+    func setDiagnosticLog(_ on: Bool) {
+        Prefs.diagnosticLogUntil = on ? Date().addingTimeInterval(ConfigBuilder.diagnosticLogDuration) : nil
+        reloadTunnel()
+        if on {
+            DispatchQueue.main.asyncAfter(deadline: .now() + ConfigBuilder.diagnosticLogDuration + 1) { [weak self] in self?.endDiagnosticLogIfDue() }
+        }
+    }
+
+    /// The half hour is over: the setting goes (the extension has switched the
+    /// level itself if it was running).
+    func endDiagnosticLogIfDue() {
+        guard let until = Prefs.diagnosticLogUntil, until <= Date() else { return }
+        Prefs.diagnosticLogUntil = nil
+        reloadTunnel()
+    }
+
     func reloadTunnel() {
         guard tunnel.state.value.isOn else { return }
         _ = try? store.writeActiveConfig()

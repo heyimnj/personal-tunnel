@@ -606,3 +606,9 @@
 "Серверов не найдено." = "No servers found.";
 "Серверы добавятся отдельной подпиской. По сети ничего не загружается." = "The servers are added as a subscription of their own. Nothing is downloaded.";
 "Серверы из текста" = "Servers from the text";
+"<назначение>" = "<destination>";
+"подробный журнал выключен: прошло 30 минут" = "diagnostic log off: 30 minutes passed";
+"подробный журнал: %@" = "diagnostic log: %@";
+"Подробный журнал для диагностики" = "Diagnostic log";
+"Сам выключится через %@ мин" = "Turns itself off in %@ min";
+"Каждое соединение на 30 минут" = "Every connection, for 30 minutes";

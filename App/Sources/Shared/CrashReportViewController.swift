@@ -23,8 +23,8 @@ final class CrashReportViewController: UIViewController {
 
     /// Everything that leaves the app goes through the redactor.
     private var shareText: String {
-        Redactor.hideServers(Redactor.redact("\(TunnelController.appName) \(AboutViewController.version)\n\n\(crash.cause)\n\n\(crash.details)"),
-                             hosts: App.shared.library.serverHosts)
+        Redactor.forSharing("\(TunnelController.appName) \(AboutViewController.version)\n\n\(crash.cause)\n\n\(crash.details)",
+                            hosts: App.shared.library.serverHosts)
     }
 
     override func viewDidLoad() {

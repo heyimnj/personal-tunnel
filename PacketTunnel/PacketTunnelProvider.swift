@@ -29,6 +29,8 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
     /// links this start made (only here, in memory); a network change restarts
     /// Xray with it, so sing-box's hops still match.
     private var xrayRuntime: JSONValue?
+    /// The core's log level now (3.3, PT-16): «info» ends with the diagnostic half hour.
+    private var logLevel: String?
     /// The physical network Xray's connections are bound to; a change restarts Xray.
     private var xrayPath: NWPathMonitor?
     private var xrayInterface: String?
@@ -215,7 +217,10 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
         let rules = Bundle.main.resourceURL?.appendingPathComponent("Rules", isDirectory: true).path ?? ""
         // 3.1.7: the kill switch («include all networks») takes gVisor; sing-tun
         // refuses the `mixed` stack with it and the tunnel stopped at once.
-        let stacked = ConfigBuilder.stackForIncludeAllNetworks(in: document, includeAllNetworks: platform.includeAllNetworks())
+        let until = AppGroup.defaults.double(forKey: SharedKey.diagnosticLogUntil)
+        let leveled = ConfigBuilder.expireDiagnosticLog(in: document, until: until > 0 ? Date(timeIntervalSince1970: until) : nil)
+        logLevel = leveled.at("log", "level")?.stringValue
+        let stacked = ConfigBuilder.stackForIncludeAllNetworks(in: leveled, includeAllNetworks: platform.includeAllNetworks())
         let relocated = ConfigBuilder.relocateRuleSets(in: stacked, directory: rules).serialized()
         try commandServer.startOrReloadService(relocated, options: LibboxOverrideOptions())
     }
@@ -337,9 +342,26 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
         // 3.1.6: once a minute with a generous leeway, so the system can fold the
         // wake-up into others (battery); it was every 15 s.
         timer.schedule(deadline: .now() + 60, repeating: 60, leeway: .seconds(20))
-        timer.setEventHandler { [weak self] in self?.sampleMemory() }
+        timer.setEventHandler { [weak self] in
+            self?.sampleMemory()
+            self?.endDiagnosticLogIfDue()
+        }
         timer.resume()
         memoryTimer = timer
+    }
+
+    /// 3.3 (PT-16): the diagnostic half hour is over: back to «warn», even when the
+    /// app is not running to say so.
+    private func endDiagnosticLogIfDue() {
+        guard logLevel == "info" else { return }
+        let until = AppGroup.defaults.double(forKey: SharedKey.diagnosticLogUntil)
+        guard until <= Date().timeIntervalSince1970 else { return }
+        do {
+            try reload()
+            event("подробный журнал выключен: прошло 30 минут")
+        } catch {
+            log("подробный журнал: \(error.localizedDescription)", level: .warn)
+        }
     }
 
     /// `phys_footprint` is what the system holds against the extension's limit.

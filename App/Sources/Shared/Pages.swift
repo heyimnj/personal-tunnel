@@ -123,7 +123,7 @@ final class DiagnosticsViewController: UIViewController {
             Lf("Протокол: %@", "\(library.activeNode?.facts.summary ?? "—")"), Lf("Режим пинга: %@", "\(Prefs.pingMode)"),
             L("Ядро туннеля") + ": " + CoreInfo.tunnelCore, memory.text ?? "",
         ].joined(separator: "\n")
-        UIPasteboard.general.string = Redactor.redact(report)
+        UIPasteboard.general.string = Redactor.forSharing(report, hosts: library.serverHosts)
         Haptics.result(true)
     }
 }
@@ -177,6 +177,14 @@ final class ServiceLogViewController: UIViewController, UITableViewDataSource, U
                         self?.refilter()
                     }
                 } + [
+                    // 3.3 (PT-16): «info» (every connection) for half an hour, then «warn» again.
+                    UIAction(title: L("Подробный журнал для диагностики"),
+                             subtitle: Prefs.diagnosticLogActive
+                                 ? Lf("Сам выключится через %@ мин", "\(max(1, Int(((Prefs.diagnosticLogUntil ?? Date()).timeIntervalSinceNow / 60).rounded(.up))))")
+                                 : L("Каждое соединение на 30 минут"),
+                             state: Prefs.diagnosticLogActive ? .on : .off) { _ in
+                        App.shared.setDiagnosticLog(!Prefs.diagnosticLogActive)
+                    },
                     UIAction(title: L("Подробный журнал"), subtitle: L("Каждый пакет: нагружает туннель"), state: Prefs.verboseLog ? .on : .off) { _ in
                         Prefs.verboseLog.toggle()
                         App.shared.reloadTunnel()
@@ -272,7 +280,8 @@ final class ServiceLogViewController: UIViewController, UITableViewDataSource, U
             if !xray.isEmpty { text += ["", "Xray-core:"] + xray }
             if let crash = ServiceLogViewController.lastCrash(paths) { text += ["", L("Последнее падение ядра:")] + crash }
         }
-        UIPasteboard.general.string = Redactor.hideServers(Redactor.redact(text.joined(separator: "\n")), hosts: App.shared.library.serverHosts)
+        // 3.3 (PT-16): no secrets, servers, destinations or addresses but the tunnel's own.
+        UIPasteboard.general.string = Redactor.forSharing(text.joined(separator: "\n"), hosts: App.shared.library.serverHosts)
         Haptics.result(true)
         App.shared.notice.value = Lf("Скопировано строк: %@.", "\(App.shared.core.logs.count)")
     }

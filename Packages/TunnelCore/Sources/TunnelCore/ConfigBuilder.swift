@@ -19,7 +19,10 @@ public struct TunnelOptions: Codable, Equatable, Sendable {
     /// Resolver for everything that goes through the VPN.
     public var dnsServer = "1.1.1.1"
     public var dnsStrategy = "prefer_ipv4"
-    public var logLevel = "info"
+    /// 3.3 (PT-16): «warn» by default — at «info» the core writes every
+    /// connection with its destination. «info» only for a diagnostic half hour
+    /// (`expireDiagnosticLog`), «trace» for «Подробный журнал».
+    public var logLevel = "warn"
     /// Start on the `auto` group (lowest delay) instead of the chosen server.
     public var autoSelect = false
     /// Addresses of servers whose traffic leaves the tunnel (3.1.2). 3.3 (PT-06):
@@ -510,6 +513,23 @@ public enum ConfigBuilder {
             tls["utls"] = .object(utls)
             return tls
         }
+    }
+
+    /// 3.3 (PT-16): how long «Подробный журнал для диагностики» lasts.
+    public static let diagnosticLogDuration: TimeInterval = 30 * 60
+
+    /// The diagnostic «info» level ends by itself: a configuration at «info» whose
+    /// half hour is over (or was never started) runs at «warn». The extension
+    /// applies it at every start and reload, so it holds even when the app is
+    /// not running. Other levels are left as they are.
+    public static func expireDiagnosticLog(in config: JSONValue, until: Date?, now: Date = Date()) -> JSONValue {
+        guard config.at("log", "level")?.stringValue == "info" else { return config }
+        if let until, until > now { return config }
+        var config = config
+        var log = config["log"] ?? .object([:])
+        log["level"] = "warn"
+        config["log"] = log
+        return config
     }
 
     /// Points bundled rule sets at the folder that holds them on this device.
