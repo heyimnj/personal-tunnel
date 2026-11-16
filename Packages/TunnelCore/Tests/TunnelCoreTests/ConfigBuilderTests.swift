@@ -222,6 +222,35 @@ final class ConfigBuilderTests: XCTestCase {
         XCTAssertEqual(plain.at("route", "rules")?[0]?["action"], "sniff")
     }
 
+    /// 3.3 (PT-06): the tunnel the app writes sends no server's address around
+    /// the VPN — no rule outside the bypasses goes `direct` — and the app's own
+    /// core is bound to the physical interface instead.
+    func testServersStayInsideTheTunnelAndTheProbeIsBound() throws {
+        let subscription = try subscription()
+        var options = TunnelOptions()
+        options.bypassRussia = false
+        options.bypassPrivate = false
+        options.subscriptionHosts = ["panel.example.org"]
+        let config = try ConfigBuilder.build(subscription: subscription, selected: nil, options: options)
+        let rules = config.at("route", "rules")?.arrayValue ?? []
+        XCTAssertFalse(rules.contains { $0["outbound"] == "direct" })
+        let hosts = Set(ConfigBuilder.serverHosts(of: [subscription]))
+        for rule in rules {
+            let matched = Set((rule["domain"]?.stringList ?? []) + (rule["ip_cidr"]?.stringList ?? []).map { String($0.split(separator: "/")[0]) })
+            XCTAssertTrue(matched.isDisjoint(with: hosts), "a rule names a server: \(rule)")
+        }
+        XCTAssertNil(config.at("dns", "rules")?.arrayValue?.first { $0["server"] == "dns-direct" && $0["domain"] != nil })
+        // With the bypasses on, only they (private and Russian addresses) go direct.
+        let bypass = try ConfigBuilder.build(subscription: subscription, selected: nil, options: TunnelOptions())
+        let direct = (bypass.at("route", "rules")?.arrayValue ?? []).filter { $0["outbound"] == "direct" }
+        XCTAssertEqual(direct.count, 2)
+        XCTAssertTrue(direct.allSatisfy { $0["ip_is_private"] == true || $0["rule_set"] != nil })
+
+        let bound = try ConfigBuilder.probe(subscription: subscription, options: TunnelOptions(), interface: "en0")
+        XCTAssertEqual(bound.at("route", "default_interface"), "en0")
+        XCTAssertNil(try ConfigBuilder.probe(subscription: subscription, options: TunnelOptions()).at("route", "default_interface"))
+    }
+
     func testRoutingOptions() throws {
         let subscription = try subscription()
         var options = TunnelOptions()

@@ -118,10 +118,11 @@ final class LibraryStore {
             throw ImportError(L("Сначала добавьте сервер или подписку."))
         }
         var options = Prefs.tunnelOptions
-        // 3.1.2: the app's own tests of every server go outside the tunnel.
-        options.serverHosts = ConfigBuilder.serverHosts(of: current.subscriptions)
+        // 3.3 (PT-06): no server's address leaves the tunnel any more (3.1.2 sent
+        // every app's traffic to them around it); the app's core is bound to the
+        // physical interface for its tests instead.
         // 3.1.6: subscription panels through the VPN (not the ones that are servers too).
-        let servers = Set(options.serverHosts)
+        let servers = Set(ConfigBuilder.serverHosts(of: current.subscriptions))
         options.subscriptionHosts = Array(Set(current.subscriptions.filter(\.isRemote).compactMap { subscription in
             subscription.url.flatMap { URL(string: $0.trimmingCharacters(in: .whitespacesAndNewlines))?.host?.lowercased() }
         }).subtracting(servers)).sorted()

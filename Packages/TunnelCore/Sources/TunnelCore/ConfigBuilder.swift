@@ -22,11 +22,11 @@ public struct TunnelOptions: Codable, Equatable, Sendable {
     public var logLevel = "info"
     /// Start on the `auto` group (lowest delay) instead of the chosen server.
     public var autoSelect = false
-    /// Addresses of the servers of every subscription (3.1.2). With the VPN on the
-    /// app's own core tests them through the tunnel: their names are resolved and
-    /// their connections sent outside it, so a test measures the server itself
-    /// and not the server the tunnel happens to use (a dead one made every test
-    /// time out).
+    /// Addresses of servers whose traffic leaves the tunnel (3.1.2). 3.3 (PT-06):
+    /// the app no longer fills it — every app's traffic to those addresses went
+    /// around the VPN (a CDN address took whole sites with it). The app's own
+    /// core is bound to the physical interface instead (`probe(…interface:)`).
+    /// Kept as the fallback for a device where that binding does not work.
     public var serverHosts: [String] = []
     /// Hosts of the subscriptions' addresses (3.1.6): fetched through the VPN even
     /// when the Russian bypass would send them outside it. A panel blocked from
@@ -399,7 +399,10 @@ public enum ConfigBuilder {
     /// the same servers as the tunnel's, built the same way, but no tunnel, no rules
     /// and no groups of the app's own (the `auto` group would test on its own timer).
     /// Server addresses resolve through `dns-direct`, as in the tunnel.
-    public static func probe(subscription: Subscription, options: TunnelOptions, xrayLinks: LocalLinks? = nil) throws -> JSONValue {
+    /// `interface`: with the VPN on, the physical interface (Wi-Fi, cellular) every
+    /// connection of the app's core is bound to, so it measures the server itself
+    /// and not through the tunnel (3.3, PT-06). Nil: the system's routes.
+    public static func probe(subscription: Subscription, options: TunnelOptions, xrayLinks: LocalLinks? = nil, interface: String? = nil) throws -> JSONValue {
         var config = try build(subscription: subscription, selected: nil, options: options, xrayLinks: xrayLinks)
         let own: Set<String> = [selectorTag, autoTag]
         config["outbounds"] = .array((config["outbounds"]?.arrayValue ?? []).filter { !own.contains($0["tag"]?.stringValue ?? "") })
@@ -410,10 +413,12 @@ public enum ConfigBuilder {
             "final": "dns-direct",
             "strategy": .string(options.dnsStrategy),
         ]
-        config["route"] = [
+        var route: JSONValue = [
             "default_domain_resolver": ["server": "dns-direct", "strategy": .string(options.dnsStrategy)],
             "final": "direct",
         ]
+        if let interface, !interface.isEmpty { route["default_interface"] = .string(interface) }
+        config["route"] = route
         return config
     }
 

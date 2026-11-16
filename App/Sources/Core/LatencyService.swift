@@ -4,6 +4,29 @@ import Network
 import Security
 import TunnelCore
 
+/// The physical network the device uses now (Wi-Fi, cellular), never a tunnel:
+/// the app's own core is bound to it while the VPN is on (3.3, PT-06).
+enum PhysicalInterface {
+    static func current(timeout: TimeInterval = 1.5) -> String? {
+        let monitor = NWPathMonitor()
+        let done = DispatchSemaphore(value: 0)
+        let box = NameBox()
+        monitor.pathUpdateHandler = { path in
+            guard box.name == nil else { return }
+            box.name = path.status == .unsatisfied ? "" : path.availableInterfaces.first { $0.type != .other && $0.type != .loopback }?.name ?? ""
+            done.signal()
+        }
+        monitor.start(queue: DispatchQueue(label: "personaltunnel.physical-interface"))
+        _ = done.wait(timeout: .now() + timeout)
+        monitor.cancel()
+        return box.name.flatMap { $0.isEmpty ? nil : $0 }
+    }
+
+    private final class NameBox: @unchecked Sendable {
+        var name: String?
+    }
+}
+
 /// Real probes: a TCP connect outside the tunnel and the core's URL test.
 struct NetworkProbes: LatencyProbes {
     private static let blocking = DispatchQueue(label: "personaltunnel.url-test", qos: .utility, attributes: .concurrent)
@@ -199,7 +222,8 @@ final class LocalCoreProbes: LatencyProbes, @unchecked Sendable {
 
     /// Starts a core for every subscription; those that do not start are
     /// returned with the reason, and their servers fall back to TCP.
-    static func start(_ subscriptions: [Subscription], options: TunnelOptions) -> (probes: LocalCoreProbes, failed: [Int64: String]) {
+    /// `interface`: the physical interface the cores' connections are bound to (PT-06).
+    static func start(_ subscriptions: [Subscription], options: TunnelOptions, interface: String?) -> (probes: LocalCoreProbes, failed: [Int64: String]) {
         var probers: [Int64: PtbridgeProber] = [:]
         var xrays: [PtbridgeXrayInstance] = []
         var failed: [Int64: String] = [:]
@@ -212,7 +236,7 @@ final class LocalCoreProbes: LatencyProbes, @unchecked Sendable {
             do {
                 if let runtime = ConfigBuilder.xrayRuntime(subscription: subscription, links: links) {
                     // One log for every instance of the run: Xray keeps one log per process.
-                    let config = XrayBacked.prepare(runtime, interface: nil, logPath: xrayLog.path, level: "info")
+                    let config = XrayBacked.prepare(runtime, interface: interface, logPath: xrayLog.path, level: "info")
                     var error: NSError?
                     if let xray = PtbridgeStartXray(config.serialized(pretty: false), &error), error == nil {
                         xrays.append(xray)
@@ -222,7 +246,7 @@ final class LocalCoreProbes: LatencyProbes, @unchecked Sendable {
                         continue
                     }
                 }
-                let config = try ConfigBuilder.probe(subscription: subscription, options: options, xrayLinks: links).serialized(pretty: false)
+                let config = try ConfigBuilder.probe(subscription: subscription, options: options, xrayLinks: links, interface: interface).serialized(pretty: false)
                 var error: NSError?
                 if let prober = PtbridgeNewProber(config, &error), error == nil {
                     probers[subscription.id] = prober
@@ -553,10 +577,13 @@ final class LatencyService {
                 directSubscriptions[item.subscription.id] = item.subscription
             }
         }
-        // Servers outside the tunnel: the app's own core URL-tests them. With the VPN
-        // on its connections go through the tunnel (a connect around it found no route
-        // on the device), so their delay includes the tunnel's.
+        // Servers outside the tunnel: the app's own core URL-tests them. 3.3 (PT-06):
+        // with the VPN on, its connections are bound to the physical interface, so
+        // they measure the server itself and the tunnel keeps no hole for them. With
+        // the kill switch iOS lets nothing around the tunnel: they go through it,
+        // and their delay includes the tunnel's.
         let useLocalCore = !direct.isEmpty
+        let bindToPhysical = tunnelUp && !Prefs.killSwitch
         let options = Prefs.tunnelOptions
         let toStart = Array(directSubscriptions.values)
         let names = directSubscriptions.mapValues(\.name)
@@ -592,7 +619,9 @@ final class LatencyService {
             liveMode.tcpFilter = false
             if !live.isEmpty { await runner.run(live, mode: liveMode, tunnel: true) { await deliver($0, liveID) } }
             if useLocalCore, !Task.isCancelled {
-                let started = await Task.detached(priority: .utility) { LocalCoreProbes.start(toStart, options: options) }.value
+                let started = await Task.detached(priority: .utility) {
+                    LocalCoreProbes.start(toStart, options: options, interface: bindToPhysical ? PhysicalInterface.current() : nil)
+                }.value
                 await MainActor.run { self?.local = started.probes }
                 for (id, reason) in started.failed {
                     log(3, Lf("Ядро приложения не запустилось для «%@»: %@. Пинг этой подписки — по TCP.", "\(names[id] ?? "—")", "\(reason)"))
