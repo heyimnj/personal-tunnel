@@ -7,6 +7,11 @@ on:
       - "**.md"
       - "handoff/**"
   workflow_dispatch:
+    inputs:
+      core_cache:
+        description: "Взять ядра (AppCore/Libbox) из кэша — только для проверочной сборки, не для беты и релиза"
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -26,12 +31,14 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 40
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
 
       - name: Тесты TunnelCore и образцы конфигураций
         run: |
           set -euo pipefail
-          docker run --rm -e ROOT="$PWD" -v "$PWD":"$PWD" -w "$PWD" swift:6.1 bash -c '
+          docker run --rm -e ROOT="$PWD" -v "$PWD":"$PWD" -w "$PWD" swift:6.1@sha256:42b58c8cff07f45e6f083ade65743b5b147d0c01d4370d602fcf3c7b37dc1cac bash -c '
             set -euo pipefail
             swift test --package-path Packages/TunnelCore 2>&1 | tail -40
             swift run --package-path Packages/TunnelCore tunnelcore-fixtures build/fixtures "$ROOT/PacketTunnel/Rules"
@@ -47,12 +54,12 @@ jobs:
 
       - name: Кэш проверочного ядра
         id: check-core
-        uses: actions/cache@v4
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
         with:
           path: build/sing-box-check
           key: sing-box-check-${{ runner.os }}-${{ hashFiles('core/VERSION', 'core/patches/**', 'scripts/build-check-core.sh', 'scripts/core-env.sh') }}
 
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5.6.0
         with:
           go-version: ${{ steps.pins.outputs.go }}
           cache: false
@@ -94,7 +101,9 @@ jobs:
     env:
       TUNNEL_CORE: ${{ matrix.tunnel_core }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
 
       - name: Xcode
         id: xcode
@@ -109,21 +118,25 @@ jobs:
         id: pins
         run: echo "go=$(grep '^GO_VERSION=' core/VERSION | cut -d= -f2)" >> "$GITHUB_OUTPUT"
 
+      # 3.3 (PT-17): ядра, которые попадают в IPA, собираются заново в каждой сборке
+      # (push = бета или релиз); кэш — только по ручному запуску с core_cache.
       - name: Кэш AppCore
         id: appcore
-        uses: actions/cache/restore@v4
+        if: github.event_name == 'workflow_dispatch' && inputs.core_cache
+        uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
         with:
           path: AppCore.xcframework
           key: appcore-${{ runner.arch }}-${{ steps.xcode.outputs.stamp }}-${{ hashFiles('core/VERSION', 'core/patches/**', 'core/bridge/**', 'scripts/build-libbox.sh', 'scripts/core-env.sh') }}
 
       - name: Кэш Libbox
         id: libbox
-        uses: actions/cache/restore@v4
+        if: github.event_name == 'workflow_dispatch' && inputs.core_cache
+        uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
         with:
           path: Libbox.xcframework
           key: libbox-${{ matrix.tunnel_core }}-${{ runner.arch }}-${{ steps.xcode.outputs.stamp }}-${{ hashFiles('core/VERSION', 'core/patches/**', 'core/bridge/**', 'scripts/build-libbox.sh', 'scripts/core-env.sh') }}
 
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5.6.0
         if: steps.libbox.outputs.cache-hit != 'true' || steps.appcore.outputs.cache-hit != 'true'
         with:
           go-version: ${{ steps.pins.outputs.go }}
@@ -136,7 +149,7 @@ jobs:
       - name: Сохранить AppCore
         if: steps.appcore.outputs.cache-hit != 'true'
         continue-on-error: true
-        uses: actions/cache/save@v4
+        uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
         with:
           path: AppCore.xcframework
           key: appcore-${{ runner.arch }}-${{ steps.xcode.outputs.stamp }}-${{ hashFiles('core/VERSION', 'core/patches/**', 'core/bridge/**', 'scripts/build-libbox.sh', 'scripts/core-env.sh') }}
@@ -147,7 +160,8 @@ jobs:
 
       - name: Сохранить Libbox
         if: steps.libbox.outputs.cache-hit != 'true'
-        uses: actions/cache/save@v4
+        continue-on-error: true
+        uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
         with:
           path: Libbox.xcframework
           key: libbox-${{ matrix.tunnel_core }}-${{ runner.arch }}-${{ steps.xcode.outputs.stamp }}-${{ hashFiles('core/VERSION', 'core/patches/**', 'core/bridge/**', 'scripts/build-libbox.sh', 'scripts/core-env.sh') }}
@@ -155,8 +169,12 @@ jobs:
       - name: Проект Xcode
         run: |
           set -euo pipefail
-          brew install xcodegen
-          xcodegen generate
+          # 3.3 (PT-17): закреплённая версия XcodeGen, архив сверяется по SHA256.
+          curl -fsSL -o "$RUNNER_TEMP/xcodegen.zip" https://github.com/yonaskolb/XcodeGen/releases/download/2.46.0/xcodegen.zip
+          echo "4d9e34b62172d645eed6457cac13fc222569974098ef4ee9c3368bedf0196806  $RUNNER_TEMP/xcodegen.zip" | shasum -a 256 -c -
+          unzip -q -o "$RUNNER_TEMP/xcodegen.zip" -d "$RUNNER_TEMP"
+          "$RUNNER_TEMP/xcodegen/bin/xcodegen" --version
+          "$RUNNER_TEMP/xcodegen/bin/xcodegen" generate
 
       - name: Компиляция
         run: |
@@ -195,12 +213,14 @@ jobs:
           (cd build/ipa && /usr/bin/ditto -c -k --keepParent Payload "../$NAME")
           shasum -a 256 "build/$NAME" > build/SHA256SUMS
           git rev-parse HEAD > build/source-commit.txt
-          { echo "[tunnel]"; cat Libbox.xcframework/CORE.txt; echo "[app]"; cat AppCore.xcframework/CORE.txt; } > build/core.txt
+          frameworks() { (cd "$1" && find . -type f -not -name CORE.txt -print0 | LC_ALL=C sort -z | xargs -0 shasum -a 256 | shasum -a 256 | cut -c1-64); }
+          { echo "[tunnel]"; cat Libbox.xcframework/CORE.txt; echo "sha256 $(frameworks Libbox.xcframework)"
+            echo "[app]"; cat AppCore.xcframework/CORE.txt; echo "sha256 $(frameworks AppCore.xcframework)"; } > build/core.txt
           echo "name=$NAME" >> "$GITHUB_OUTPUT"
           ls -la build/*.ipa
 
       - name: Выложить IPA
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: PersonalTunnel-unsigned-${{ github.run_number }}-tunnel-${{ matrix.tunnel_core }}
           path: |
@@ -214,7 +234,7 @@ jobs:
       - name: Выложить журнал сборки
         if: always()
         continue-on-error: true
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: build-log-${{ github.run_number }}-${{ matrix.tunnel_core }}
           path: build/xcodebuild.log

@@ -20,6 +20,10 @@ GOTOOLCHAIN="go$GO_VERSION" go install "github.com/sagernet/gomobile/cmd/gomobil
 GOTOOLCHAIN="go$GO_VERSION" go install "github.com/sagernet/gomobile/cmd/gobind@$GOMOBILE_VERSION"
 
 VERSION="${SING_BOX_TAG#v}"
+# Флаги рантайма Go — те же, что у официальной сборки sing-box (cmd/internal/build_shared/flags.go):
+# tlssha1=1 возвращает подписи SHA-1 в рукопожатии TLS 1.2, которые Go 1.24+ отключил по умолчанию,
+# иначе старые серверы и панели, что ещё подписывают ими, не подключаются (ослабление TLS — осознанное,
+# убрать, когда такие серверы перестанут встречаться); multipathtcp=0 — без Multipath TCP.
 LDFLAGS="-X github.com/sagernet/sing-box/constant.Version=$VERSION -X runtime.godebugDefault=multipathtcp=0,tlssha1=1 -checklinkname=0 -s -w -buildid="
 
 bind() { # <output name> <go version> <directory> <packages...>

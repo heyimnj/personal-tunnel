@@ -33,9 +33,13 @@ PY
   "$CHECK" rule-set compile --output "$RULES/$2.srs" "$WORK/$2.json"
 }
 
+# 3.3 (PT-17): списки HaGeZi берутся из одного закреплённого коммита, он записывается в NOTICE.
+HAGEZI_REVISION="$(git ls-remote https://github.com/hagezi/dns-blocklists.git refs/heads/main | cut -f1)"
+[ -n "$HAGEZI_REVISION" ] || { echo "error: не узнать коммит HaGeZi" >&2; exit 1; }
+
 hagezi() { # <hagezi list> <output name>
   local list="$1" name="$2"
-  curl -fsSL "https://raw.githubusercontent.com/hagezi/dns-blocklists/main/wildcard/$list-onlydomains.txt" -o "$WORK/$list.txt"
+  curl -fsSL "https://raw.githubusercontent.com/hagezi/dns-blocklists/$HAGEZI_REVISION/wildcard/$list-onlydomains.txt" -o "$WORK/$list.txt"
   local version
   version="$(grep -m1 '^# Version:' "$WORK/$list.txt" | cut -d: -f2- | tr -d ' ')"
   compile_domains "$WORK/$list.txt" "$name"
@@ -101,6 +105,7 @@ compile_domains "$WORK/ru.txt" ad-ru
 {
   echo "Personal Tunnel ad-block lists from HaGeZi DNS Blocklists"
   echo "https://github.com/hagezi/dns-blocklists — GNU General Public License v3.0"
+  echo "Revision: $HAGEZI_REVISION"
   echo
   cat "$WORK/sources.txt"
 } > "$RULES/ad-hagezi.NOTICE.txt"

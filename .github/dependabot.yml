@@ -1,0 +1,9 @@
+# 3.3 (PT-17): GitHub Actions закреплены по SHA; Dependabot предлагает обновления раз в неделю.
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    commit-message:
+      prefix: "CI"
