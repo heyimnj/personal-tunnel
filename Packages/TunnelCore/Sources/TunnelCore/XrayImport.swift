@@ -62,8 +62,14 @@ public enum XrayImport {
         let proxies = (config["outbounds"]?.arrayValue ?? []).filter { proxyProtocols.contains($0["protocol"]?.stringValue?.lowercased() ?? "") }
         guard proxies.count == 1 else { return false }
         return proxies.contains { item in
-            item["protocol"]?.stringValue?.lowercased() == "vless"
-                && ["tls", "xtls"].contains(item.at("streamSettings", "security")?.stringValue?.lowercased() ?? "")
+            guard item["protocol"]?.stringValue?.lowercased() == "vless" else { return false }
+            let security = item.at("streamSettings", "security")?.stringValue?.lowercased() ?? ""
+            if ["tls", "xtls"].contains(security) { return true }
+            // 3.1.12: REALITY over gRPC too. sing-box's gRPC to these panels ended in
+            // «io: read/write on closed pipe» / timeouts with either core (1.14.0 and
+            // 1.14.4) while Happ, on Xray-core, connected; REALITY over TCP stays in sing-box.
+            let network = item.at("streamSettings", "network")?.stringValue?.lowercased() ?? ""
+            return security == "reality" && ["grpc", "gun"].contains(network)
         }
     }
 

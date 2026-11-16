@@ -572,6 +572,9 @@ final class ServerRowView: SwipeRow {
         globe.tintColor = .label
         check.tintColor = Theme.accent
         check.setContentHuggingPriority(.required, for: .horizontal)
+        // 3.1.12: a long name gives way (…) and the checkmark stays whole beside it.
+        check.setContentCompressionResistancePriority(.required, for: .horizontal)
+        name.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
         spinner.color = Theme.accent
         spinner.hidesWhenStopped = true
         ping.textAlignment = .right

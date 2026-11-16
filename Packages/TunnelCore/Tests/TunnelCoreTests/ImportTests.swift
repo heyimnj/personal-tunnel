@@ -92,6 +92,28 @@ final class ImportTests: XCTestCase {
         XCTAssertEqual(hysteria["down_mbps"], 200)
     }
 
+    /// 3.1.12: VLESS REALITY over gRPC runs in Xray-core; REALITY over TCP stays in sing-box.
+    func testRealityGRPCRunsInXray() throws {
+        func config(_ network: String) -> String {
+            """
+            {"remarks": "\(network)", "outbounds": [{"protocol": "vless", "tag": "proxy",
+              "settings": {"vnext": [{"address": "\(network).example.net", "port": 443,
+                "users": [{"id": "11111111-2222-3333-4444-555555555555", "encryption": "none"}]}]},
+              "streamSettings": {"network": "\(network)", "security": "reality",
+                "realitySettings": {"serverName": "www.example.com", "publicKey": "frA_WzVIkA2NPG1EUvGDN8WoFAneqhPgaBGe9FvsaKc",
+                  "shortId": "ab", "fingerprint": "firefox"},
+                "grpcSettings": {"serviceName": "svc"}}},
+              {"protocol": "freedom", "tag": "direct"}]}
+            """
+        }
+        let result = try ContentImporter.parse("[\(config("grpc")), \(config("tcp"))]")
+        XCTAssertEqual(result.nodes.map(\.name), ["grpc", "tcp"])
+        XCTAssertEqual(result.nodes[0].outbound["type"], .string(XrayBacked.type))
+        XCTAssertEqual(result.nodes[0].outbound["server"], "grpc.example.net")
+        XCTAssertEqual(result.nodes[1].outbound["type"], "vless")
+        XCTAssertEqual(result.nodes[1].outbound.at("tls", "reality", "enabled"), true)
+    }
+
     /// 3.0.5: Xray's certificate pins in `tlsSettings` reach sing-box.
     func testXrayCertificatePins() throws {
         let hash = String(repeating: "0f", count: 32)

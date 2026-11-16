@@ -41,10 +41,14 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
             let defaults = AppGroup.defaults
             // 3.1.8: an error left by an earlier start is not this start's.
             defaults.removeObject(forKey: SharedKey.lastTunnelError)
+            // 3.1.12: marked before the core starts, not after. An extension that
+            // died inside the start (a Go panic, the memory limit) left no trace:
+            // the app showed «connecting», then «not connected», and nothing else.
+            // Now the app reports the end with the core's own words.
+            defaults.set(Date().timeIntervalSince1970, forKey: SharedKey.tunnelStartedAt)
             do {
                 try self.start(options: options)
                 defaults.removeObject(forKey: SharedKey.lastTunnelError)
-                defaults.set(Date().timeIntervalSince1970, forKey: SharedKey.tunnelStartedAt)
                 let core = Bundle.main.object(forInfoDictionaryKey: "PersonalTunnelCore") as? String ?? "?"
                 self.event("запуск, ядро \(core)")
                 self.log("ядро расширения: \(core)")
@@ -53,6 +57,7 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
             } catch {
                 let message = Redactor.redact(error.localizedDescription)
                 defaults.set(message, forKey: SharedKey.lastTunnelError)
+                defaults.removeObject(forKey: SharedKey.tunnelStartedAt)
                 self.event("запуск не удался: \(message)")
                 self.shutDown()
                 completionHandler(TunnelError(message))
