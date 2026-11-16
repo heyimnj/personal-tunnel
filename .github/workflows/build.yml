@@ -16,8 +16,8 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  # PTBeta 6: та же App Group, что у Personal Tunnel. Своя (group.a69e6dc9a612eb7d.beta, beta 1–5) в профиле
-  # подписи не выдана: расширение не открывало группу и не запускалось. Данные беты и основной — общие.
+  # App Group профиля, которым подписывается IPA (та же, что у 1.x: данные лежат в ней). Её же берёт
+  # PTBeta: своя группа (…beta) в профиле не выдана, и расширение беты не запускалось.
   APP_GROUP_IDENTIFIER: group.a69e6dc9a612eb7d.1
 
 jobs:
@@ -183,7 +183,7 @@ jobs:
           set -euo pipefail
           VERSION="$(grep '^MARKETING_VERSION' Config/Base.xcconfig | cut -d= -f2 | tr -d ' ')"
           BUILD="$(grep '^CURRENT_PROJECT_VERSION' Config/Base.xcconfig | cut -d= -f2 | tr -d ' ')"
-          NAME="PTBeta-${VERSION//./_}-${BUILD}-tunnel-${TUNNEL_CORE}-unsigned.ipa"
+          NAME="PersonalTunnel-${VERSION//./_}-${BUILD}-tunnel-${TUNNEL_CORE}-unsigned.ipa"
           APP="build/DerivedData/Build/Products/Release-iphoneos/PersonalTunnel.app"
           test -d "$APP/PlugIns/PacketTunnel.appex"
           test -f "$APP/PlugIns/PacketTunnel.appex/Rules/ad-block.srs"

@@ -1,14 +1,14 @@
 // Версия Personal Tunnel. Номер сборки должен только расти: 1.5.0 была сборкой 179.
 MARKETING_VERSION = 3.2
-CURRENT_PROJECT_VERSION = 247
+CURRENT_PROJECT_VERSION = 248
 // Метка предрелиза внизу настроек: «3.0, RC 2 (217)», «3.0, RC 1 (216)». Пусто у релиза: «3.0 (218)».
-PRERELEASE = beta 6
+PRERELEASE =
 
-// Personal Tunnel Beta (ветка claude/personal-tunnel-beta): своё имя и Bundle ID, ставится рядом
-// с основным приложением. Основная ветка: com.personaltunnelapp / Personal Tunnel.
-PT_BUNDLE_ID = com.personaltunnelapp.beta
-PT_DISPLAY_NAME = PTBeta
-PT_URL_SCHEME = ptbeta
+// Имя, Bundle ID и URL-схема сборки. Personal Tunnel: com.personaltunnelapp. Бета (PTBeta) ставилась
+// рядом с ним: com.personaltunnelapp.beta / PTBeta / ptbeta.
+PT_BUNDLE_ID = com.personaltunnelapp
+PT_DISPLAY_NAME = Personal Tunnel
+PT_URL_SCHEME = personaltunnel
 
 // App Group, общая для приложения и туннеля. Подписанной сборке нужна группа из её
 // профиля: CI передаёт APP_GROUP_IDENTIFIER=... в xcodebuild.
