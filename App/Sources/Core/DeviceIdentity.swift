@@ -22,19 +22,27 @@ enum DeviceIdentity {
         return value
     }
 
+    /// 3.3 (PT-15): the HWID lives in the Keychain only («this device only»: not
+    /// in backups, not on another iPhone). The copy 1.x–3.2 kept in UserDefaults is
+    /// moved there once and deleted.
     private static func load() -> String {
-        if let stored = valid(readKeychain()) { return stored }
         let defaults = UserDefaults.standard
+        let copies = [defaultsKey, "vpndirect.subscription.hwid"]
+        if let stored = valid(readKeychain()) {
+            for key in copies { defaults.removeObject(forKey: key) }
+            return stored
+        }
         if let stored = valid(defaults.string(forKey: defaultsKey)) ?? valid(defaults.string(forKey: "vpndirect.subscription.hwid")) {
             writeKeychain(stored)
+            if valid(readKeychain()) == stored {
+                for key in copies { defaults.removeObject(forKey: key) }
+            }
             return stored
         }
         // 3.2.1: a new identifier is random. It came from identifierForVendor, and
         // then «Удалить все данные» could not change it: the same value came back.
-        // Installs that already have one keep it (Keychain, or the 1.x defaults).
         let fresh = String(UUID().uuidString.replacingOccurrences(of: "-", with: "").lowercased().prefix(32))
         writeKeychain(fresh)
-        defaults.set(fresh, forKey: defaultsKey)
         return fresh
     }
 

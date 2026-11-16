@@ -64,7 +64,38 @@ final class LibraryStore {
         queue.async {
             guard let data = try? JSONEncoder().encode(snapshot) else { return }
             try? data.write(to: paths.library, options: .atomic)
-            try? FileManager.default.setAttributes([.protectionKey: FileProtectionType.completeUntilFirstUserAuthentication], ofItemAtPath: paths.library.path)
+            // 3.3 (PT-15): only the app reads the library, and only while unlocked;
+            // the tunnel's own file (tunnel.json) stays readable after the first unlock (On Demand).
+            try? FileManager.default.setAttributes([.protectionKey: FileProtectionType.completeUnlessOpen], ofItemAtPath: paths.library.path)
+        }
+    }
+
+    /// 3.3 (PT-15), at every launch: the app's own data (`PersonalTunnel/`) stays
+    /// out of iCloud and computer backups; copies of the configuration the core
+    /// wrote before 3.3 (the container's `configuration.json` and those in crash,
+    /// OOM and power reports) are deleted; crash reports older than 7 days go.
+    static func protectStoredData(_ paths: SharedPaths) {
+        let files = FileManager.default
+        try? paths.prepare()
+        for url in [paths.data, paths.container.appendingPathComponent("configuration.json")] where files.fileExists(atPath: url.path) {
+            var url = url
+            var values = URLResourceValues()
+            values.isExcludedFromBackup = true
+            try? url.setResourceValues(values)
+        }
+        try? files.removeItem(at: paths.container.appendingPathComponent("configuration.json"))
+        if files.fileExists(atPath: paths.library.path) {
+            try? files.setAttributes([.protectionKey: FileProtectionType.completeUnlessOpen], ofItemAtPath: paths.library.path)
+        }
+        if let walker = files.enumerator(at: paths.working, includingPropertiesForKeys: nil) {
+            for case let url as URL in walker where url.lastPathComponent == "configuration.json" {
+                try? files.removeItem(at: url)
+            }
+        }
+        let weekAgo = Date().addingTimeInterval(-7 * 86_400)
+        for folder in (try? files.contentsOfDirectory(at: paths.crashReports, includingPropertiesForKeys: [.contentModificationDateKey])) ?? [] {
+            let modified = (try? folder.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate ?? .distantPast
+            if modified < weekAgo { try? files.removeItem(at: folder) }
         }
     }
 

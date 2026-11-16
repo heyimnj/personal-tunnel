@@ -1,0 +1,38 @@
+diff --git a/experimental/libbox/log.go b/experimental/libbox/log.go
+index 3f53190..ac9440c 100644
+--- a/experimental/libbox/log.go
++++ b/experimental/libbox/log.go
+@@ -65,6 +65,14 @@ func configSnapshotPath() string {
+ }
+ 
+ func saveConfigSnapshot(configContent string) {
++	// lx:begin no-config-snapshot
++	// Personal Tunnel (audit PT-15): on iOS the configuration (server keys,
++	// passwords) is not copied into the shared container, crash reports or OOM
++	// reports, where it outlived the subscription and went into backups.
++	if runtime.GOOS == "ios" {
++		return
++	}
++	// lx:end
+ 	snapshotPath := configSnapshotPath()
+ 	os.WriteFile(snapshotPath, []byte(configContent), 0o666)
+ 	chownReport(snapshotPath)
+diff --git a/experimental/libbox/report.go b/experimental/libbox/report.go
+index 77cbbfa..2aab8bd 100644
+--- a/experimental/libbox/report.go
++++ b/experimental/libbox/report.go
+@@ -62,6 +62,14 @@ func writeReportMetadata(destPath string, metadata any) {
+ }
+ 
+ func copyConfigSnapshot(destPath string) {
++	// lx:begin no-config-snapshot
++	// Personal Tunnel (audit PT-15): on iOS the configuration (server keys,
++	// passwords) is not copied into the shared container, crash reports or OOM
++	// reports, where it outlived the subscription and went into backups.
++	if runtime.GOOS == "ios" {
++		return
++	}
++	// lx:end
+ 	snapshotPath := configSnapshotPath()
+ 	content, err := os.ReadFile(snapshotPath)
+ 	if err != nil {

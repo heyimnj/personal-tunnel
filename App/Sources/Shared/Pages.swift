@@ -755,6 +755,19 @@ final class ScrollScrubber: UIView {
     }
 }
 
+/// Deletes an exported temporary file when the export sheet closes.
+final class TemporaryFileCleanup: NSObject, UIDocumentPickerDelegate {
+    var file: URL?
+
+    private func clean() {
+        if let file { try? FileManager.default.removeItem(at: file) }
+        file = nil
+    }
+
+    func documentPicker(_: UIDocumentPickerViewController, didPickDocumentsAt _: [URL]) { clean() }
+    func documentPickerWasCancelled(_: UIDocumentPickerViewController) { clean() }
+}
+
 final class FilePicker: NSObject, UIDocumentPickerDelegate {
     private var done: ((String) -> Void)?
 
@@ -826,6 +839,7 @@ final class SubscriptionsViewController: FormViewController {
 /// «Резервные копии»: the whole library as one JSON file.
 final class BackupViewController: FormViewController {
     private let picker = FilePicker()
+    private let exportCleanup = TemporaryFileCleanup()
 
     init() { super.init(title: L("Резервные копии")) }
 
@@ -842,7 +856,11 @@ final class BackupViewController: FormViewController {
         formatter.dateFormat = "yyyy-MM-dd-HHmm"
         let url = FileManager.default.temporaryDirectory.appendingPathComponent("PersonalTunnel-\(formatter.string(from: Date())).ptbackup.json")
         try? data.write(to: url, options: .atomic)
-        present(UIDocumentPickerViewController(forExporting: [url], asCopy: true), animated: true)
+        // 3.3 (PT-15): the temporary copy (every key in it) goes once it is saved or not.
+        let exporter = UIDocumentPickerViewController(forExporting: [url], asCopy: true)
+        exportCleanup.file = url
+        exporter.delegate = exportCleanup
+        present(exporter, animated: true)
     }
 
     private func restore() {
