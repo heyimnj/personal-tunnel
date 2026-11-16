@@ -102,6 +102,11 @@ jobs:
         tunnel_core: [combined]
     env:
       TUNNEL_CORE: ${{ matrix.tunnel_core }}
+    # 3.3 beta 2 (PT-17): attestation происхождения IPA.
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
@@ -220,6 +225,14 @@ jobs:
             echo "[app]"; cat AppCore.xcframework/CORE.txt; echo "sha256 $(frameworks AppCore.xcframework)"; } > build/core.txt
           echo "name=$NAME" >> "$GITHUB_OUTPUT"
           ls -la build/*.ipa
+
+      # 3.3 beta 2 (PT-17): подписанная GitHub запись, что этот IPA собран здесь из этого коммита.
+      # Проверка: gh attestation verify <файл.ipa> --repo <владелец>/personal-tunnel
+      - name: Происхождение сборки
+        continue-on-error: true
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-path: build/${{ steps.package.outputs.name }}
 
       - name: Выложить IPA
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
