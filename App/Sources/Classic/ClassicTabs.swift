@@ -437,6 +437,7 @@ final class ClassicSettingsViewController: ClassicPage {
         content.addArrangedSubview(section(L("МАРШРУТИЗАЦИЯ"), [
             link(L("Блокировка рекламы")) { AdBlockViewController() },
             toggle(L("Обход российских сайтов"), Prefs.bypassRussia) { Prefs.bypassRussia = $0; changed() },
+            Classic.body(L("Российские сайты открываются мимо VPN, с вашим настоящим IP. Сайт, который подгружает что-то с российского адреса, может увидеть настоящий IP рядом с IP VPN."), 12, .regular, .secondaryLabel, lines: 0),
             toggle(L("Защищённый DNS"), Prefs.secureDNS) { Prefs.secureDNS = $0; App.shared.tunnel.applySettings() },
             toggle(L("Локальная сеть"), Prefs.localNetwork) { Prefs.localNetwork = $0; changed() },
             Classic.body(L("Серверы DNS берутся из конфигурации. После изменения системных маршрутов переподключите VPN."), 12, .regular, .secondaryLabel, lines: 0),
