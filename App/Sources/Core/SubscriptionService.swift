@@ -33,6 +33,10 @@ enum SubscriptionService {
     static func fetch(url text: String, device: SubscriptionRequest.Device?) async throws -> Fetched {
         let url = try SubscriptionRequest.address(text)
         var lastError: Error = ImportError(L("Подписка не загрузилась."))
+        // 3.2.4: the answer to the first try with the device's data. When every try
+        // fails, that is the reason shown: the plain client's answer (no HWID) only
+        // ever said «send the HWID», which it had not been sent.
+        var deviceReply: Error?
         // 3.3 beta 4: a session of its own: no connection kept from before the VPN
         // came up or restarted (a launch after an update timed out on one).
         let session = URLSession(configuration: .ephemeral)
@@ -78,9 +82,10 @@ enum SubscriptionService {
                 throw error
             } catch {
                 lastError = error
+                if deviceReply == nil, !attempt.headers.isEmpty { deviceReply = error }
             }
         }
-        throw lastError
+        throw deviceReply ?? lastError
     }
 
     /// 3.3 (PT-13): a redirect to plain http is not followed; one to another host

@@ -499,6 +499,8 @@
 "ядро расширения: %@" = "extension core: %@";
 "запуск не удался: %@" = "start failed: %@";
 "остановка, причина %@" = "stop, reason %@";
+"ядро закрыто за %@ с" = "core closed in %@ s";
+"ядро закрывается дольше 1,5 с: остановка без ожидания" = "the core takes longer than 1.5 s to close: stopping without waiting";
 "перезагрузка конфигурации" = "reloading the configuration";
 "перезагрузка не удалась: %@" = "reload failed: %@";
 "Нет доступа к общей группе приложения (%@). Проверьте подпись приложения и расширения." = "No access to the app group (%@). Check how the app and the extension are signed.";
@@ -639,3 +641,5 @@
 "Переподключиться" = "Reconnect";
 "Подписка обновлена: параметры текущего сервера изменились. Новые применятся после переподключения." = "Subscription updated: the current server's parameters changed. The new ones take effect after reconnecting.";
 "Позже" = "Later";
+"Идентификатор устройства (HWID) сейчас не читается из Keychain (код %@). Подписка не загружена, чтобы панель не увидела новое устройство; попробуйте ещё раз." = "The device identifier (HWID) cannot be read from the Keychain right now (code %@). The subscription was not downloaded so the panel does not see a new device; try again.";
+"Создан новый идентификатор устройства (HWID): панели подписок увидят новое устройство." = "A new device identifier (HWID) was created: subscription panels will see a new device.";

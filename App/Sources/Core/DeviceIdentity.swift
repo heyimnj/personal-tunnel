@@ -1,4 +1,5 @@
 import Foundation
+import TunnelCore
 import Security
 import UIKit
 
@@ -10,9 +11,16 @@ enum DeviceIdentity {
     private static let defaultsKey = "vpndirect.subscription.hwid.v2"
     private static var cached: String?
 
-    static var hwid: String {
+    /// For display only («—» when the Keychain cannot be read now).
+    static var hwid: String { (try? current()) ?? "—" }
+
+    /// The identifier a subscription download sends. 3.2.4: when the Keychain
+    /// cannot be read (anything but «no such item»), this fails instead of
+    /// making a new identifier: a new one looks like a new device to every
+    /// panel and may run into its device limit.
+    static func current() throws -> String {
         if let cached { return cached }
-        let value = load()
+        let value = try load()
         cached = value
         return value
     }
@@ -25,16 +33,20 @@ enum DeviceIdentity {
     /// 3.3 (PT-15): the HWID lives in the Keychain only («this device only»: not
     /// in backups, not on another iPhone). The copy 1.x–3.2 kept in UserDefaults is
     /// moved there once and deleted.
-    private static func load() -> String {
+    private static func load() throws -> String {
         let defaults = UserDefaults.standard
         let copies = [defaultsKey, "vpndirect.subscription.hwid"]
-        if let stored = valid(readKeychain()) {
+        let read = readKeychain()
+        if read.status != errSecSuccess, read.status != errSecItemNotFound {
+            throw ImportError(Lf("Идентификатор устройства (HWID) сейчас не читается из Keychain (код %@). Подписка не загружена, чтобы панель не увидела новое устройство; попробуйте ещё раз.", "\(read.status)"))
+        }
+        if let stored = valid(read.value) {
             for key in copies { defaults.removeObject(forKey: key) }
             return stored
         }
         if let stored = valid(defaults.string(forKey: defaultsKey)) ?? valid(defaults.string(forKey: "vpndirect.subscription.hwid")) {
             writeKeychain(stored)
-            if valid(readKeychain()) == stored {
+            if valid(readKeychain().value) == stored {
                 for key in copies { defaults.removeObject(forKey: key) }
             }
             return stored
@@ -43,6 +55,8 @@ enum DeviceIdentity {
         // then «Удалить все данные» could not change it: the same value came back.
         let fresh = String(UUID().uuidString.replacingOccurrences(of: "-", with: "").lowercased().prefix(32))
         writeKeychain(fresh)
+        // 3.2.4: a new identifier means a new device to the panels: the log says so.
+        DispatchQueue.main.async { App.shared.core.note(L("Создан новый идентификатор устройства (HWID): панели подписок увидят новое устройство."), level: 3) }
         return fresh
     }
 
@@ -57,12 +71,13 @@ enum DeviceIdentity {
         cached = nil
     }
 
-    private static func readKeychain() -> String? {
+    private static func readKeychain() -> (status: OSStatus, value: String?) {
         let query: [String: Any] = [kSecClass as String: kSecClassGenericPassword, kSecAttrService as String: service,
                                     kSecAttrAccount as String: account, kSecReturnData as String: true, kSecMatchLimit as String: kSecMatchLimitOne]
         var item: CFTypeRef?
-        guard SecItemCopyMatching(query as CFDictionary, &item) == errSecSuccess, let data = item as? Data else { return nil }
-        return String(data: data, encoding: .utf8)
+        let status = SecItemCopyMatching(query as CFDictionary, &item)
+        guard status == errSecSuccess, let data = item as? Data else { return (status, nil) }
+        return (status, String(data: data, encoding: .utf8))
     }
 
     private static func writeKeychain(_ value: String) {

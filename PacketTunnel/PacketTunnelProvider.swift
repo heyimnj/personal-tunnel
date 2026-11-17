@@ -19,6 +19,8 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
     }()
 
     private static let queueKey = DispatchSpecificKey<Void>()
+    /// 3.2.4: the tunnel is stopping; the cores may still be closing off the queue.
+    private var stopping = false
     private var commandServer: LibboxCommandServer?
     private lazy var platform = TunnelPlatform(provider: self)
     private var paths: SharedPaths?
@@ -85,9 +87,23 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
             // update (stop reason 9) ends the process while the core is closing, and
             // the app then reported a tunnel the system had ended without a stop.
             AppGroup.defaults.removeObject(forKey: SharedKey.tunnelStartedAt)
+            self.stopping = true
             self.log("остановка, причина \(reason.rawValue)")
             self.event("остановка, причина \(reason.rawValue)")
-            self.shutDown()
+            // 3.2.4: iOS shows the VPN off only after the completion handler. The
+            // cores close their connections first; with connections still waiting on
+            // a server (15 s each) that took seconds. They get 1.5 s, then the stop
+            // goes on without them: the process ends right after anyway.
+            let started = DispatchTime.now()
+            let closed = DispatchSemaphore(value: 0)
+            DispatchQueue.global(qos: .userInitiated).async {
+                self.shutDown()
+                closed.signal()
+            }
+            let inTime = closed.wait(timeout: .now() + 1.5) == .success
+            let seconds = Double(DispatchTime.now().uptimeNanoseconds - started.uptimeNanoseconds) / 1_000_000_000
+            let took = String(format: "%.1f", seconds)
+            self.event(inTime ? "ядро закрыто за \(took) с" : "ядро закрывается дольше 1,5 с: остановка без ожидания")
             // 3.1.14: turned off by the owner (Control Center, Settings, the app) or
             // replaced by another VPN: iOS must not bring it back on demand. Control
             // Center left On Demand on, and the VPN came back a few seconds later.
@@ -301,7 +317,7 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
                     return
                 }
                 self?.queue.async {
-                    guard let self, self.xray != nil, name != self.xrayInterface, let name else { return }
+                    guard let self, !self.stopping, self.xray != nil, name != self.xrayInterface, let name else { return }
                     self.xrayInterface = name
                     self.event("сеть сменилась (\(name)): перезапуск Xray-core")
                     try? self.startXray(paths)

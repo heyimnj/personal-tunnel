@@ -904,7 +904,7 @@ final class NetworkActivityViewController: FormViewController {
             .value(title: L("Обновление подписок"), detail: { L("по запросу") }),
             .value(title: L("Проверка соединения"), detail: { "www.gstatic.com" }),
             .value(title: L("Пинг серверов"), detail: { L("URL-тест через сервер") }),
-            .value(title: "HWID", detail: { String(DeviceIdentity.hwid.prefix(4)) + "…" + String(DeviceIdentity.hwid.suffix(4)) }),
+            .value(title: "HWID", detail: { let id = DeviceIdentity.hwid; return id.count > 8 ? String(id.prefix(4)) + "…" + String(id.suffix(4)) : id }),
         ])]
     }
 }

@@ -342,7 +342,7 @@ final class App {
                 do {
                     // 3.3: a new subscription's panel gets an HWID of its own (HMAC with its host).
                     let probe = Subscription(id: 0, name: "", url: trimmed, hwidPerHost: true)
-                    let device = sendsDeviceData ? SubscriptionService.device(hwid: probe.hwid(device: DeviceIdentity.hwid)) : nil
+                    let device = try sendsDeviceData ? SubscriptionService.device(hwid: probe.hwid(device: DeviceIdentity.current())) : nil
                     let fetched = try await SubscriptionService.fetch(url: trimmed, device: device)
                     self.logImport(fetched, name: fetched.title ?? SubscriptionHeaders.fallbackName(url: trimmed))
                     self.store.update { library in
@@ -441,7 +441,7 @@ final class App {
         Task { @MainActor in
             defer { self.refreshing.value.remove(id) }
             do {
-                let device = subscription.sendsDeviceIdentity ? SubscriptionService.device(hwid: subscription.hwid(device: DeviceIdentity.hwid)) : nil
+                let device = try subscription.sendsDeviceIdentity ? SubscriptionService.device(hwid: subscription.hwid(device: DeviceIdentity.current())) : nil
                 let fetched = try await SubscriptionService.fetch(url: url, device: device)
                 self.logImport(fetched, name: subscription.name)
                 let previous = self.library.activeSubscription?.id == id ? self.activeFingerprint() : nil
