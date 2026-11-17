@@ -173,7 +173,7 @@ let probeExit = ProbeExit(port: 34567, username: "probe", password: "secret")
 let exitSubscription = Subscription(id: 1, name: "all", nodes: NodeAssembler.assemble(try samples.flatMap { try $0.1.map(ShareLink.parse) })
     .map(XrayBacked.promoted).filter { $0.type != XrayBacked.type })
 try ConfigBuilder.relocateRuleSets(in: try ConfigBuilder.build(subscription: exitSubscription, selected: nil, options: TunnelOptions(), probeExit: probeExit), directory: rules)
-    .serialized(pretty: true).write(to: output.appendingPathComponent("probe-exit-tunnel.json"), atomically: true, encoding: .utf8)
+    .serialized(pretty: true).write(to: output.appendingPathComponent("tunnel-probe-exit.json"), atomically: true, encoding: .utf8)
 try ConfigBuilder.probe(subscription: exitSubscription, options: TunnelOptions(), exit: probeExit)
     .serialized(pretty: true).write(to: output.appendingPathComponent("probe-exit-app.json"), atomically: true, encoding: .utf8)
 written += 2
