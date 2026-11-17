@@ -39,7 +39,6 @@ final class LibraryStore {
         seed("exclude_local_networks") { Prefs.localNetwork = $0 }
         seed("enforce_routes") { Prefs.secureDNS = $0 }
         seed("unknown_wifi_connect") { Prefs.unknownWiFi = $0 }
-        seed("auto_failover") { Prefs.autoFailover = $0 }
         seed("app_lock_enabled") { Prefs.appLock = $0 }
         let onDemand = LegacyMigration.decodeBool(prefs["on_demand_enabled"]) ?? false
         let alwaysOn = LegacyMigration.decodeBool(prefs["always_on"]) ?? false

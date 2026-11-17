@@ -53,7 +53,6 @@
 "АКТИВНА" = "ACTIVE";
 "Авто" = "Auto";
 "Автовыбор" = "Auto select";
-"Автоматический failover" = "Automatic failover";
 "Автоподключение" = "Connect automatically";
 "Адрес подписки (https://…) или ссылка сервера (vless://, ss://, hysteria2://…)" = "Subscription address (https://…) or server link (vless://, ss://, hysteria2://…)";
 "Адрес сервера не настоящий (%@): провайдер вернул заглушку." = "The server address is not real (%@): the provider returned a placeholder.";

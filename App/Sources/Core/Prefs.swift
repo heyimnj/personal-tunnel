@@ -244,11 +244,6 @@ enum Prefs {
         set { defaults.set(newValue, forKey: "pt.net.unknownWiFi") }
     }
 
-    static var autoFailover: Bool {
-        get { bool("pt.net.autoFailover", true) }
-        set { defaults.set(newValue, forKey: "pt.net.autoFailover") }
-    }
-
     static var appLock: Bool {
         get { bool("pt.appLock", false) }
         set { defaults.set(newValue, forKey: "pt.appLock") }

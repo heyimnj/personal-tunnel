@@ -123,7 +123,6 @@ final class NetworkSettingsViewController: FormViewController {
             FormSection(L("Подключение"), [
                 .toggle(title: L("Автоподключение"), get: { Prefs.autoConnect }, set: { Prefs.autoConnect = $0; App.shared.tunnel.applySettings() }),
                 .toggle(title: L("Неизвестные Wi-Fi"), get: { Prefs.unknownWiFi }, set: { Prefs.unknownWiFi = $0; App.shared.tunnel.applySettings() }),
-                .toggle(title: L("Автоматический failover"), get: { Prefs.autoFailover }, set: { Prefs.autoFailover = $0 }),
                 .toggle(title: L("Kill switch"), get: { Prefs.killSwitch }, set: { Prefs.killSwitch = $0; App.shared.tunnel.applySettings() }),
                 .note(L("Пока VPN включён, но не подключён (переподключение, сбой), приложения не выходят в интернет напрямую. Исключения iOS: push-уведомления Apple и службы оператора (звонки, SMS) iOS может пускать мимо VPN. При большом трафике (видео) тратит больше батареи: каждый пакет обрабатывает ядро туннеля. Действует со следующего подключения.")),
             ]),
