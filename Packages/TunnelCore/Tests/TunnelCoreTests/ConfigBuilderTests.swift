@@ -241,8 +241,8 @@ final class ConfigBuilderTests: XCTestCase {
         XCTAssertEqual(outbounds.first?["outbounds"], ["B"])
         XCTAssertNil(outbounds.first { $0["tag"] == "auto" })
         XCTAssertNil(config["endpoints"])
-        // 3.2.3: sing-box's default for a Network Extension, not 1500.
-        XCTAssertEqual(config.at("inbounds")?[0]?["mtu"], 4064)
+        // 3.2.9: 1500 again (4064 kept the extension at its memory limit).
+        XCTAssertEqual(config.at("inbounds")?[0]?["mtu"], 1500)
     }
 
     /// 3.2.3: the kill switch changes the stack to gVisor and keeps the MTU; the
@@ -254,7 +254,7 @@ final class ConfigBuilderTests: XCTestCase {
         XCTAssertEqual(ConfigBuilder.tunSummary(of: config)?.mtu, ConfigBuilder.tunMTU)
         let killSwitch = ConfigBuilder.stackForIncludeAllNetworks(in: config, includeAllNetworks: true)
         XCTAssertEqual(ConfigBuilder.tunSummary(of: killSwitch)?.stack, "gvisor")
-        XCTAssertEqual(ConfigBuilder.tunSummary(of: killSwitch)?.mtu, 4064)
+        XCTAssertEqual(ConfigBuilder.tunSummary(of: killSwitch)?.mtu, 1500)
         XCTAssertNil(ConfigBuilder.tunSummary(of: ["inbounds": []]))
     }
 

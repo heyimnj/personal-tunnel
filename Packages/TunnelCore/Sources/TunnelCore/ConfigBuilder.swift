@@ -133,7 +133,13 @@ public enum ConfigBuilder {
     /// and with the kill switch every packet goes through gVisor (battery). The
     /// proxy's own connection to the server keeps the path's MTU: TCP ends in the
     /// core, so the TUN's packets never leave the device as they are.
-    public static let tunMTU = 4064
+    ///
+    /// 3.2.9: back to 1500. With 4064 the extension's memory stayed at 40–42 MiB
+    /// (36 MiB before), right under the core's own limit (42 MiB), where Go
+    /// collects garbage all the time; the battery went from 5% for 9.5 h of VPN
+    /// (Monday, 1500) to 29% for 7 h (Tuesday, 4064). gVisor keeps each packet
+    /// it holds in a buffer of the MTU's size.
+    public static let tunMTU = 1500
 
     /// `xrayInstance`: the Xray-core instance (in the same process) the
     /// Xray-backed servers' `xray-local` outbounds hand connections to.
