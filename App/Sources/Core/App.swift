@@ -473,7 +473,10 @@ final class App {
                 // expected on a network that blocks the panel, and taken care of.
                 say(Lf("«%@»: сервер подписки не ответил (%@). Без VPN он может быть недоступен: подписка обновится сама после подключения.", subscription.name, error.localizedDescription), 4)
             } catch {
-                say("«\(subscription.name)»: \(error.localizedDescription)", 3)
+                // 3.2.5: with the device's data off, a panel's refusal most often asks
+                // for exactly that: the way to turn it on is named.
+                let hint = subscription.sendsDeviceIdentity ? "" : " " + L("Передача данных устройства для этой подписки выключена: многие панели без HWID не дают серверы. Включить: Конфиденциальность → «Передавать данные устройства провайдеру».")
+                say("«\(subscription.name)»: \(error.localizedDescription)" + hint, 3)
             }
         }
     }
