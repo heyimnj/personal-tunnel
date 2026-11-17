@@ -170,7 +170,14 @@ struct NetworkProbes: LatencyProbes {
     func url(tag: String, link: String, timeoutMs: Int) async -> ProbeResult {
         let report = report, samples = samples
         let key = tunnelSubscription.map { LatencyService.key($0, tag) }
-        return await withCheckedContinuation { continuation in
+        return await withCheckedContinuation { (raw: CheckedContinuation<ProbeResult, Never>) in
+            // 3.2.6: the call into the extension's command socket did not return when
+            // the extension stalled, and the whole test spun forever (3.2.3). Its
+            // answer is given up a little after its own timeout; nothing else changes.
+            let continuation = ResumeOnce(raw)
+            NetworkProbes.blocking.asyncAfter(deadline: .now() + .milliseconds(timeoutMs + 2000)) {
+                continuation.resume(returning: .failed(.timeout))
+            }
             NetworkProbes.blocking.async {
                 guard let client = LibboxNewStandaloneCommandClient() else {
                     continuation.resume(returning: .failed(.other))
@@ -368,6 +375,22 @@ final class FailureSamples: @unchecked Sendable {
             errors -= 1
         }
         return true
+    }
+}
+
+/// A continuation that only its first answer reaches.
+private final class ResumeOnce: @unchecked Sendable {
+    private let lock = NSLock()
+    private var continuation: CheckedContinuation<ProbeResult, Never>?
+
+    init(_ continuation: CheckedContinuation<ProbeResult, Never>) { self.continuation = continuation }
+
+    func resume(returning result: ProbeResult) {
+        lock.lock()
+        let target = continuation
+        continuation = nil
+        lock.unlock()
+        target?.resume(returning: result)
     }
 }
 
@@ -619,13 +642,7 @@ final class LatencyService {
             // TCP prefilter (a connect around the tunnel finds no route on iOS 27).
             var liveMode = mode
             liveMode.tcpFilter = false
-            // 3.2.4: alongside the others, not before them: a tunnel that has stopped
-            // answering no longer holds up the servers outside it.
-            let tunnelMode = liveMode
-            func testTunnel() async {
-                if !live.isEmpty { await runner.run(live, mode: tunnelMode, tunnel: true) { await deliver($0, liveID) } }
-            }
-            async let tunnelPass: Void = testTunnel()
+            if !live.isEmpty { await runner.run(live, mode: liveMode, tunnel: true) { await deliver($0, liveID) } }
             if useLocalCore, !Task.isCancelled {
                 let started = await Task.detached(priority: .utility) {
                     LocalCoreProbes.start(toStart, options: options, interface: bindToPhysical ? PhysicalInterface.current() : nil)
@@ -647,7 +664,6 @@ final class LatencyService {
             } else if !direct.isEmpty, !Task.isCancelled {
                 await runner.run(direct, mode: mode, tunnel: false) { await deliver($0, nil) }
             }
-            await tunnelPass
             await MainActor.run {
                 guard let self, !Task.isCancelled else { return }
                 let reasons = self.tally.sorted { $0.value > $1.value }.map { "\($0.key.title) ×\($0.value)" }

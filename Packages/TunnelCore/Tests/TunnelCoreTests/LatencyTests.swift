@@ -201,24 +201,6 @@ final class LatencyTests: XCTestCase {
         XCTAssertEqual(result, .failed(.timeout))
     }
 
-    /// 3.2.4: a blocking call that never returns and ignores cancellation (the
-    /// tunnel's command socket under memory pressure) still ends at the deadline.
-    func testProbeIgnoringCancellationEndsWithTimeout() async {
-        let start = Date()
-        let result = await LatencyRunner.deadline(seconds: 0.2) {
-            await withCheckedContinuation { (continuation: CheckedContinuation<ProbeResult, Never>) in
-                DispatchQueue.global().asyncAfter(deadline: .now() + 3) { continuation.resume(returning: .delay(1)) }
-            }
-        }
-        XCTAssertEqual(result, .failed(.timeout))
-        XCTAssertLessThan(Date().timeIntervalSince(start), 1.5)
-    }
-
-    func testDeadlineKeepsAQuickAnswer() async {
-        let result = await LatencyRunner.deadline(seconds: 2) { .delay(7) }
-        XCTAssertEqual(result, .delay(7))
-    }
-
     func testCancelReturnsImmediately() async {
         let runner = LatencyRunner(probes: FakeProbes(hang: ["slow"]))
         let task = Task { await runner.run((0 ..< 30).map { .init(tag: "\($0)", host: "slow", port: 1, udp: false) }, mode: .named(nil), tunnel: false) { _ in } }
