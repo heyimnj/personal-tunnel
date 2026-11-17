@@ -258,6 +258,54 @@ final class ConfigBuilderTests: XCTestCase {
         XCTAssertNil(ConfigBuilder.tunSummary(of: ["inbounds": []]))
     }
 
+    /// 3.2.7: with the kill switch the app's tests leave the tunnel by a loopback
+    /// way out with a login: the tunnel listens only on 127.0.0.1, routes only that
+    /// inbound direct (first, before sniffing) and opens nothing for other traffic;
+    /// the probe configuration dials every server and resolver through it.
+    func testProbeExitOpensNothingButTheAppsWayOut() throws {
+        let subscription = try subscription()
+        let exit = ProbeExit(port: 34567, username: "u", password: "p")
+        let config = try ConfigBuilder.build(subscription: subscription, selected: nil, options: TunnelOptions(), probeExit: exit)
+        XCTAssertTrue(ConfigBuilder.hasProbeExit(config))
+        let socks = try XCTUnwrap(config["inbounds"]?.arrayValue?.first { $0["type"]?.stringValue == "socks" })
+        XCTAssertEqual(socks["listen"]?.stringValue, "127.0.0.1")
+        XCTAssertEqual(socks["listen_port"]?.intValue, 34567)
+        XCTAssertEqual(socks["users"]?.arrayValue?.first?["password"]?.stringValue, "p")
+        let rules = try XCTUnwrap(config["route"]?["rules"]?.arrayValue)
+        XCTAssertEqual(rules.first?["inbound"]?.stringList, [ProbeExit.inboundTag])
+        XCTAssertEqual(rules.first?["outbound"]?.stringValue, "direct")
+        // Nothing else goes direct but the bypasses, as without the way out (PT-06).
+        let without = try ConfigBuilder.build(subscription: subscription, selected: nil, options: TunnelOptions())
+        XCTAssertEqual(Array(rules.dropFirst()), without["route"]?["rules"]?.arrayValue)
+        XCTAssertFalse(ConfigBuilder.hasProbeExit(without))
+
+        // Without the kill switch the extension drops it; the rest stays.
+        let stripped = ConfigBuilder.probeExit(in: config, keep: false)
+        XCTAssertEqual(stripped, without)
+        XCTAssertEqual(ConfigBuilder.probeExit(in: config, keep: true), config)
+
+        let probe = try ConfigBuilder.probe(subscription: subscription, options: TunnelOptions(), exit: exit)
+        let outbounds = try XCTUnwrap(probe["outbounds"]?.arrayValue)
+        let out = try XCTUnwrap(outbounds.first { $0["tag"]?.stringValue == ProbeExit.outboundTag })
+        XCTAssertEqual(out["server"]?.stringValue, "127.0.0.1")
+        XCTAssertEqual(out["server_port"]?.intValue, 34567)
+        XCTAssertEqual(out["username"]?.stringValue, "u")
+        for outbound in outbounds {
+            let type = outbound["type"]?.stringValue ?? ""
+            if ConfigBuilder.notDialing.contains(type) || outbound["tag"]?.stringValue == ProbeExit.outboundTag {
+                XCTAssertNil(outbound["detour"], type)
+            } else {
+                XCTAssertNotNil(outbound["detour"], type)
+            }
+        }
+        for server in probe["dns"]?["servers"]?.arrayValue ?? [] where server["type"]?.stringValue != "group" {
+            XCTAssertEqual(server["detour"]?.stringValue, ProbeExit.outboundTag)
+        }
+        // Without a way out the probe is as before.
+        XCTAssertNil(try ConfigBuilder.probe(subscription: subscription, options: TunnelOptions())["outbounds"]?.arrayValue?
+            .first { $0["tag"]?.stringValue == ProbeExit.outboundTag })
+    }
+
     /// 3.1.2: with the VPN on, the app's tests of every server leave the tunnel:
     /// their names resolve outside it and their connections go direct, matched
     /// before sniffing (by the name the tunnel's DNS gave the address for).

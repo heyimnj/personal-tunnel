@@ -256,10 +256,21 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
         let until = AppGroup.defaults.double(forKey: SharedKey.diagnosticLogUntil)
         let leveled = ConfigBuilder.expireDiagnosticLog(in: document, until: until > 0 ? Date(timeIntervalSince1970: until) : nil)
         logLevel = leveled.at("log", "level")?.stringValue
-        let stacked = ConfigBuilder.stackForIncludeAllNetworks(in: leveled, includeAllNetworks: platform.includeAllNetworks())
-        let relocated = ConfigBuilder.relocateRuleSets(in: stacked, directory: rules).serialized()
-        try commandServer.startOrReloadService(relocated, options: LibboxOverrideOptions())
-        noteTunnelSettings(stacked)
+        let includeAll = platform.includeAllNetworks()
+        // 3.2.7: the app's loopback way out for its tests only while iOS holds the
+        // kill switch on (without it the app's core leaves by the physical interface).
+        let stacked = ConfigBuilder.probeExit(in: ConfigBuilder.stackForIncludeAllNetworks(in: leveled, includeAllNetworks: includeAll), keep: includeAll)
+        do {
+            try commandServer.startOrReloadService(ConfigBuilder.relocateRuleSets(in: stacked, directory: rules).serialized(), options: LibboxOverrideOptions())
+            noteTunnelSettings(stacked)
+        } catch where ConfigBuilder.hasProbeExit(stacked) {
+            // Its port taken by something else: the tunnel matters more than the
+            // app's tests (they then go through the connected server, as before).
+            event("выход для проверок не открылся (\(Redactor.redact(error.localizedDescription))): туннель без него")
+            let plain = ConfigBuilder.probeExit(in: stacked, keep: false)
+            try commandServer.startOrReloadService(ConfigBuilder.relocateRuleSets(in: plain, directory: rules).serialized(), options: LibboxOverrideOptions())
+            noteTunnelSettings(plain)
+        }
     }
 
     /// 3.2.3: what the tunnel really started with — the stack and MTU the core
@@ -272,6 +283,7 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
         if #available(iOS 16.4, *) { pushExcluded = (proto?.excludeAPNs ?? false) ? "on" : "off" }
         let killSwitch = (proto?.includeAllNetworks ?? false) ? "on" : "off"
         event("туннель: стек \(tun.stack), MTU \(tun.mtu), kill switch \(killSwitch), исключение push Apple \(pushExcluded)")
+        if ConfigBuilder.hasProbeExit(config) { event("выход для проверок приложения открыт") }
     }
 
     /// (Re)starts Xray-core when the subscription has servers only it can run.

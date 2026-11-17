@@ -58,6 +58,30 @@ public enum AdBlockLevel: String, Codable, CaseIterable, Sendable {
     }
 }
 
+/// 3.2.7: the tunnel's way out for the app's own measuring core while the kill
+/// switch is on. iOS then lets nothing go around the tunnel, so the app's tests
+/// went through the connected server: a chain through someone else's server,
+/// where Hysteria2 and other UDP servers could not answer at all (Vision refuses
+/// UDP/443) and many providers refuse connections to their other servers (EOF,
+/// «Reality», «certificate»). The extension listens on loopback with a login and
+/// password only the app knows, and sends those connections straight out:
+/// no rule opens the tunnel for anyone else's traffic (PT-06 stays closed).
+public struct ProbeExit: Equatable, Codable, Sendable {
+    public static let inboundTag = "probe-in"
+    public static let outboundTag = "probe-exit"
+    public static let ports: ClosedRange<Int> = 20000 ... 59999
+
+    public var port: Int
+    public var username: String
+    public var password: String
+
+    public init(port: Int, username: String, password: String) {
+        self.port = port
+        self.username = username
+        self.password = password
+    }
+}
+
 /// Builds the sing-box configuration the packet tunnel runs: one subscription,
 /// all of its servers behind the `proxy` selector, so the server can be changed
 /// in the running tunnel without restarting it.
@@ -108,7 +132,7 @@ public enum ConfigBuilder {
     /// `xrayInstance`: the Xray-core instance (in the same process) the
     /// Xray-backed servers' `xray-local` outbounds hand connections to.
     public static func build(subscription: Subscription, selected: String?, options: TunnelOptions,
-                             xrayInstance: String = XrayBacked.tunnelInstance) throws -> JSONValue {
+                             xrayInstance: String = XrayBacked.tunnelInstance, probeExit: ProbeExit? = nil) throws -> JSONValue {
         // 3.1.14: servers saved before they were moved into Xray-core go there too.
         let nodes = subscription.nodes.map(XrayBacked.promoted)
         // Xray-backed servers become `xray-local` outbounds into the Xray instance beside sing-box.
@@ -294,6 +318,12 @@ public enum ConfigBuilder {
             dnsRules.append(["rule_set": ["pt-ru-domains", "pt-ru-inside"], "server": .string(DirectResolvers.russianTag)])
         }
 
+        if probeExit != nil {
+            // First of all: the app's tests leave as they came, before sniffing
+            // (a REALITY server's borrowed name), the bypasses and the panels.
+            routeRules.insert(["inbound": [.string(ProbeExit.inboundTag)], "outbound": "direct"], at: 0)
+        }
+
         var route: [String: JSONValue] = [
             "auto_detect_interface": true,
             // Server addresses are resolved outside the tunnel, or it could not start.
@@ -325,6 +355,17 @@ public enum ConfigBuilder {
         // address are known by the server's name (see `serverHosts`).
         if !probe.domains.isEmpty || !panels.domains.isEmpty { dns["reverse_mapping"] = true }
 
+        let tun: JSONValue = [
+            "type": "tun",
+            "tag": "tun-in",
+            "address": ["172.19.0.1/30", "fdfe:dcba:9876::1/126"],
+            "mtu": .int(Int64(mtus.min() ?? tunMTU)),
+            "auto_route": true,
+            "strict_route": true,
+            // 3.1.6: the core's default — TCP through the system's own stack, UDP
+            // through gVisor. gVisor for everything cost much more CPU (battery).
+            "stack": "mixed",
+        ]
         var config: [String: JSONValue] = [
             "log": ["level": .string(options.logLevel), "timestamp": true],
             // 3.1.0: certificates are checked as Xray-core checks them (Happ and
@@ -335,17 +376,7 @@ public enum ConfigBuilder {
             // proof). The probe configuration below keeps it.
             "certificate": ["store": "mozilla"],
             "dns": .object(dns),
-            "inbounds": [[
-                "type": "tun",
-                "tag": "tun-in",
-                "address": ["172.19.0.1/30", "fdfe:dcba:9876::1/126"],
-                "mtu": .int(Int64(mtus.min() ?? tunMTU)),
-                "auto_route": true,
-                "strict_route": true,
-                // 3.1.6: the core's default — TCP through the system's own stack, UDP
-                // through gVisor. gVisor for everything cost much more CPU (battery).
-                "stack": "mixed",
-            ]],
+            "inbounds": .array([tun] + (probeExit.map { [probeInbound($0)] } ?? [])),
             "outbounds": .array(groups + outbounds + [["type": "direct", "tag": "direct"]]),
             "route": .object(route),
         ]
@@ -437,7 +468,12 @@ public enum ConfigBuilder {
     /// `interface`: with the VPN on, the physical interface (Wi-Fi, cellular) every
     /// connection of the app's core is bound to, so it measures the server itself
     /// and not through the tunnel (3.3, PT-06). Nil: the system's routes.
-    public static func probe(subscription: Subscription, options: TunnelOptions, interface: String? = nil) throws -> JSONValue {
+    ///
+    /// `exit` (3.2.7): with the kill switch, the tunnel's loopback way out
+    /// (`ProbeExit`): every server and the resolvers of server addresses dial
+    /// through it, so a test reaches the server itself and not through the
+    /// connected one.
+    public static func probe(subscription: Subscription, options: TunnelOptions, interface: String? = nil, exit: ProbeExit? = nil) throws -> JSONValue {
         var config = try build(subscription: subscription, selected: nil, options: options, xrayInstance: XrayBacked.appInstance(subscription.id))
         let own: Set<String> = [selectorTag, autoTag]
         config["outbounds"] = .array((config["outbounds"]?.arrayValue ?? []).filter { !own.contains($0["tag"]?.stringValue ?? "") })
@@ -454,7 +490,77 @@ public enum ConfigBuilder {
         ]
         if let interface, !interface.isEmpty { route["default_interface"] = .string(interface) }
         config["route"] = route
+        if let exit { config = throughProbeExit(config, exit) }
         return config
+    }
+
+    /// Outbound types that dial nothing themselves: no detour for them.
+    static let notDialing: Set<String> = ["direct", "block", "dns", "selector", "urltest", XrayBacked.localType]
+
+    /// 3.2.7: the probe configuration with every dial through the tunnel's
+    /// loopback way out. A server that already goes through another (a chain)
+    /// keeps its detour: the first hop goes out this way.
+    static func throughProbeExit(_ config: JSONValue, _ exit: ProbeExit) -> JSONValue {
+        var config = config
+        func detoured(_ item: JSONValue) -> JSONValue {
+            guard var fields = item.objectValue else { return item }
+            let type = fields["type"]?.stringValue?.lowercased() ?? ""
+            guard !notDialing.contains(type), fields["detour"] == nil else { return item }
+            fields["detour"] = .string(ProbeExit.outboundTag)
+            return .object(fields)
+        }
+        let socks: JSONValue = [
+            "type": "socks",
+            "tag": .string(ProbeExit.outboundTag),
+            "server": "127.0.0.1",
+            "server_port": .int(Int64(exit.port)),
+            "version": "5",
+            "username": .string(exit.username),
+            "password": .string(exit.password),
+        ]
+        config["outbounds"] = .array((config["outbounds"]?.arrayValue ?? []).map(detoured) + [socks])
+        if let endpoints = config["endpoints"]?.arrayValue { config["endpoints"] = .array(endpoints.map(detoured)) }
+        if var dns = config["dns"], let servers = dns["servers"]?.arrayValue {
+            // Groups ask their members; the members dial.
+            dns["servers"] = .array(servers.map { server in
+                guard server["type"]?.stringValue != "group" else { return server }
+                return detoured(server)
+            })
+            config["dns"] = dns
+        }
+        return config
+    }
+
+    /// 3.2.7: the extension keeps the app's way out only while iOS holds the kill
+    /// switch on; without it the app's core is bound to the physical interface
+    /// and needs nothing from the tunnel. `keep: false` also serves a start that failed
+    /// on the listener (its port taken).
+    public static func probeExit(in config: JSONValue, keep: Bool) -> JSONValue {
+        guard !keep, let inbounds = config["inbounds"]?.arrayValue,
+              inbounds.contains(where: { $0["tag"]?.stringValue == ProbeExit.inboundTag }) else { return config }
+        var config = config
+        config["inbounds"] = .array(inbounds.filter { $0["tag"]?.stringValue != ProbeExit.inboundTag })
+        if var route = config["route"], let rules = route["rules"]?.arrayValue {
+            route["rules"] = .array(rules.filter { $0["inbound"]?.stringList != [ProbeExit.inboundTag] })
+            config["route"] = route
+        }
+        return config
+    }
+
+    /// The tunnel's side of the way out: loopback only, with the app's login.
+    static func probeInbound(_ exit: ProbeExit) -> JSONValue {
+        [
+            "type": "socks",
+            "tag": .string(ProbeExit.inboundTag),
+            "listen": "127.0.0.1",
+            "listen_port": .int(Int64(exit.port)),
+            "users": [["username": .string(exit.username), "password": .string(exit.password)]],
+        ]
+    }
+
+    /// Whether a configuration carries the app's way out.
+    public static func hasProbeExit(_ config: JSONValue) -> Bool {
+        config["inbounds"]?.arrayValue?.contains { $0["tag"]?.stringValue == ProbeExit.inboundTag } ?? false
     }
 
     /// `dns-direct`: the resolver outside the tunnel, for server addresses. 3.0.6:
@@ -610,8 +716,9 @@ public enum ConfigBuilder {
     }
 
     /// sing-box's configuration and the Xray one beside it.
-    public static func tunnel(subscription: Subscription, selected: String?, options: TunnelOptions) throws -> (config: JSONValue, xray: JSONValue?) {
-        (try build(subscription: subscription, selected: selected, options: options), xrayRuntime(subscription: subscription))
+    public static func tunnel(subscription: Subscription, selected: String?, options: TunnelOptions,
+                              probeExit: ProbeExit? = nil) throws -> (config: JSONValue, xray: JSONValue?) {
+        (try build(subscription: subscription, selected: selected, options: options, probeExit: probeExit), xrayRuntime(subscription: subscription))
     }
 
     /// Tags the selector offers, in order (without the `auto` group).

@@ -202,6 +202,36 @@ struct NetworkProbes: LatencyProbes {
     }
 }
 
+/// 3.2.7: whether the tunnel's loopback way out for the app's tests listens.
+enum ProbeExitCheck {
+    static func isOpen(port: Int, timeout: TimeInterval = 1) -> Bool {
+        guard let endpointPort = NWEndpoint.Port(rawValue: UInt16(clamping: port)) else { return false }
+        let parameters = NWParameters.tcp
+        parameters.requiredInterfaceType = .loopback
+        let connection = NWConnection(host: "127.0.0.1", port: endpointPort, using: parameters)
+        let done = DispatchSemaphore(value: 0)
+        let box = Box()
+        connection.stateUpdateHandler = { state in
+            switch state {
+            case .ready: box.set(true); done.signal()
+            case .failed, .waiting, .cancelled: box.set(false); done.signal()
+            default: break
+            }
+        }
+        connection.start(queue: DispatchQueue(label: "personaltunnel.probe-exit"))
+        _ = done.wait(timeout: .now() + timeout)
+        connection.cancel()
+        return box.value ?? false
+    }
+
+    private final class Box: @unchecked Sendable {
+        private let lock = NSLock()
+        private var stored: Bool?
+        var value: Bool? { lock.lock(); defer { lock.unlock() }; return stored }
+        func set(_ value: Bool) { lock.lock(); if stored == nil { stored = value }; lock.unlock() }
+    }
+}
+
 /// Without the VPN the app's own core measures servers (3.0): each subscription's
 /// servers run in a core without a tunnel, and a URL is fetched through every
 /// server the way a connection would use it, UDP protocols included. Tags are
@@ -230,7 +260,8 @@ final class LocalCoreProbes: LatencyProbes, @unchecked Sendable {
     /// Starts a core for every subscription; those that do not start are
     /// returned with the reason, and their servers fall back to TCP.
     /// `interface`: the physical interface the cores' connections are bound to (PT-06).
-    static func start(_ subscriptions: [Subscription], options: TunnelOptions, interface: String?) -> (probes: LocalCoreProbes, failed: [Int64: String]) {
+    /// `exit`: with the kill switch, the tunnel's loopback way out every server is dialled through (3.2.7).
+    static func start(_ subscriptions: [Subscription], options: TunnelOptions, interface: String?, exit: ProbeExit? = nil) -> (probes: LocalCoreProbes, failed: [Int64: String]) {
         var probers: [Int64: PtbridgeProber] = [:]
         var xrays: [PtbridgeXrayInstance] = []
         var failed: [Int64: String] = [:]
@@ -255,7 +286,7 @@ final class LocalCoreProbes: LatencyProbes, @unchecked Sendable {
                         continue
                     }
                 }
-                let config = try ConfigBuilder.probe(subscription: subscription, options: options, interface: interface).serialized(pretty: false)
+                let config = try ConfigBuilder.probe(subscription: subscription, options: options, interface: interface, exit: exit).serialized(pretty: false)
                 var error: NSError?
                 if let prober = PtbridgeNewProber(config, &error), error == nil {
                     probers[subscription.id] = prober
@@ -605,10 +636,15 @@ final class LatencyService {
         // Servers outside the tunnel: the app's own core URL-tests them. 3.3 (PT-06):
         // with the VPN on, its connections are bound to the physical interface, so
         // they measure the server itself and the tunnel keeps no hole for them. With
-        // the kill switch iOS lets nothing around the tunnel: they go through it,
-        // and their delay includes the tunnel's.
+        // the kill switch iOS lets nothing around the tunnel. Until 3.2.6 they then
+        // went through the connected server — a chain where UDP servers could not
+        // answer and providers refused connections to their other servers (EOF,
+        // Reality, certificate). 3.2.7: they leave by the tunnel's loopback way out,
+        // straight to each server (`ProbeExit`).
         let useLocalCore = !direct.isEmpty
         let bindToPhysical = tunnelUp && !Prefs.killSwitch
+        let wantExit = tunnelUp && Prefs.killSwitch
+        let probeExit = Prefs.probeExit
         let options = Prefs.tunnelOptions
         let toStart = Array(directSubscriptions.values)
         let names = directSubscriptions.mapValues(\.name)
@@ -644,9 +680,16 @@ final class LatencyService {
             liveMode.tcpFilter = false
             if !live.isEmpty { await runner.run(live, mode: liveMode, tunnel: true) { await deliver($0, liveID) } }
             if useLocalCore, !Task.isCancelled {
-                let started = await Task.detached(priority: .utility) {
-                    LocalCoreProbes.start(toStart, options: options, interface: bindToPhysical ? PhysicalInterface.current() : nil)
+                let (started, exitOpen) = await Task.detached(priority: .utility) { () -> ((probes: LocalCoreProbes, failed: [Int64: String]), Bool) in
+                    // A tunnel started by an older build (or whose port was taken) has no way out.
+                    let open = wantExit && ProbeExitCheck.isOpen(port: probeExit.port)
+                    return (LocalCoreProbes.start(toStart, options: options, interface: bindToPhysical ? PhysicalInterface.current() : nil,
+                                                  exit: open ? probeExit : nil), open)
                 }.value
+                if wantExit {
+                    log(exitOpen ? 4 : 3, exitOpen ? L("Kill switch: ядро приложения проверяет серверы через выход туннеля, напрямую до каждого.")
+                        : L("Kill switch: выхода для проверок в туннеле нет — серверы проверяются через подключённый сервер, UDP-серверы могут не ответить. Переподключите VPN."))
+                }
                 await MainActor.run { self?.local = started.probes }
                 for (id, reason) in started.failed {
                     log(3, Lf("Ядро приложения не запустилось для «%@»: %@. Пинг этой подписки — по TCP.", "\(names[id] ?? "—")", "\(reason)"))

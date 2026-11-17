@@ -104,19 +104,41 @@ final class PlateButton: UIControl {
     @available(*, unavailable)
     required init?(coder _: NSCoder) { fatalError() }
 
+    /// 3.2.7: the press is a whole round button around the symbol — a circle
+    /// centred on it, as wide as the plate allows — not a tall tinted strip cut
+    /// from the plate (the owner: «как будто обрывок»).
     override func layoutSubviews() {
         super.layoutSubviews()
-        icon.frame = bounds
-        let inset = bounds.insetBy(dx: 4, dy: 6)
-        shade.frame = inset
-        shade.layer.cornerRadius = min(12, inset.height / 2)
+        icon.bounds = CGRect(origin: .zero, size: bounds.size)
+        icon.center = CGPoint(x: bounds.midX, y: bounds.midY)
+        let side = max(0, min(bounds.width - 4, bounds.height - 12, 44))
+        shade.bounds = CGRect(x: 0, y: 0, width: side, height: side)
+        shade.center = icon.center
+        shade.layer.cornerRadius = side / 2
     }
 
     override var isHighlighted: Bool {
         didSet {
             guard isHighlighted != oldValue else { return }
-            UIView.animate(withDuration: isHighlighted ? 0.08 : 0.22, delay: 0, options: [.beginFromCurrentState, .allowUserInteraction, .curveEaseOut]) {
-                self.shade.alpha = self.isHighlighted ? 1 : 0
+            if isHighlighted {
+                // Grows out of the symbol, which sinks a little under the finger.
+                if shade.alpha < 0.05 { shade.transform = CGAffineTransform(scaleX: 0.55, y: 0.55) }
+                UIView.animate(withDuration: 0.28, delay: 0, usingSpringWithDamping: 0.72, initialSpringVelocity: 0,
+                               options: [.beginFromCurrentState, .allowUserInteraction]) {
+                    self.shade.alpha = 1
+                    self.shade.transform = .identity
+                    self.icon.transform = CGAffineTransform(scaleX: 0.86, y: 0.86)
+                }
+            } else {
+                // Lets go: the symbol springs back, the circle swells slightly and fades.
+                UIView.animate(withDuration: 0.42, delay: 0, usingSpringWithDamping: 0.6, initialSpringVelocity: 0,
+                               options: [.beginFromCurrentState, .allowUserInteraction]) {
+                    self.icon.transform = .identity
+                }
+                UIView.animate(withDuration: 0.26, delay: 0, options: [.beginFromCurrentState, .allowUserInteraction, .curveEaseOut]) {
+                    self.shade.alpha = 0
+                    self.shade.transform = CGAffineTransform(scaleX: 1.08, y: 1.08)
+                }
             }
         }
     }

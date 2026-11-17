@@ -166,6 +166,17 @@ for (name, subscription) in [("probe-all-together", Subscription(id: 1, name: "a
     try text.write(to: output.appendingPathComponent(name + ".json"), atomically: true, encoding: .utf8)
     written += 1
 }
+// 3.2.7: the kill switch's way out for the app's tests — the tunnel's loopback
+// inbound and the probe configuration dialling every server through it.
+let probeExit = ProbeExit(port: 34567, username: "probe", password: "secret")
+// Without Xray-backed servers: the check in CI runs plain sing-box on it.
+let exitSubscription = Subscription(id: 1, name: "all", nodes: NodeAssembler.assemble(try samples.flatMap { try $0.1.map(ShareLink.parse) })
+    .map(XrayBacked.promoted).filter { $0.type != XrayBacked.type })
+try ConfigBuilder.relocateRuleSets(in: try ConfigBuilder.build(subscription: exitSubscription, selected: nil, options: TunnelOptions(), probeExit: probeExit), directory: rules)
+    .serialized(pretty: true).write(to: output.appendingPathComponent("probe-exit-tunnel.json"), atomically: true, encoding: .utf8)
+try ConfigBuilder.probe(subscription: exitSubscription, options: TunnelOptions(), exit: probeExit)
+    .serialized(pretty: true).write(to: output.appendingPathComponent("probe-exit-app.json"), atomically: true, encoding: .utf8)
+written += 2
 // Servers only Xray-core runs: the sing-box side (SOCKS hops) and the Xray side.
 let xrayOnly = #"""
 [{"remarks": "Sudoku", "outbounds": [

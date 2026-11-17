@@ -165,9 +165,9 @@ final class LibraryStore {
         let selected = current.selectedNodeID(in: subscription)
         // 3.1.6: only what the tunnel runs (the chosen server, or all with automatic selection).
         let running = ConfigBuilder.tunnelSubscription(subscription, selected: selected, options: options)
-        // 3.3 (PT-01): both sides with the same new local links (random port and
-        // login); the extension gives them new ones again at every start.
-        let made = try ConfigBuilder.tunnel(subscription: running, selected: selected, options: options)
+        // 3.2.7: the app's tests leave by a loopback way out of their own while the
+        // kill switch is on; the extension drops it when iOS holds the switch off.
+        let made = try ConfigBuilder.tunnel(subscription: running, selected: selected, options: options, probeExit: Prefs.probeExit)
         let text = made.config.serialized()
         if let paths {
             try Data(text.utf8).write(to: paths.activeConfig, options: .atomic)

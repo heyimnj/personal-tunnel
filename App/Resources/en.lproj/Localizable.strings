@@ -611,6 +611,8 @@
 "подробный журнал выключен: прошло 30 минут" = "diagnostic log off: 30 minutes passed";
 "подробный журнал: %@" = "diagnostic log: %@";
 "туннель: стек %@, MTU %@, kill switch %@, исключение push Apple %@" = "tunnel: stack %@, MTU %@, kill switch %@, Apple push exclusion %@";
+"выход для проверок приложения открыт" = "the app's way out for tests is open";
+"выход для проверок не открылся (%@): туннель без него" = "the way out for tests did not open (%@): the tunnel runs without it";
 "Подробный журнал для диагностики" = "Diagnostic log";
 "Сам выключится через %@ мин" = "Turns itself off in %@ min";
 "Каждое соединение на 30 минут" = "Every connection, for 30 minutes";
@@ -644,3 +646,7 @@
 "Идентификатор устройства (HWID) сейчас не читается из Keychain (код %@). Подписка не загружена, чтобы панель не увидела новое устройство; попробуйте ещё раз." = "The device identifier (HWID) cannot be read from the Keychain right now (code %@). The subscription was not downloaded so the panel does not see a new device; try again.";
 "Создан новый идентификатор устройства (HWID): панели подписок увидят новое устройство." = "A new device identifier (HWID) was created: subscription panels will see a new device.";
 "Передача данных устройства для этой подписки выключена: многие панели без HWID не дают серверы. Включить: Конфиденциальность → «Передавать данные устройства провайдеру»." = "Device data is off for this subscription: many panels give no servers without an HWID. To turn it on: Privacy → “Share device data with the provider”.";
+
+/* 3.2.7: the kill switch's way out for the app's tests */
+"Kill switch: ядро приложения проверяет серверы через выход туннеля, напрямую до каждого." = "Kill switch: the app's core tests servers through the tunnel's way out, straight to each.";
+"Kill switch: выхода для проверок в туннеле нет — серверы проверяются через подключённый сервер, UDP-серверы могут не ответить. Переподключите VPN." = "Kill switch: the tunnel has no way out for tests — servers are tested through the connected one, UDP servers may not answer. Reconnect the VPN.";

@@ -1,4 +1,5 @@
 import Foundation
+import Security
 import TunnelCore
 
 enum InterfaceStyle: String {
@@ -195,6 +196,27 @@ enum Prefs {
     static var killSwitch: Bool {
         get { bool("pt.net.killSwitch", false) }
         set { defaults.set(newValue, forKey: "pt.net.killSwitch") }
+    }
+
+    /// 3.2.7: the tunnel's loopback way out for the app's tests with the kill
+    /// switch (`ProbeExit`): a port and a random login made once and kept, so the
+    /// configuration the tunnel runs and the app's tests agree across launches
+    /// and reloads. Loopback only; the login keeps other apps out.
+    static var probeExit: ProbeExit {
+        if let data = defaults.data(forKey: "pt.net.probeExit"), let exit = try? JSONDecoder().decode(ProbeExit.self, from: data),
+           ProbeExit.ports.contains(exit.port), !exit.username.isEmpty, !exit.password.isEmpty {
+            return exit
+        }
+        func random() -> String {
+            var bytes = [UInt8](repeating: 0, count: 16)
+            if SecRandomCopyBytes(kSecRandomDefault, bytes.count, &bytes) != errSecSuccess {
+                return UUID().uuidString.replacingOccurrences(of: "-", with: "").lowercased()
+            }
+            return bytes.map { String(format: "%02x", $0) }.joined()
+        }
+        let exit = ProbeExit(port: Int.random(in: ProbeExit.ports), username: random(), password: random())
+        if let data = try? JSONEncoder().encode(exit) { defaults.set(data, forKey: "pt.net.probeExit") }
+        return exit
     }
 
     /// 3.3 (PT-08, the owner's decision): the kill switch is on for a new install;
