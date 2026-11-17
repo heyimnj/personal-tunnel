@@ -28,6 +28,8 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
     /// Memory written to the service log once a minute (3.0 beta: measuring the
     /// extension with both cores linked in).
     private var memoryTimer: DispatchSourceTimer?
+    /// The memory sample last written for the app (3.2.9).
+    private var memoryStored: MemorySample?
     #if TUNNEL_XRAY
     /// Xray-core for the servers only it can run, beside sing-box.
     private var xray: PtbridgeXrayInstance?
@@ -406,12 +408,14 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
         memoryTimer?.cancel()
         memoryPeak = 0
         memoryLogged = nil
+        memoryStored = nil
         memoryStartedAt = Date()
         sampleMemory()
         let timer = DispatchSource.makeTimerSource(queue: queue)
         // 3.1.6: once a minute with a generous leeway, so the system can fold the
-        // wake-up into others (battery); it was every 15 s.
-        timer.schedule(deadline: .now() + 60, repeating: 60, leeway: .seconds(20))
+        // wake-up into others (battery); it was every 15 s. 3.2.9: every 2
+        // minutes, a minute of leeway.
+        timer.schedule(deadline: .now() + 120, repeating: 120, leeway: .seconds(60))
         timer.setEventHandler { [weak self] in
             self?.sampleMemory()
             self?.endDiagnosticLogIfDue()
@@ -447,9 +451,14 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
         memoryPeak = max(memoryPeak, used, Double(info.ledger_phys_footprint_peak) / mib)
         let available = Double(os_proc_available_memory()) / mib
         let sample = MemorySample(used: used, peak: memoryPeak, available: available)
-        // Kept for the app at every sample: if the system ends the extension, the
-        // last one is at most a minute old.
-        AppGroup.defaults.set(sample.encoded(), forKey: SharedKey.tunnelMemory)
+        // Kept for the app: if the system ends the extension, the last one says
+        // how close to the limit it was. 3.2.9: written only when it changed (by
+        // 1 MiB, or 10 minutes on), not at every sample — a write to the shared
+        // settings file every minute, all day.
+        if memoryStored.map({ sample.differs(from: $0) }) ?? true {
+            AppGroup.defaults.set(sample.encoded(), forKey: SharedKey.tunnelMemory)
+            memoryStored = sample
+        }
         // 3.1.6: memory is handed back to the system before the limit is near
         // (iOS warns of pressure at about 40 MiB used), and every quarter of an
         // hour in a long session, so a night left on does not keep it.

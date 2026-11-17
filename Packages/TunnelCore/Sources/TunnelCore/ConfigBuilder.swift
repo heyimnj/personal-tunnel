@@ -141,6 +141,9 @@ public enum ConfigBuilder {
     /// it holds in a buffer of the MTU's size.
     public static let tunMTU = 1500
 
+    /// 3.2.9: how long the tunnel keeps an idle UDP mapping.
+    public static let udpTimeout = "1m"
+
     /// `xrayInstance`: the Xray-core instance (in the same process) the
     /// Xray-backed servers' `xray-local` outbounds hand connections to.
     public static func build(subscription: Subscription, selected: String?, options: TunnelOptions,
@@ -378,6 +381,10 @@ public enum ConfigBuilder {
             // 3.1.6: the core's default — TCP through the system's own stack, UDP
             // through gVisor. gVisor for everything cost much more CPU (battery).
             "stack": "mixed",
+            // 3.2.9: a UDP mapping with no packets goes after a minute, not the
+            // core's 5: one-off exchanges (DNS, STUN, ended QUIC) no longer hold
+            // memory in the extension; live QUIC and calls send far more often.
+            "udp_timeout": .string(udpTimeout),
         ]
         var config: [String: JSONValue] = [
             "log": ["level": .string(options.logLevel), "timestamp": true],

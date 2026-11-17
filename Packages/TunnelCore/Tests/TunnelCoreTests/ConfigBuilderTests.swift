@@ -243,6 +243,7 @@ final class ConfigBuilderTests: XCTestCase {
         XCTAssertNil(config["endpoints"])
         // 3.2.9: 1500 again (4064 kept the extension at its memory limit).
         XCTAssertEqual(config.at("inbounds")?[0]?["mtu"], 1500)
+        XCTAssertEqual(config.at("inbounds")?[0]?["udp_timeout"], "1m")
     }
 
     /// 3.2.3: the kill switch changes the stack to gVisor and keeps the MTU; the
