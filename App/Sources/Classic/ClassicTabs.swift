@@ -504,8 +504,9 @@ final class ClassicSettingsViewController: ClassicPage {
             Classic.body(L("Подписки обновляются сами раз в 24 часа или каждый день в выбранное время — при первом открытии приложения после него (и пока оно открыто). Выключено — только вручную."), 12, .regular, .secondaryLabel, lines: 0),
         ], spacing: 14))
         content.addArrangedSubview(section(L("ПОДКЛЮЧЕНИЕ"), [
-            toggle(L("Автоподключение"), Prefs.autoConnect) { Prefs.autoConnect = $0; App.shared.tunnel.applySettings() },
-            toggle(L("Неизвестные Wi-Fi"), Prefs.unknownWiFi) { Prefs.unknownWiFi = $0; App.shared.tunnel.applySettings() },
+            toggle(L("Автоподключение в неизвестных Wi-Fi"), Prefs.autoConnect) { Prefs.autoConnect = $0; App.shared.tunnel.applySettings() },
+            link(L("Мои сети")) { TrustedNetworksViewController() },
+            Classic.body(L("VPN включается сам при подключении к Wi-Fi не из «Моих сетей». В своих сетях и по сотовой связи сам не включается. Выключили VPN кнопкой в неизвестной сети — в ней он не включится сам, пока вы снова не включите его."), 12, .regular, .secondaryLabel, lines: 0),
             toggle(L("Kill switch"), Prefs.killSwitch) { Prefs.killSwitch = $0; App.shared.tunnel.applySettings() },
             Classic.body(L("Пока VPN включён, но не подключён (переподключение, сбой), приложения не выходят в интернет напрямую. Исключения iOS: push-уведомления Apple и службы оператора (звонки, SMS) iOS может пускать мимо VPN. При большом трафике (видео) тратит больше батареи: каждый пакет обрабатывает ядро туннеля. Действует со следующего подключения."), 12, .regular, .secondaryLabel, lines: 0),
         ], spacing: 14))

@@ -239,9 +239,21 @@ enum Prefs {
         set { defaults.set(newValue, forKey: "pt.net.autoConnect") }
     }
 
-    static var unknownWiFi: Bool {
-        get { bool("pt.net.unknownWiFi", true) }
-        set { defaults.set(newValue, forKey: "pt.net.unknownWiFi") }
+    /// 3.2.11: «Мои сети» — Wi-Fi networks (by name) where the VPN does not start
+    /// by itself. Every other Wi-Fi network is unknown.
+    static var trustedNetworks: [String] {
+        get { defaults.stringArray(forKey: "pt.net.trustedNetworks") ?? [] }
+        set {
+            var seen = Set<String>()
+            defaults.set(newValue.filter { !$0.isEmpty && seen.insert($0).inserted }, forKey: "pt.net.trustedNetworks")
+        }
+    }
+
+    /// 3.2.11: the unknown network the VPN was last turned off on by hand: it does
+    /// not start by itself there until the next start by hand.
+    static var pausedNetwork: String? {
+        get { defaults.string(forKey: "pt.net.pausedNetwork") }
+        set { defaults.set(newValue, forKey: "pt.net.pausedNetwork") }
     }
 
     static var appLock: Bool {

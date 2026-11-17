@@ -265,11 +265,7 @@ final class TunnelController {
             manager.onDemandRules = [any]
             manager.isOnDemandEnabled = true
         } else if Prefs.autoConnect {
-            let wifi = NEOnDemandRuleConnect()
-            wifi.interfaceTypeMatch = .wiFi
-            let cellular = NEOnDemandRuleConnect()
-            cellular.interfaceTypeMatch = .cellular
-            manager.onDemandRules = Prefs.unknownWiFi ? [wifi, cellular] : [cellular]
+            manager.onDemandRules = Self.unknownWiFiRules()
             manager.isOnDemandEnabled = true
         } else {
             manager.onDemandRules = []
@@ -310,6 +306,8 @@ final class TunnelController {
 
     func start(config: String) {
         retries = 0
+        // 3.2.11: a start by hand ends the pause on the network it was turned off on.
+        Prefs.pausedNetwork = nil
         // 3.1.8: an error from an earlier start that was never shown (3.1.6 lost
         // them all) would come up as this start's; only a new one counts.
         AppGroup.defaults.removeObject(forKey: SharedKey.lastTunnelError)
@@ -390,15 +388,54 @@ final class TunnelController {
         }
     }
 
+    /// 3.2.11 (the owner's choice): the VPN starts by itself only on a Wi-Fi network
+    /// that is not one of «Мои сети», and not on the one where it was last turned
+    /// off by hand; anywhere else (own networks, cellular) iOS leaves it as it is.
+    static func unknownWiFiRules() -> [NEOnDemandRule] {
+        var rules: [NEOnDemandRule] = []
+        let ignored = Prefs.trustedNetworks + (Prefs.pausedNetwork.map { [$0] } ?? [])
+        if !ignored.isEmpty {
+            let own = NEOnDemandRuleIgnore()
+            own.interfaceTypeMatch = .wiFi
+            own.ssidMatch = ignored
+            rules.append(own)
+        }
+        let unknown = NEOnDemandRuleConnect()
+        unknown.interfaceTypeMatch = .wiFi
+        rules.append(unknown)
+        let rest = NEOnDemandRuleIgnore()
+        rest.interfaceTypeMatch = .any
+        rules.append(rest)
+        return rules
+    }
+
     func stop() {
         startPending = nil
         guard let manager else { sync(); return }
-        // Otherwise on-demand brings the tunnel straight back.
-        if manager.isOnDemandEnabled {
+        guard manager.isOnDemandEnabled else {
+            manager.connection.stopVPNTunnel()
+            return
+        }
+        guard Prefs.autoConnect else {
+            // Otherwise on-demand brings the tunnel straight back.
             manager.isOnDemandEnabled = false
             manager.saveToPreferences { _ in manager.connection.stopVPNTunnel() }
-        } else {
-            manager.connection.stopVPNTunnel()
+            return
+        }
+        // 3.2.11: the rules for unknown Wi-Fi replace «keep it on» before the stop,
+        // with the network it is turned off on left alone until the next start by
+        // hand (iOS would start it again at once there).
+        CurrentWiFi.fetch { [weak self] ssid, onWiFi in
+            guard let self else { return }
+            if onWiFi, ssid == nil {
+                // The network's name is not available (no Wi-Fi information for the
+                // app): automatic start is off until the next start by hand.
+                manager.isOnDemandEnabled = false
+            } else {
+                Prefs.pausedNetwork = ssid.flatMap { Prefs.trustedNetworks.contains($0) ? nil : $0 }
+                self.configure(manager, keepAlive: false)
+            }
+            manager.saveToPreferences { _ in manager.connection.stopVPNTunnel() }
         }
     }
 

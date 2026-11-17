@@ -53,7 +53,6 @@
 "АКТИВНА" = "ACTIVE";
 "Авто" = "Auto";
 "Автовыбор" = "Auto select";
-"Автоподключение" = "Connect automatically";
 "Адрес подписки (https://…) или ссылка сервера (vless://, ss://, hysteria2://…)" = "Subscription address (https://…) or server link (vless://, ss://, hysteria2://…)";
 "Адрес сервера не настоящий (%@): провайдер вернул заглушку." = "The server address is not real (%@): the provider returned a placeholder.";
 "Активные соединения" = "Active connections";
@@ -163,7 +162,6 @@
 "Не проверено: туннель не запущен" = "Not checked: the tunnel is not running";
 "Не удалось распознать содержимое: это не ссылки серверов, не подписка и не JSON." = "Could not recognise the content: it is not server links, a subscription or JSON.";
 "Недавние" = "Recent";
-"Неизвестные Wi-Fi" = "Unknown Wi-Fi";
 "Неизвестный транспорт «%@»." = "Unknown transport “%@”.";
 "Непрозрачные панели настроек" = "Opaque settings panels";
 "Нет доступа к общей группе приложения (%@). Туннель не запустится: проверьте подпись." = "No access to the app group (%@). The tunnel will not start: check the signing.";
@@ -651,3 +649,20 @@
 "Kill switch: выхода для проверок в туннеле нет — серверы проверяются через подключённый сервер, UDP-серверы могут не ответить. Переподключите VPN." = "Kill switch: the tunnel has no way out for tests — servers are tested through the connected one, UDP servers may not answer. Reconnect the VPN.";
 "Время обновления" = "Update time";
 "Каждые 24 часа" = "Every 24 hours";
+
+/* 3.2.11: automatic start on unknown Wi-Fi */
+"Автоподключение в неизвестных Wi-Fi" = "Connect on unknown Wi-Fi";
+"Мои сети" = "My networks";
+"VPN включается сам при подключении к Wi-Fi не из «Моих сетей». В своих сетях и по сотовой связи сам не включается. Выключили VPN кнопкой в неизвестной сети — в ней он не включится сам, пока вы снова не включите его." = "The VPN turns on by itself when you join a Wi-Fi network that is not in «My networks». On your own networks and on cellular it does not turn on by itself. Turned the VPN off with the button on an unknown network — it will not turn on by itself there until you turn it on again.";
+"Добавить текущую сеть «%@»" = "Add the current network «%@»";
+"Текущая сеть «%@»" = "Current network «%@»";
+"в списке" = "in the list";
+"Добавить сеть по названию" = "Add a network by name";
+"Название текущей сети недоступно: нет подключения к Wi-Fi или у приложения нет доступа к информации о Wi-Fi (это задаётся при подписи). Сеть можно добавить по названию, как оно написано в настройках Wi-Fi." = "The current network's name is not available: no Wi-Fi connection, or the app has no access to Wi-Fi information (set when it is signed). A network can be added by its name as Wi-Fi settings show it.";
+"Сети" = "Networks";
+"В этих сетях VPN сам не включается. В любой другой сети Wi-Fi он включится сам, если включено «Автоподключение в неизвестных Wi-Fi». Нажмите на сеть, чтобы убрать её." = "On these networks the VPN does not turn on by itself. On any other Wi-Fi network it turns on by itself while «Connect on unknown Wi-Fi» is on. Tap a network to remove it.";
+"Пока нет сетей" = "No networks yet";
+"Название сети" = "Network name";
+"Как в настройках Wi-Fi, с учётом регистра." = "As in Wi-Fi settings, case matters.";
+"Убрать «%@» из моих сетей?" = "Remove «%@» from my networks?";
+"Убрать" = "Remove";

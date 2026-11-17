@@ -106,6 +106,7 @@ Personal Tunnel — VPN-клиент для iPhone. Серверы и подпи
 | Данные версии 1.x, если вы обновлялись с неё | App Group: `settings.db`, `configs/` — не удаляются при обновлении | то же | нет |
 | HWID | Keychain, «только на этом устройстве» | Keychain iOS | нет |
 | Настройки, избранное, порядок и фильтры серверов (без ключей) | настройки приложения (UserDefaults) | — | да |
+| «Мои сети» — названия ваших сетей Wi-Fi для автоподключения (3.2.11); приложение читает название текущей сети, только когда открыт этот экран или вы выключаете VPN, и никуда его не отправляет | настройки приложения (UserDefaults) | — | да |
 | Шрифт, который вы выбрали сами | папка приложения `Application Support/Fonts` | — | да |
 | Статистика трафика, результаты пинга, журнал ядра на экране | только в памяти, пропадают при закрытии приложения | — | — |
 
@@ -295,6 +296,7 @@ former shared HWID, so panels do not count the iPhone as a new device.
 | Data of version 1.x, if you updated from it | App Group: `settings.db`, `configs/`, not deleted by updates | same | no |
 | HWID | Keychain, “this device only” | iOS Keychain | no |
 | Settings, favourites, server order and filters (no keys) | app settings (UserDefaults) | — | yes |
+| «My networks»: the names of your Wi-Fi networks for automatic connection (3.2.11); the app reads the current network's name only while that screen is open or when you turn the VPN off, and sends it nowhere | app settings (UserDefaults) | — | yes |
 | A font you picked yourself | the app's `Application Support/Fonts` folder | — | yes |
 | Traffic statistics, ping results, the on-screen core log | memory only; gone when the app closes | — | — |
 
