@@ -76,6 +76,11 @@ final class App {
         tunnel.state.observe(self) { [weak self] state in
             guard let self else { return }
             self.connectionOrderChanged()
+            if self.refreshDueWhenSettled, state == .connected || state == .disconnected {
+                self.refreshDueWhenSettled = false
+                self.autoRefreshedAt = nil
+                DispatchQueue.main.asyncAfter(deadline: .now() + (state == .connected ? 1.5 : 0)) { [weak self] in self?.refreshDue() }
+            }
             if self.refreshWhenSettled, state == .connected || state == .disconnected {
                 self.refreshWhenSettled = false
                 // A moment for the tunnel's routes to settle.
@@ -116,7 +121,10 @@ final class App {
             let build = Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? ""
             let newBuild = Prefs.refreshedForBuild != build
             Prefs.refreshedForBuild = build
-            if Prefs.autoUpdateSubscriptions || newBuild, self.refreshAutomatically() { return }
+            // 3.2.10: otherwise only the subscriptions that are due (every 24 hours,
+            // or once a day after the chosen hour), not all of them at every launch.
+            if newBuild, self.refreshAutomatically() { return }
+            if self.refreshDue() { return }
             self.autoPing()
         }
         NotificationCenter.default.addObserver(forName: UIApplication.willEnterForegroundNotification, object: nil, queue: .main) { [weak self] _ in
@@ -183,24 +191,36 @@ final class App {
         return true
     }
 
-    /// Back in the app: the subscriptions again, unless that was a moment ago.
+    /// Back in the app: the subscriptions that are due (3.2.10: not every one at
+    /// every return any more).
     private func returnedToApp() {
-        guard Prefs.autoUpdateSubscriptions, tunnel.loaded.value else { return }
-        if let last = autoRefreshedAt, Date().timeIntervalSince(last) < Self.autoRefreshPause {
-            refreshStale()
-            return
-        }
-        refreshAutomatically()
+        guard tunnel.loaded.value else { return }
+        refreshDue()
     }
 
-    /// Subscriptions not updated for a day, while the app is open (checked every half hour).
-    private func refreshStale() {
-        guard Prefs.autoUpdateSubscriptions, !tunnel.state.value.isBusy else { return }
-        let due = Date().addingTimeInterval(-Self.autoRefreshAge)
-        for subscription in library.subscriptions where subscription.isRemote && (subscription.updatedAt ?? .distantPast) < due {
-            refresh(subscription.id, automatic: true)
+    /// Subscriptions due by «Время обновления» (`SubscriptionSchedule`): at launch,
+    /// on return to the app and every half hour while it is open. A failed update
+    /// is tried again no sooner than 5 minutes later. False: nothing was due.
+    @discardableResult
+    private func refreshDue() -> Bool {
+        guard Prefs.autoUpdateSubscriptions else { return false }
+        if let last = autoRefreshedAt, Date().timeIntervalSince(last) < Self.autoRefreshPause { return false }
+        let hour = Prefs.subscriptionUpdateHour
+        let due = library.subscriptions.filter { $0.isRemote && SubscriptionSchedule.isDue(updatedAt: $0.updatedAt, hour: hour) }
+        guard !due.isEmpty else { return false }
+        autoRefreshedAt = Date()
+        if tunnel.state.value.isBusy {
+            // Not while the VPN is coming up or going down; once it has settled.
+            refreshDueWhenSettled = true
+            return true
         }
+        for subscription in due { refresh(subscription.id, automatic: true) }
+        return true
     }
+
+    private var refreshDueWhenSettled = false
+
+    private func refreshStale() { refreshDue() }
 
     private func startAutoRefreshClock() {
         autoRefreshTimer?.invalidate()

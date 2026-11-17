@@ -637,7 +637,7 @@
 "Сервер не сменился без перезапуска (%@), но VPN уже запустился заново на нём." = "The server did not change without a restart (%@), but the VPN has already started again on it.";
 "ПОДПИСКИ" = "SUBSCRIPTIONS";
 "Автообновление подписок" = "Update subscriptions automatically";
-"Подписки обновляются сами при каждом открытии приложения и раз в 24 часа, пока оно открыто. Выключено — только вручную." = "Subscriptions update themselves every time the app is opened, and every 24 hours while it stays open. Off: only by hand.";
+"Подписки обновляются сами раз в 24 часа или каждый день в выбранное время — при первом открытии приложения после него (и пока оно открыто). Выключено — только вручную." = "Subscriptions update themselves once every 24 hours, or every day at the chosen time — the first time the app is opened after it (and while it is open). Off — only by hand.";
 "Конфиг сервера обновлён — переподключиться?" = "Server configuration updated — reconnect?";
 "Соединение прервётся на пару секунд. Без переподключения обновление применится при следующем подключении." = "The connection will drop for a couple of seconds. Without reconnecting, the update takes effect at the next connection.";
 "Переподключиться" = "Reconnect";
@@ -650,3 +650,5 @@
 /* 3.2.7: the kill switch's way out for the app's tests */
 "Kill switch: ядро приложения проверяет серверы через выход туннеля, напрямую до каждого." = "Kill switch: the app's core tests servers through the tunnel's way out, straight to each.";
 "Kill switch: выхода для проверок в туннеле нет — серверы проверяются через подключённый сервер, UDP-серверы могут не ответить. Переподключите VPN." = "Kill switch: the tunnel has no way out for tests — servers are tested through the connected one, UDP servers may not answer. Reconnect the VPN.";
+"Время обновления" = "Update time";
+"Каждые 24 часа" = "Every 24 hours";

@@ -254,6 +254,10 @@ final class CoreClient {
             while iterator.hasNext() {
                 guard let item = iterator.next() else { continue }
                 if item.outboundType == "dns" { continue }
+                // 3.2.10: the app's own server tests (the kill switch's way out) are
+                // not the device's traffic: right after connecting they were all the
+                // open connections, and the routes card stayed empty.
+                if item.inbound == ProbeExit.inboundTag { continue }
                 if item.closedAt == 0 {
                     let udp = item.network == "udp"
                     if udp { result.udp += 1 } else { result.tcp += 1 }

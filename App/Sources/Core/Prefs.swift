@@ -304,6 +304,19 @@ enum Prefs {
         set { defaults.set(newValue, forKey: "pt.subscriptions.autoUpdate") }
     }
 
+    /// 3.2.10: when subscriptions update themselves: `SubscriptionSchedule.everyDay`
+    /// (once in 24 hours) or an hour of the day, 0–23 (once a day after it).
+    static var subscriptionUpdateHour: Int {
+        get { defaults.object(forKey: "pt.subscriptions.updateHour") == nil ? SubscriptionSchedule.everyDay : defaults.integer(forKey: "pt.subscriptions.updateHour") }
+        set { defaults.set(newValue, forKey: "pt.subscriptions.updateHour") }
+    }
+
+    /// The choices of «Время обновления»: every 24 hours, or 00:00 … 23:00.
+    static var subscriptionUpdateOptions: [(value: String, title: String)] {
+        let hours: [(value: String, title: String)] = (0 ... 23).map { (value: String($0), title: String(format: "%02d:00", $0)) }
+        return [(value: String(SubscriptionSchedule.everyDay), title: L("Каждые 24 часа"))] + hours
+    }
+
     /// The build that last fetched every subscription again (3.1.2).
     static var refreshedForBuild: String? {
         get { defaults.string(forKey: "pt.refresh.build") }

@@ -116,7 +116,9 @@ final class NetworkSettingsViewController: FormViewController {
             ]),
             FormSection(L("Подписки"), [
                 .toggle(title: L("Автообновление подписок"), get: { Prefs.autoUpdateSubscriptions }, set: { Prefs.autoUpdateSubscriptions = $0 }),
-                .note(L("Подписки обновляются сами при каждом открытии приложения и раз в 24 часа, пока оно открыто. Выключено — только вручную.")),
+                .picker(title: L("Время обновления"), options: Prefs.subscriptionUpdateOptions,
+                        get: { String(Prefs.subscriptionUpdateHour) }, set: { Prefs.subscriptionUpdateHour = Int($0) ?? SubscriptionSchedule.everyDay }),
+                .note(L("Подписки обновляются сами раз в 24 часа или каждый день в выбранное время — при первом открытии приложения после него (и пока оно открыто). Выключено — только вручную.")),
             ]),
             FormSection(L("Подключение"), [
                 .toggle(title: L("Автоподключение"), get: { Prefs.autoConnect }, set: { Prefs.autoConnect = $0; App.shared.tunnel.applySettings() }),

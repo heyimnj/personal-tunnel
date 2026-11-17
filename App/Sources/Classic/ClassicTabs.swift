@@ -416,6 +416,39 @@ final class ClassicSettingsViewController: ClassicPage {
         return UIStackView(.horizontal, spacing: 8, alignment: .center, [Classic.body(title, 16, .regular, Theme.text, lines: 0), UIView(), control])
     }
 
+    /// 3.2.10: a choice from a menu on the right of its title (the system's
+    /// pop-up menu), for lists too long for a row of options.
+    private func menu(_ title: String, _ options: [(value: String, title: String)], _ selected: String, _ set: @escaping (String) -> Void) -> UIView {
+        let button = UIButton(type: .system)
+        var configuration = UIButton.Configuration.plain()
+        configuration.title = options.first { $0.value == selected }?.title
+        configuration.image = UIImage(systemName: "chevron.up.chevron.down", withConfiguration: UIImage.SymbolConfiguration(pointSize: 11, weight: .semibold))
+        configuration.imagePlacement = .trailing
+        configuration.imagePadding = 4
+        configuration.contentInsets = .zero
+        configuration.baseForegroundColor = Theme.accent
+        configuration.titleTextAttributesTransformer = UIConfigurationTextAttributesTransformer { attributes in
+            var attributes = attributes
+            attributes.font = Theme.font(16)
+            return attributes
+        }
+        button.configuration = configuration
+        button.showsMenuAsPrimaryAction = true
+        func makeMenu(_ current: String) -> UIMenu {
+            UIMenu(children: options.map { option in
+                UIAction(title: option.title, state: option.value == current ? .on : .off) { [weak button] _ in
+                    Haptics.selection()
+                    set(option.value)
+                    button?.configuration?.title = option.title
+                    button?.menu = makeMenu(option.value)
+                }
+            })
+        }
+        button.menu = makeMenu(selected)
+        button.setContentHuggingPriority(.required, for: .horizontal)
+        return UIStackView(.horizontal, spacing: 8, alignment: .center, [Classic.body(title, 16, .regular, Theme.text, lines: 0), UIView(), button])
+    }
+
     private func link(_ title: String, _ make: @escaping () -> UIViewController) -> UIView {
         let chevron = UIImageView(image: UIImage(systemName: "arrow.right", withConfiguration: UIImage.SymbolConfiguration(pointSize: 13, weight: .medium)))
         chevron.tintColor = .secondaryLabel
@@ -465,7 +498,10 @@ final class ClassicSettingsViewController: ClassicPage {
         ] as [UIView] : [])))
         content.addArrangedSubview(section(L("ПОДПИСКИ"), [
             toggle(L("Автообновление подписок"), Prefs.autoUpdateSubscriptions) { Prefs.autoUpdateSubscriptions = $0 },
-            Classic.body(L("Подписки обновляются сами при каждом открытии приложения и раз в 24 часа, пока оно открыто. Выключено — только вручную."), 12, .regular, .secondaryLabel, lines: 0),
+            menu(L("Время обновления"), Prefs.subscriptionUpdateOptions, String(Prefs.subscriptionUpdateHour)) {
+                Prefs.subscriptionUpdateHour = Int($0) ?? SubscriptionSchedule.everyDay
+            },
+            Classic.body(L("Подписки обновляются сами раз в 24 часа или каждый день в выбранное время — при первом открытии приложения после него (и пока оно открыто). Выключено — только вручную."), 12, .regular, .secondaryLabel, lines: 0),
         ], spacing: 14))
         content.addArrangedSubview(section(L("ПОДКЛЮЧЕНИЕ"), [
             toggle(L("Автоподключение"), Prefs.autoConnect) { Prefs.autoConnect = $0; App.shared.tunnel.applySettings() },
