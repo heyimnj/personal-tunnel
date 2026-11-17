@@ -203,9 +203,16 @@ public extension XrayBacked {
     /// `level`: «info» for the app's measurements, whose failures are read back
     /// (`failure(inLog:prefix:)`); the tunnel keeps «warning» (a line per connection
     /// would grow the file all day).
-    static func prepare(_ runtime: JSONValue, interface: String?, logPath: String?, level: String = "warning") -> JSONValue {
+    ///
+    /// `exit` (3.2.8): with the kill switch, the tunnel's loopback way out
+    /// (`ProbeExit`): every hop that dials by itself dials through it, as
+    /// sing-box's servers do. Until then Xray's tests went through the connected
+    /// server and the tunnel's gVisor, and a dead server held a connection there
+    /// for a minute.
+    static func prepare(_ runtime: JSONValue, interface: String?, logPath: String?, level: String = "warning", exit: ProbeExit? = nil) -> JSONValue {
         var config = runtime
         if let logPath { config["log"] = ["loglevel": .string(level), "error": .string(logPath), "access": "none"] }
+        if let exit { return throughProbeExit(config, exit) }
         guard let interface, !interface.isEmpty else { return config }
         config["outbounds"] = .array((config["outbounds"]?.arrayValue ?? []).map { outbound in
             let proto = outbound["protocol"]?.stringValue?.lowercased() ?? ""
@@ -220,6 +227,31 @@ public extension XrayBacked {
             outbound["streamSettings"] = stream
             return outbound
         })
+        return config
+    }
+}
+
+extension XrayBacked {
+    static func throughProbeExit(_ config: JSONValue, _ exit: ProbeExit) -> JSONValue {
+        var config = config
+        let socks: JSONValue = [
+            "protocol": "socks",
+            "tag": .string(ProbeExit.outboundTag),
+            "settings": ["address": "127.0.0.1", "port": .int(Int64(exit.port)), "user": .string(exit.username), "pass": .string(exit.password)],
+        ]
+        config["outbounds"] = .array((config["outbounds"]?.arrayValue ?? []).map { outbound in
+            let proto = outbound["protocol"]?.stringValue?.lowercased() ?? ""
+            guard proxyProtocols.contains(proto) || proto == "freedom" else { return outbound }
+            var outbound = outbound
+            var stream = outbound["streamSettings"] ?? .object([:])
+            var sockopt = stream["sockopt"] ?? .object([:])
+            // A hop that dials through another one: the first hop goes out this way.
+            guard sockopt["dialerProxy"] == nil, outbound["proxySettings"] == nil else { return outbound }
+            sockopt["dialerProxy"] = .string(ProbeExit.outboundTag)
+            stream["sockopt"] = sockopt
+            outbound["streamSettings"] = stream
+            return outbound
+        } + [socks])
         return config
     }
 }

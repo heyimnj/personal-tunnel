@@ -84,6 +84,18 @@ public struct LatencyMode: Equatable, Sendable {
                     firstTimeoutMs: 2500, retryConcurrency: 48)
     }
 
+    /// 3.2.8: through the tunnel's way out (the kill switch) every test is a
+    /// connection in the extension (about 50 MiB): 32 at once with 48 retries
+    /// took it to 46 MiB on a 214-server subscription, and its memory guard reset
+    /// the network — the tunnel itself included. 16 at a time, as in the
+    /// extension's own tests.
+    public static func localCoreThroughExit(link: String) -> LatencyMode {
+        var mode = localCore(link: link)
+        mode.urlConcurrency = 16
+        mode.retryConcurrency = 16
+        return mode
+    }
+
     /// «Основной», «Классика», «Альтернативный» — параметры 1.5.0.
     public static func named(_ name: String?) -> LatencyMode {
         switch name {

@@ -69,6 +69,12 @@ public enum AdBlockLevel: String, Codable, CaseIterable, Sendable {
 public struct ProbeExit: Equatable, Codable, Sendable {
     public static let inboundTag = "probe-in"
     public static let outboundTag = "probe-exit"
+    /// 3.2.8: the tunnel's own direct outbound for the app's tests: a dead server
+    /// gives up its dial with the app's first try (the core's default held each
+    /// one 5 s), and its UDP mapping is let go after 15 s instead of 5 minutes.
+    public static let directTag = "probe-direct"
+    public static let connectTimeout = "3s"
+    public static let udpTimeout = "15s"
     public static let ports: ClosedRange<Int> = 20000 ... 59999
 
     public var port: Int
@@ -321,7 +327,8 @@ public enum ConfigBuilder {
         if probeExit != nil {
             // First of all: the app's tests leave as they came, before sniffing
             // (a REALITY server's borrowed name), the bypasses and the panels.
-            routeRules.insert(["inbound": [.string(ProbeExit.inboundTag)], "outbound": "direct"], at: 0)
+            routeRules.insert(["inbound": [.string(ProbeExit.inboundTag)], "action": "route",
+                               "outbound": .string(ProbeExit.directTag), "udp_timeout": .string(ProbeExit.udpTimeout)], at: 0)
         }
 
         var route: [String: JSONValue] = [
@@ -377,7 +384,8 @@ public enum ConfigBuilder {
             "certificate": ["store": "mozilla"],
             "dns": .object(dns),
             "inbounds": .array([tun] + (probeExit.map { [probeInbound($0)] } ?? [])),
-            "outbounds": .array(groups + outbounds + [["type": "direct", "tag": "direct"]]),
+            "outbounds": .array(groups + outbounds + [["type": "direct", "tag": "direct"]]
+                + (probeExit == nil ? [] : [["type": "direct", "tag": .string(ProbeExit.directTag), "connect_timeout": .string(ProbeExit.connectTimeout)]])),
             "route": .object(route),
         ]
         if !endpoints.isEmpty { config["endpoints"] = .array(endpoints) }
@@ -543,6 +551,9 @@ public enum ConfigBuilder {
         if var route = config["route"], let rules = route["rules"]?.arrayValue {
             route["rules"] = .array(rules.filter { $0["inbound"]?.stringList != [ProbeExit.inboundTag] })
             config["route"] = route
+        }
+        if let outbounds = config["outbounds"]?.arrayValue {
+            config["outbounds"] = .array(outbounds.filter { $0["tag"]?.stringValue != ProbeExit.directTag })
         }
         return config
     }

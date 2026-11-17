@@ -273,10 +273,15 @@ final class ConfigBuilderTests: XCTestCase {
         XCTAssertEqual(socks["users"]?.arrayValue?.first?["password"]?.stringValue, "p")
         let rules = try XCTUnwrap(config["route"]?["rules"]?.arrayValue)
         XCTAssertEqual(rules.first?["inbound"]?.stringList, [ProbeExit.inboundTag])
-        XCTAssertEqual(rules.first?["outbound"]?.stringValue, "direct")
+        XCTAssertEqual(rules.first?["outbound"]?.stringValue, ProbeExit.directTag)
+        XCTAssertEqual(rules.first?["udp_timeout"]?.stringValue, ProbeExit.udpTimeout)
+        let direct = try XCTUnwrap(config["outbounds"]?.arrayValue?.first { $0["tag"]?.stringValue == ProbeExit.directTag })
+        XCTAssertEqual(direct["type"]?.stringValue, "direct")
+        XCTAssertEqual(direct["connect_timeout"]?.stringValue, ProbeExit.connectTimeout)
         // Nothing else goes direct but the bypasses, as without the way out (PT-06).
         let without = try ConfigBuilder.build(subscription: subscription, selected: nil, options: TunnelOptions())
         XCTAssertEqual(Array(rules.dropFirst()), without["route"]?["rules"]?.arrayValue)
+        XCTAssertEqual(config["outbounds"]?.arrayValue?.filter { $0["tag"]?.stringValue != ProbeExit.directTag }, without["outbounds"]?.arrayValue)
         XCTAssertFalse(ConfigBuilder.hasProbeExit(without))
 
         // Without the kill switch the extension drops it; the rest stays.
@@ -631,6 +636,29 @@ extension XrayBackedTests {
         XCTAssertNil(tagged("pt-block")?["streamSettings"])
         XCTAssertEqual(XrayBacked.prepare(runtime, interface: nil, logPath: nil), runtime)
         XCTAssertEqual(XrayBacked.prepare(runtime, interface: nil, logPath: "/tmp/p.log", level: "info").at("log", "loglevel"), "info")
+    }
+
+    /// 3.2.8: with the kill switch Xray's hops dial through the tunnel's way out
+    /// (a socks outbound with the app's login), not through the connected server.
+    func testPrepareDialsHopsThroughTheProbeExit() throws {
+        let nodes = NodeAssembler.assemble(try ContentImporter.parse(Self.subscriptionJSON).nodes)
+        let runtime = try XCTUnwrap(ConfigBuilder.xrayRuntime(subscription: Subscription(id: 3, name: "X", nodes: nodes)))
+        let exit = ProbeExit(port: 34567, username: "u", password: "p")
+        let ready = XrayBacked.prepare(runtime, interface: "en0", logPath: nil, exit: exit)
+        let outbounds = ready["outbounds"]?.arrayValue ?? []
+        func tagged(_ tag: String) -> JSONValue? { outbounds.first { $0["tag"]?.stringValue == tag } }
+        let socks = try XCTUnwrap(tagged(ProbeExit.outboundTag))
+        XCTAssertEqual(socks["protocol"], "socks")
+        XCTAssertEqual(socks.at("settings", "address"), "127.0.0.1")
+        XCTAssertEqual(socks.at("settings", "port")?.intValue, 34567)
+        XCTAssertEqual(socks.at("settings", "user"), "u")
+        XCTAssertEqual(socks.at("settings", "pass"), "p")
+        XCTAssertEqual(tagged("tunneln0-proxy")?.at("streamSettings", "sockopt", "dialerProxy")?.stringValue, ProbeExit.outboundTag)
+        XCTAssertNil(tagged("tunneln0-proxy")?.at("streamSettings", "sockopt", "interface"))
+        // A chain: its exit keeps dialling through its hop; the hop goes out this way.
+        XCTAssertEqual(tagged("tunneln1-exit")?.at("streamSettings", "sockopt", "dialerProxy")?.stringValue, "tunneln1-hop")
+        XCTAssertEqual(tagged("tunneln1-hop")?.at("streamSettings", "sockopt", "dialerProxy")?.stringValue, ProbeExit.outboundTag)
+        XCTAssertNil(tagged("pt-block")?["streamSettings"])
     }
 
     /// 3.1.15: Xray-core's reason for a failed test, read from its «info» log by the

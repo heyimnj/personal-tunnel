@@ -274,7 +274,7 @@ final class LocalCoreProbes: LatencyProbes, @unchecked Sendable {
             do {
                 if let runtime = ConfigBuilder.xrayRuntime(subscription: subscription, instance: instance) {
                     // One log for every instance of the run: Xray keeps one log per process.
-                    let config = XrayBacked.prepare(runtime, interface: interface, logPath: xrayLog.path, level: "info")
+                    let config = XrayBacked.prepare(runtime, interface: interface, logPath: xrayLog.path, level: "info", exit: exit)
                     var error: NSError?
                     if let xray = PtbridgeStartXray(instance, config.serialized(pretty: false), &error), error == nil {
                         xrays.append(xray)
@@ -699,7 +699,8 @@ final class LatencyService {
                 if !measured.isEmpty, !Task.isCancelled {
                     started.probes.report = { log(3, $0) }
                     let core = LatencyRunner(probes: started.probes)
-                    await core.run(measured, mode: LatencyMode.localCore(link: mode.link), tunnel: true) { await deliver($0, nil) }
+                    let coreMode = exitOpen ? LatencyMode.localCoreThroughExit(link: mode.link) : LatencyMode.localCore(link: mode.link)
+                    await core.run(measured, mode: coreMode, tunnel: true) { await deliver($0, nil) }
                 }
                 if !fallback.isEmpty, !Task.isCancelled { await runner.run(fallback, mode: mode, tunnel: false) { await deliver($0, nil) } }
                 started.probes.close()
