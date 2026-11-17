@@ -57,6 +57,11 @@ final class CoreClient {
     private var client: LibboxCommandClient?
     private var generation = 0
     private var running = false
+    /// 3.2.9: the app is in the background. The status stream (every second) is
+    /// closed then: iOS suspends the app but keeps its socket open, and the
+    /// extension went on waking every second to read and send a status nobody
+    /// read, until the socket's buffer filled.
+    private var inBackground = false
     private var wantsConnections = false
     private var wantsLog = false
     private var logCounter = 0
@@ -85,6 +90,14 @@ final class CoreClient {
         guard !running else { return }
         running = true
         connect()
+    }
+
+    /// The app went to the background or came back (3.2.9).
+    func setInBackground(_ value: Bool) {
+        guard inBackground != value else { return }
+        inBackground = value
+        guard running else { return }
+        if value { disconnect() } else { connect() }
     }
 
     func stop() {
@@ -168,6 +181,7 @@ final class CoreClient {
     }
 
     private func connect() {
+        guard !inBackground else { return }
         generation += 1
         let token = generation
         let options = LibboxCommandClientOptions()

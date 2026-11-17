@@ -120,7 +120,12 @@ final class App {
             self.autoPing()
         }
         NotificationCenter.default.addObserver(forName: UIApplication.willEnterForegroundNotification, object: nil, queue: .main) { [weak self] _ in
+            self?.core.setInBackground(false)
             self?.returnedToApp()
+        }
+        // 3.2.9: no status stream from the extension while nobody looks at it.
+        NotificationCenter.default.addObserver(forName: UIApplication.didEnterBackgroundNotification, object: nil, queue: .main) { [weak self] _ in
+            self?.core.setInBackground(true)
         }
         startAutoRefreshClock()
         tunnel.lastError.observe(self, fireNow: false) { [weak self] message in
@@ -636,7 +641,11 @@ final class App {
         guard Prefs.autoPing, tunnel.loaded.value, !tunnel.state.value.isBusy, tunnel.state.value != .connecting,
               !latency.progress.value.running else { return }
         if only == nil {
-            if let last = lastAutoPing, Date().timeIntervalSince(last) < 180 { return }
+            // 3.2.9: with the VPN on every test is a connection in the extension
+            // (the kill switch's way out, or the tunnel itself): at most every
+            // 10 minutes then, every 3 without it.
+            let gap: TimeInterval = tunnel.state.value == .disconnected ? 180 : 600
+            if let last = lastAutoPing, Date().timeIntervalSince(last) < gap { return }
             lastAutoPing = Date()
         }
         let subscriptions = only.map { [$0] } ?? library.subscriptions

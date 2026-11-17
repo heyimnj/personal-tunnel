@@ -453,7 +453,11 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
         // 3.1.6: memory is handed back to the system before the limit is near
         // (iOS warns of pressure at about 40 MiB used), and every quarter of an
         // hour in a long session, so a night left on does not keep it.
-        if available > 0, available < 13 {
+        // 3.2.9: only when really near the limit (under 8 MiB left). At 13 MiB the
+        // extension, sitting at 38–41 MiB with MTU 4064, forced a full collection
+        // and handed its memory back every 2 minutes all day, only to take it
+        // again (battery).
+        if available > 0, available < 8 {
             relieveMemory(sample, every: 120)
         } else if let last = memoryFreedAt ?? memoryStartedAt, Date().timeIntervalSince(last) > 900 {
             relieveMemory(sample, every: 900, quiet: true)
