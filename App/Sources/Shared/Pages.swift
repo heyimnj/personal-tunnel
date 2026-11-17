@@ -822,7 +822,7 @@ final class SubscriptionsViewController: FormViewController {
             }
             if let used = subscription.info.usedBytes {
                 rows.append(.value(title: L("Трафик"), detail: {
-                    Format.bytes(used) + (subscription.info.isLimited ? L(" из ") + Format.bytes(subscription.info.totalBytes ?? 0) : L(" · без лимита"))
+                    Format.traffic(used) + (subscription.info.isLimited ? L(" из ") + Format.traffic(subscription.info.totalBytes ?? 0) : L(" · без лимита"))
                 }))
             }
             let id = subscription.id

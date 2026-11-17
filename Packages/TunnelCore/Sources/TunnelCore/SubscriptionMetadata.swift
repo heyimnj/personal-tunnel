@@ -61,6 +61,21 @@ public enum Format {
         return String(format: "%.1f %@", amount, units[index])
     }
 
+    /// A subscription's traffic (3.2.4): two decimals, the zeros at the end left
+    /// out — `101.98 GB`, `1.5 TB`, `500 GB`, `415 KB`.
+    public static func traffic(_ value: Int64) -> String {
+        if value <= 0 { return "0 GB" }
+        let units = ["KB", "MB", "GB", "TB"]
+        var amount = Double(value) / 1024
+        var index = 0
+        while amount >= 1000, index < units.count - 1 { amount /= 1024; index += 1 }
+        if index == 0 { return "\(Int(amount.rounded())) \(units[index])" }
+        var text = String(format: "%.2f", amount)
+        while text.hasSuffix("0") { text.removeLast() }
+        if text.hasSuffix(".") { text.removeLast() }
+        return "\(text) \(units[index])"
+    }
+
     public static func speed(_ bytesPerSecond: Int64) -> String { bytes(bytesPerSecond) + CoreText.t("/с") }
 
     public static func duration(_ seconds: Int) -> String {

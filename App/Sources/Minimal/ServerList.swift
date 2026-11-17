@@ -853,6 +853,9 @@ final class SurfaceView: UIView {
     let header = SubscriptionHeaderView()
     let info = SubscriptionInfoStrip()
     let filters = FilterBar()
+    /// 3.2.4: the press shade of the whole head — its title, the provider's line
+    /// and the filters — under them, so the text stays as it is.
+    let pressShade = UIView()
     static let card = UIColor.secondarySystemGroupedBackground
     static let container = UIColor { traits in
         traits.userInterfaceStyle == .dark ? UIColor(red: 0.067, green: 0.067, blue: 0.075, alpha: 1) : UIColor(red: 0.914, green: 0.914, blue: 0.933, alpha: 1)
@@ -876,6 +879,9 @@ final class SurfaceView: UIView {
         plate.isUserInteractionEnabled = false
         plate.layer.cornerCurve = .continuous
         addSubview(plate)
+        pressShade.isUserInteractionEnabled = false
+        pressShade.layer.cornerCurve = .continuous
+        addSubview(pressShade)
         addSubview(filters)
         addSubview(header)
         // Over the head (it takes no touches): the open head's own card, while it
@@ -1207,14 +1213,29 @@ final class ServerListView: UIScrollView {
     func row(for subscription: Int64, node: String) -> ServerRowView? { rows[Self.key(subscription, node)] }
 
     /// The press shade takes the card's own shape: all corners round when closed,
-    /// only the top ones when the subscription is open under it.
+    /// only the top ones when the subscription is open under it. 3.2.4: open, it
+    /// covers the whole head — the provider's line and the filters too, not only
+    /// the title.
     func headerHeld(_ id: Int64, _ held: Bool) {
         guard let surface = surfaces[id] else { return }
-        let front = surface.header.front
-        front.layer.cornerRadius = surface.layer.cornerRadius
-        front.layer.cornerCurve = .continuous
-        front.layer.maskedCorners = isOpen(id) ? [.layerMinXMinYCorner, .layerMaxXMinYCorner] : [.layerMinXMinYCorner, .layerMaxXMinYCorner, .layerMinXMaxYCorner, .layerMaxXMaxYCorner]
-        UIView.animate(withDuration: 0.18) { front.backgroundColor = held ? UIColor.label.withAlphaComponent(0.07) : .clear }
+        let shade = surface.pressShade
+        if held {
+            shade.frame = headRect(id)
+            shade.layer.cornerRadius = surface.layer.cornerRadius
+            shade.layer.maskedCorners = isOpen(id) ? [.layerMinXMinYCorner, .layerMaxXMinYCorner] : [.layerMinXMinYCorner, .layerMaxXMinYCorner, .layerMinXMaxYCorner, .layerMaxXMaxYCorner]
+        }
+        UIView.animate(withDuration: 0.18) { shade.backgroundColor = held ? UIColor.label.withAlphaComponent(0.07) : .clear }
+    }
+
+    /// The subscription's head in its surface: the title, and when open the
+    /// provider's line and the filters under it.
+    private func headRect(_ id: Int64) -> CGRect {
+        guard let surface = surfaces[id] else { return .zero }
+        var height = Self.headerHeight
+        if isOpen(id), let section = sections.first(where: { $0.id == id }), !section.standalone {
+            height = min(surface.bounds.height, rowsTop(section))
+        }
+        return CGRect(x: 0, y: 0, width: surface.bounds.width, height: max(Self.headerHeight, height))
     }
 
     private static func key(_ subscription: Int64, _ node: String) -> String { "\(subscription):\(node)" }
@@ -1524,11 +1545,11 @@ final class ServerListView: UIScrollView {
         for section in sections {
             guard let surface = surfaces[section.id], surface.frame.contains(point) else { continue }
             let local = convert(point, to: surface)
-            let head = CGRect(x: 0, y: 0, width: surface.bounds.width, height: Self.headerHeight)
+            let head = section.standalone ? CGRect(x: 0, y: 0, width: surface.bounds.width, height: Self.headerHeight) : headRect(section.id)
             if section.standalone, let node = section.nodes.first, let row = rows[Self.key(section.id, node)] {
                 row.setHeld(true)
                 onHold?(section.id, node, point, (view: surface as UIView, rect: head)) { [weak row] in row?.setHeld(false) }
-            } else if local.y < Self.headerHeight {
+            } else if local.y < head.maxY {
                 headerHeld(section.id, true)
                 onHold?(section.id, nil, point, (view: surface as UIView, rect: head)) { [weak self] in self?.headerHeld(section.id, false) }
             } else if let row = rows.values.first(where: { $0.superview === surface && $0.frame.contains(local) }) {

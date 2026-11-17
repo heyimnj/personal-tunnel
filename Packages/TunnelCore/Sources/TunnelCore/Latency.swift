@@ -303,16 +303,66 @@ public actor LatencyRunner {
     }
 
     /// Guarantees an answer: a probe that hangs counts as a timeout.
+    /// 3.2.4: even one that ignores cancellation — a blocking call into the core
+    /// that never returns (the tunnel's command socket of an extension near its
+    /// memory limit). A task group waits for all its children, so the deadline
+    /// did not end such a probe, and every server after it spun forever.
     public static func deadline(seconds: TimeInterval, _ work: @escaping @Sendable () async -> ProbeResult) async -> ProbeResult {
-        await withTaskGroup(of: ProbeResult?.self) { group in
-            group.addTask { await work() }
-            group.addTask {
-                try? await Task.sleep(nanoseconds: UInt64(seconds * 1_000_000_000))
-                return Task.isCancelled ? nil : .failed(.timeout)
+        let gate = DeadlineGate()
+        return await withTaskCancellationHandler {
+            await withCheckedContinuation { (continuation: CheckedContinuation<ProbeResult, Never>) in
+                gate.arm(continuation)
+                gate.add(Task { gate.finish(await work()) })
+                gate.add(Task {
+                    try? await Task.sleep(nanoseconds: UInt64(max(0, seconds) * 1_000_000_000))
+                    gate.finish(.failed(.timeout))
+                })
             }
-            let first = await group.next() ?? nil
-            group.cancelAll()
-            return first ?? .failed(.timeout)
+        } onCancel: {
+            gate.finish(.failed(.timeout))
         }
+    }
+}
+
+/// The first answer of `LatencyRunner.deadline` wins; the rest is cancelled and
+/// left to end on its own.
+private final class DeadlineGate: @unchecked Sendable {
+    private let lock = NSLock()
+    private var continuation: CheckedContinuation<ProbeResult, Never>?
+    private var early: ProbeResult?
+    private var done = false
+    private var tasks: [Task<Void, Never>] = []
+
+    func arm(_ continuation: CheckedContinuation<ProbeResult, Never>) {
+        lock.lock()
+        if let early {
+            lock.unlock()
+            continuation.resume(returning: early)
+            return
+        }
+        self.continuation = continuation
+        lock.unlock()
+    }
+
+    func add(_ task: Task<Void, Never>) {
+        lock.lock()
+        let finished = done
+        if !finished { tasks.append(task) }
+        lock.unlock()
+        if finished { task.cancel() }
+    }
+
+    func finish(_ result: ProbeResult) {
+        lock.lock()
+        guard !done else { lock.unlock(); return }
+        done = true
+        let target = continuation
+        continuation = nil
+        if target == nil { early = result }
+        let running = tasks
+        tasks = []
+        lock.unlock()
+        for task in running { task.cancel() }
+        target?.resume(returning: result)
     }
 }

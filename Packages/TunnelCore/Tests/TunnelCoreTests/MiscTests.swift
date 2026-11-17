@@ -29,6 +29,12 @@ final class MiscTests: XCTestCase {
         XCTAssertEqual(Format.bytes(0), "Zero KB")
         XCTAssertEqual(Format.bytes(415 * 1024), "415 KB")
         XCTAssertEqual(Format.bytes(Int64(106.7 * 1024 * 1024)), "106.7 MB")
+        // 3.2.4: a subscription's traffic to two decimals, trailing zeros dropped.
+        XCTAssertEqual(Format.traffic(Int64(101.98 * 1024 * 1024 * 1024)), "101.98 GB")
+        XCTAssertEqual(Format.traffic(500 * 1024 * 1024 * 1024), "500 GB")
+        XCTAssertEqual(Format.traffic(Int64(1.5 * 1024 * 1024 * 1024 * 1024)), "1.5 TB")
+        XCTAssertEqual(Format.traffic(415 * 1024), "415 KB")
+        XCTAssertEqual(Format.traffic(0), "0 GB")
         XCTAssertEqual(Format.duration(118_370), "32:52:50")
         XCTAssertEqual(Format.plural(36, "сервер", "сервера", "серверов"), "36 серверов")
         XCTAssertEqual(Format.plural(21, "сервер", "сервера", "серверов"), "21 сервер")

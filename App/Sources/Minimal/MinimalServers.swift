@@ -804,9 +804,9 @@ final class MinimalServersViewController: UIViewController, UIScrollViewDelegate
         return Lf("Активна до %@ (%@)", date, left)
     }
 
-    /// Bytes without a needless «.0»: «65 GB», «1.5 TB».
+    /// Bytes to two decimals without needless zeros: «101.98 GB», «65 GB», «1.5 TB».
     private static func amount(_ bytes: Int64) -> String {
-        Format.bytes(bytes).replacingOccurrences(of: ".0 ", with: " ")
+        Format.traffic(bytes)
     }
 
     /// The tags a subscription's servers carry, most common first; a bar only

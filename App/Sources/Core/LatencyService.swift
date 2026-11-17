@@ -619,7 +619,13 @@ final class LatencyService {
             // TCP prefilter (a connect around the tunnel finds no route on iOS 27).
             var liveMode = mode
             liveMode.tcpFilter = false
-            if !live.isEmpty { await runner.run(live, mode: liveMode, tunnel: true) { await deliver($0, liveID) } }
+            // 3.2.4: alongside the others, not before them: a tunnel that has stopped
+            // answering no longer holds up the servers outside it.
+            let tunnelMode = liveMode
+            func testTunnel() async {
+                if !live.isEmpty { await runner.run(live, mode: tunnelMode, tunnel: true) { await deliver($0, liveID) } }
+            }
+            async let tunnelPass: Void = testTunnel()
             if useLocalCore, !Task.isCancelled {
                 let started = await Task.detached(priority: .utility) {
                     LocalCoreProbes.start(toStart, options: options, interface: bindToPhysical ? PhysicalInterface.current() : nil)
@@ -641,6 +647,7 @@ final class LatencyService {
             } else if !direct.isEmpty, !Task.isCancelled {
                 await runner.run(direct, mode: mode, tunnel: false) { await deliver($0, nil) }
             }
+            await tunnelPass
             await MainActor.run {
                 guard let self, !Task.isCancelled else { return }
                 let reasons = self.tally.sorted { $0.value > $1.value }.map { "\($0.key.title) ×\($0.value)" }
