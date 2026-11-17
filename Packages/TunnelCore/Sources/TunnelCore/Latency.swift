@@ -84,6 +84,16 @@ public struct LatencyMode: Equatable, Sendable {
                     firstTimeoutMs: 2500, retryConcurrency: 48)
     }
 
+    /// 3.2.5: the app's own core while its connections go through the tunnel (the
+    /// kill switch lets nothing around it). Every test is then a connection in the
+    /// extension (about 50 MiB): 32–48 at once took it to 48 MiB, its memory guard
+    /// reset the network, and the tests in flight read EOF, Reality or certificate
+    /// failures. A few at a time, with the tunnel's delay allowed for.
+    public static func localCoreThroughTunnel(link: String) -> LatencyMode {
+        LatencyMode(tcpFilter: false, directTimeout: 3, directConcurrency: 4, urlTimeoutMs: 6000, urlConcurrency: 6, link: link,
+                    firstTimeoutMs: 3500, retryConcurrency: 8)
+    }
+
     /// «Основной», «Классика», «Альтернативный» — параметры 1.5.0.
     public static func named(_ name: String?) -> LatencyMode {
         switch name {
