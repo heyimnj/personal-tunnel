@@ -472,7 +472,7 @@ final class ClassicSettingsViewController: ClassicPage {
             toggle(L("Неизвестные Wi-Fi"), Prefs.unknownWiFi) { Prefs.unknownWiFi = $0; App.shared.tunnel.applySettings() },
             toggle(L("Автоматический failover"), Prefs.autoFailover) { Prefs.autoFailover = $0 },
             toggle(L("Kill switch"), Prefs.killSwitch) { Prefs.killSwitch = $0; App.shared.tunnel.applySettings() },
-            Classic.body(L("Пока VPN включён, но не подключён (переподключение, сбой), приложения не выходят в интернет напрямую. Исключения iOS: push-уведомления Apple и службы оператора (звонки, SMS) идут мимо VPN всегда. Действует со следующего подключения."), 12, .regular, .secondaryLabel, lines: 0),
+            Classic.body(L("Пока VPN включён, но не подключён (переподключение, сбой), приложения не выходят в интернет напрямую. Исключения iOS: push-уведомления Apple и службы оператора (звонки, SMS) iOS может пускать мимо VPN. При большом трафике (видео) тратит больше батареи: каждый пакет обрабатывает ядро туннеля. Действует со следующего подключения."), 12, .regular, .secondaryLabel, lines: 0),
         ], spacing: 14))
         content.addArrangedSubview(section(L("МАРШРУТИЗАЦИЯ"), [
             link(L("Блокировка рекламы")) { AdBlockViewController() },

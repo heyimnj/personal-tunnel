@@ -542,7 +542,7 @@
 "Как сервер пришёл от провайдера" = "The server as the provider gave it";
 "VLESS с TLS работает через Xray-core, как в Happ." = "VLESS over TLS runs through Xray-core, as in Happ.";
 "Kill switch" = "Kill switch";
-"Пока VPN включён, но не подключён (переподключение, сбой), приложения не выходят в интернет напрямую. Исключения iOS: push-уведомления Apple и службы оператора (звонки, SMS) идут мимо VPN всегда. Действует со следующего подключения." = "While the VPN is on but not connected (reconnecting, a failure), apps do not reach the internet directly. iOS exceptions: Apple push notifications and carrier services (calls, SMS) always go around the VPN. Takes effect from the next connection.";
+"Пока VPN включён, но не подключён (переподключение, сбой), приложения не выходят в интернет напрямую. Исключения iOS: push-уведомления Apple и службы оператора (звонки, SMS) iOS может пускать мимо VPN. При большом трафике (видео) тратит больше батареи: каждый пакет обрабатывает ядро туннеля. Действует со следующего подключения." = "While the VPN is on but not connected (reconnecting, a failure), apps do not reach the internet directly. iOS exceptions: iOS may send Apple push notifications and carrier services (calls, SMS) around the VPN. With heavy traffic (video) it uses more battery: the tunnel's core handles every packet. Takes effect from the next connection.";
 "Группа серверов" = "Server group";
 "Серверы группы" = "Servers in the group";
 "Группа сама выбирает из включённых серверов тот, что отвечает быстрее." = "The group picks whichever of the servers turned on answers fastest.";
@@ -608,6 +608,7 @@
 "<назначение>" = "<destination>";
 "подробный журнал выключен: прошло 30 минут" = "diagnostic log off: 30 minutes passed";
 "подробный журнал: %@" = "diagnostic log: %@";
+"туннель: стек %@, MTU %@, kill switch %@, исключение push Apple %@" = "tunnel: stack %@, MTU %@, kill switch %@, Apple push exclusion %@";
 "Подробный журнал для диагностики" = "Diagnostic log";
 "Сам выключится через %@ мин" = "Turns itself off in %@ min";
 "Каждое соединение на 30 минут" = "Every connection, for 30 minutes";

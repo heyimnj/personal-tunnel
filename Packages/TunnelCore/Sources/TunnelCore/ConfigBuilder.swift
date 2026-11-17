@@ -97,6 +97,14 @@ public enum ConfigBuilder {
         public static let pathPrefix = "@rules/"
     }
 
+    /// 3.2.3: the TUN's MTU without WireGuard servers — sing-box's own default in
+    /// a Network Extension (4064 = 4096 less utun's headroom; above it utun slows
+    /// down). Before, 1500: the same traffic came in 2.7 times as many packets,
+    /// and with the kill switch every packet goes through gVisor (battery). The
+    /// proxy's own connection to the server keeps the path's MTU: TCP ends in the
+    /// core, so the TUN's packets never leave the device as they are.
+    public static let tunMTU = 4064
+
     /// `xrayInstance`: the Xray-core instance (in the same process) the
     /// Xray-backed servers' `xray-local` outbounds hand connections to.
     public static func build(subscription: Subscription, selected: String?, options: TunnelOptions,
@@ -331,7 +339,7 @@ public enum ConfigBuilder {
                 "type": "tun",
                 "tag": "tun-in",
                 "address": ["172.19.0.1/30", "fdfe:dcba:9876::1/126"],
-                "mtu": .int(Int64(mtus.min() ?? 1500)),
+                "mtu": .int(Int64(mtus.min() ?? tunMTU)),
                 "auto_route": true,
                 "strict_route": true,
                 // 3.1.6: the core's default — TCP through the system's own stack, UDP
@@ -586,6 +594,13 @@ public enum ConfigBuilder {
             return inbound
         })
         return config
+    }
+
+    /// 3.2.3: the TUN's stack and MTU as the core gets them, for the line the
+    /// extension writes at every start («туннель: стек …»).
+    public static func tunSummary(of config: JSONValue) -> (stack: String, mtu: Int)? {
+        guard let tun = config["inbounds"]?.arrayValue?.first(where: { $0["type"]?.stringValue == "tun" }) else { return nil }
+        return (tun["stack"]?.stringValue ?? "?", tun["mtu"]?.intValue ?? 0)
     }
 
     /// The Xray configuration beside sing-box, when the subscription has servers

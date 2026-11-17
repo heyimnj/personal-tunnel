@@ -243,6 +243,19 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
         let stacked = ConfigBuilder.stackForIncludeAllNetworks(in: leveled, includeAllNetworks: platform.includeAllNetworks())
         let relocated = ConfigBuilder.relocateRuleSets(in: stacked, directory: rules).serialized()
         try commandServer.startOrReloadService(relocated, options: LibboxOverrideOptions())
+        noteTunnelSettings(stacked)
+    }
+
+    /// 3.2.3: what the tunnel really started with — the stack and MTU the core
+    /// got, and the system's «include all networks» (kill switch) and push
+    /// exclusion as iOS holds them for this start, not as the app's setting says.
+    private func noteTunnelSettings(_ config: JSONValue) {
+        guard let tun = ConfigBuilder.tunSummary(of: config) else { return }
+        let proto = protocolConfiguration as? NETunnelProviderProtocol
+        var pushExcluded = "?"
+        if #available(iOS 16.4, *) { pushExcluded = (proto?.excludeAPNs ?? false) ? "on" : "off" }
+        let killSwitch = (proto?.includeAllNetworks ?? false) ? "on" : "off"
+        event("туннель: стек \(tun.stack), MTU \(tun.mtu), kill switch \(killSwitch), исключение push Apple \(pushExcluded)")
     }
 
     /// (Re)starts Xray-core when the subscription has servers only it can run.

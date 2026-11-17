@@ -241,7 +241,21 @@ final class ConfigBuilderTests: XCTestCase {
         XCTAssertEqual(outbounds.first?["outbounds"], ["B"])
         XCTAssertNil(outbounds.first { $0["tag"] == "auto" })
         XCTAssertNil(config["endpoints"])
-        XCTAssertEqual(config.at("inbounds")?[0]?["mtu"], 1500)
+        // 3.2.3: sing-box's default for a Network Extension, not 1500.
+        XCTAssertEqual(config.at("inbounds")?[0]?["mtu"], 4064)
+    }
+
+    /// 3.2.3: the kill switch changes the stack to gVisor and keeps the MTU; the
+    /// start line reads both from the configuration the core gets.
+    func testTunSummaryWithAndWithoutKillSwitch() throws {
+        let node = NodeAssembler.assemble([try ShareLink.parse("trojan://pw@b.example.com:443#B")])
+        let config = try ConfigBuilder.build(subscription: Subscription(id: 1, name: "B", nodes: node), selected: nil, options: TunnelOptions())
+        XCTAssertEqual(ConfigBuilder.tunSummary(of: config)?.stack, "mixed")
+        XCTAssertEqual(ConfigBuilder.tunSummary(of: config)?.mtu, ConfigBuilder.tunMTU)
+        let killSwitch = ConfigBuilder.stackForIncludeAllNetworks(in: config, includeAllNetworks: true)
+        XCTAssertEqual(ConfigBuilder.tunSummary(of: killSwitch)?.stack, "gvisor")
+        XCTAssertEqual(ConfigBuilder.tunSummary(of: killSwitch)?.mtu, 4064)
+        XCTAssertNil(ConfigBuilder.tunSummary(of: ["inbounds": []]))
     }
 
     /// 3.1.2: with the VPN on, the app's tests of every server leave the tunnel:
