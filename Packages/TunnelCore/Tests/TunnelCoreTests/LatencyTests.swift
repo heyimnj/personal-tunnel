@@ -214,15 +214,6 @@ final class LatencyTests: XCTestCase {
         XCTAssertLessThan(Date().timeIntervalSince(start), 1.5)
     }
 
-    /// 3.2.5: through the tunnel the app's core keeps the extension's connections few.
-    func testLocalCoreThroughTunnelIsGentle() {
-        let gentle = LatencyMode.localCoreThroughTunnel(link: "https://x")
-        let usual = LatencyMode.localCore(link: "https://x")
-        XCTAssertLessThanOrEqual(max(gentle.urlConcurrency, gentle.retryConcurrency), 8)
-        XCTAssertLessThan(gentle.urlConcurrency, usual.urlConcurrency)
-        XCTAssertGreaterThan(gentle.firstTimeoutMs, usual.firstTimeoutMs)
-    }
-
     func testDeadlineKeepsAQuickAnswer() async {
         let result = await LatencyRunner.deadline(seconds: 2) { .delay(7) }
         XCTAssertEqual(result, .delay(7))

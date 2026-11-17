@@ -586,7 +586,6 @@ final class LatencyService {
         // and their delay includes the tunnel's.
         let useLocalCore = !direct.isEmpty
         let bindToPhysical = tunnelUp && !Prefs.killSwitch
-        let throughTunnel = tunnelUp && Prefs.killSwitch && !direct.isEmpty
         let options = Prefs.tunnelOptions
         let toStart = Array(directSubscriptions.values)
         let names = directSubscriptions.mapValues(\.name)
@@ -594,9 +593,6 @@ final class LatencyService {
         let total = items.count
         let directHow = useLocalCore ? L("ядром приложения") : L("напрямую")
         let how = live.isEmpty ? directHow : (direct.isEmpty ? L("через туннель") : Lf("%@ через туннель, %@ %@", "\(live.count)", "\(direct.count)", directHow))
-        if throughTunnel {
-            log(4, L("Kill switch включён: другие серверы проверяются через подключённый сервер, по несколько сразу. Некоторые провайдеры обрывают такие подключения (EOF, Reality) — это не значит, что сервер не работает."))
-        }
         log(4, Lf("Проверка задержки: %@ %@; режим «%@», VPN %@", "\(Format.plural(items.count, L("сервер"), L("сервера"), L("серверов")))", "\(how)", "\(LatencyService.modeTitle(Prefs.pingMode))", "\(tunnelUp ? L("включён") : L("выключен"))"))
         task = Task { [weak self] in
             let deliver: @Sendable ([String: ProbeResult], Int64?) async -> Void = { batch, subscription in
@@ -643,8 +639,7 @@ final class LatencyService {
                 if !measured.isEmpty, !Task.isCancelled {
                     started.probes.report = { log(3, $0) }
                     let core = LatencyRunner(probes: started.probes)
-                    let coreMode = throughTunnel ? LatencyMode.localCoreThroughTunnel(link: mode.link) : LatencyMode.localCore(link: mode.link)
-                    await core.run(measured, mode: coreMode, tunnel: true) { await deliver($0, nil) }
+                    await core.run(measured, mode: LatencyMode.localCore(link: mode.link), tunnel: true) { await deliver($0, nil) }
                 }
                 if !fallback.isEmpty, !Task.isCancelled { await runner.run(fallback, mode: mode, tunnel: false) { await deliver($0, nil) } }
                 started.probes.close()
