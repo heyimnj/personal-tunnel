@@ -26,6 +26,11 @@ final class RootViewController: UIViewController {
             while let presented = top.presentedViewController { top = presented }
             top.present(alert, animated: true)
         }
+        // 3.2.2: the connected server changed in a subscription update.
+        App.shared.serverUpdateOffered.observe(self) { [weak self] offered in
+            guard let self else { return }
+            if offered { self.showServerUpdate() } else { self.serverUpdate?.dismiss(); self.serverUpdate = nil }
+        }
         App.shared.tunnel.crash.observe(self) { [weak self] crash in
             guard let self, let crash else { return }
             App.shared.tunnel.crash.value = nil
@@ -67,6 +72,19 @@ final class RootViewController: UIViewController {
     }
 
     override var childForStatusBarStyle: UIViewController? { current }
+
+    private var serverUpdate: ServerUpdateBanner?
+
+    private func showServerUpdate() {
+        guard serverUpdate == nil else { return }
+        // On the window: over a sheet that is open, too.
+        let container: UIView = view.window ?? view
+        let banner = ServerUpdateBanner()
+        banner.onReconnect = { App.shared.applyServerUpdate() }
+        banner.onLater = { App.shared.declineServerUpdate() }
+        serverUpdate = banner
+        banner.show(in: container)
+    }
 
     private func show(_ message: String) {
         let alert = UIAlertController(title: nil, message: message, preferredStyle: .alert)

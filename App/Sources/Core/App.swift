@@ -20,6 +20,15 @@ final class App {
     /// connection (a server rose or went back, a subscription rose).
     let orderChanged = Signal()
     private var lastLifted: String?
+    /// 3.2.2: an update of the connected subscription changed the server the tunnel
+    /// runs: «Конфиг сервера обновлён — переподключиться?» is offered at the top.
+    /// The core is not restarted on its own: a call or a download would be cut.
+    let serverUpdateOffered = Observable(false)
+    /// What the running tunnel was given (`ConfigBuilder.runningFingerprint`).
+    private var runningServers: String?
+    /// The update on offer, and the one the owner put off: not offered again.
+    private var offeredServers: String?
+    private var declinedServers: String?
 
     /// The server the VPN is connected (or connecting) to: it rises in its
     /// subscription's list under the pinned ones, and goes back when the VPN is off.
@@ -73,11 +82,18 @@ final class App {
                 DispatchQueue.main.asyncAfter(deadline: .now() + (state == .connected ? 1.5 : 0)) { [weak self] in self?.refreshAll(automatic: true) }
             }
             if state == .connected {
+                // A tunnel the app did not start itself (On Demand, a launch with
+                // the VPN on) runs the stored configuration.
+                if self.runningServers == nil { self.runningServers = self.activeFingerprint() }
                 self.core.start()
                 self.retryAfterConnecting()
             } else if state == .disconnected {
                 self.core.stop()
                 self.latency.cancel()
+                if !self.reconnecting {
+                    self.runningServers = nil
+                    self.withdrawServerUpdate()
+                }
                 if self.reconnecting {
                     // A beat for the system to release the old session. Still
                     // «reconnecting» until then: the connected server keeps its place.
@@ -213,9 +229,12 @@ final class App {
         }
         latency.cancel()
         let session = tunnel.connectedSince.value
+        let target = activeFingerprint()
+        withdrawServerUpdate()
         tunnel.reload { [weak self] error in
             guard let self else { return }
             guard let error else {
+                self.runningServers = target
                 self.core.note(L("Сервер сменён без перезапуска VPN."))
                 return
             }
@@ -234,6 +253,8 @@ final class App {
         reconnecting = false
         do {
             let config = try store.writeActiveConfig()
+            runningServers = activeFingerprint()
+            withdrawServerUpdate()
             tunnel.start(config: config)
         } catch {
             notice.value = error.localizedDescription
@@ -288,10 +309,17 @@ final class App {
     func reloadTunnel() {
         guard tunnel.state.value.isOn else { return }
         _ = try? store.writeActiveConfig()
+        let target = activeFingerprint()
         // 3.3 beta 3: a reload that did not take effect leaves the old configuration
         // running; the tunnel is restarted then, as when the server changes.
         tunnel.reload { [weak self] error in
-            guard let self, let error else { return }
+            guard let self else { return }
+            guard let error else {
+                // The latest stored configuration runs now, an update on offer included.
+                self.runningServers = target
+                self.withdrawServerUpdate()
+                return
+            }
             self.core.note(Lf("Настройки не применились без перезапуска (%@): VPN перезапускается.", error), level: 3)
             self.reconnect()
         }
@@ -416,7 +444,7 @@ final class App {
                 let device = subscription.sendsDeviceIdentity ? SubscriptionService.device(hwid: subscription.hwid(device: DeviceIdentity.hwid)) : nil
                 let fetched = try await SubscriptionService.fetch(url: url, device: device)
                 self.logImport(fetched, name: subscription.name)
-                let before = self.library.subscription(id)?.nodes
+                let previous = self.library.activeSubscription?.id == id ? self.activeFingerprint() : nil
                 self.store.update { library in
                     guard var current = library.subscription(id) else { return }
                     current.nodes = fetched.nodes
@@ -425,9 +453,7 @@ final class App {
                     current.warnings = fetched.summary.map { [$0] } ?? []
                     library.replace(current)
                 }
-                // 3.3 beta 4: the running tunnel reloads only when the servers changed
-                // (automatic updates come at every launch now).
-                if self.library.activeSubscription?.id == id, before != fetched.nodes { self.reloadTunnel() }
+                if self.library.activeSubscription?.id == id { self.activeSubscriptionUpdated(previous: previous) }
                 if let summary = App.joined(fetched.summary, CertificateCheck.summary(fetched.nodes)) { say(summary, 3) }
                 if let updated = self.library.subscription(id) { self.autoPing(updated) }
             } catch let error as URLError where self.tunnel.state.value == .connecting {
@@ -450,6 +476,61 @@ final class App {
                 say("«\(subscription.name)»: \(error.localizedDescription)", 3)
             }
         }
+    }
+
+    // MARK: Updated servers of the running tunnel (3.2.2)
+
+    /// What the tunnel would run with the stored servers and settings.
+    private func activeFingerprint() -> String? {
+        guard let subscription = library.activeSubscription else { return nil }
+        return ConfigBuilder.runningFingerprint(subscription, selected: library.selectedNodeID(in: subscription), options: Prefs.tunnelOptions)
+    }
+
+    /// The connected subscription was updated. The new configuration is stored at
+    /// once (the next connection takes it); the running core is left alone when
+    /// the server it runs did not change (new names, other servers), and otherwise
+    /// restarted only when the owner agrees (`applyServerUpdate`).
+    private func activeSubscriptionUpdated(previous: String?) {
+        let state = tunnel.state.value
+        guard state.isOn || state == .connecting else {
+            _ = try? store.writeActiveConfig()
+            return
+        }
+        guard let now = activeFingerprint() else { return }
+        if now == (runningServers ?? previous) {
+            if offeredServers != nil { withdrawServerUpdate() }
+            return
+        }
+        // Written for a start by the system (On Demand) or the next connection;
+        // the running tunnel reads it only when it is reloaded.
+        _ = try? store.writeActiveConfig()
+        guard now != declinedServers, now != offeredServers else { return }
+        core.note(L("Подписка обновлена: параметры текущего сервера изменились. Новые применятся после переподключения."), level: 4)
+        offeredServers = now
+        serverUpdateOffered.set(true)
+    }
+
+    /// «Переподключиться»: the tunnel loads the updated server.
+    func applyServerUpdate() {
+        withdrawServerUpdate()
+        do {
+            try store.writeActiveConfig()
+        } catch {
+            notice.value = error.localizedDescription
+            return
+        }
+        switchServer()
+    }
+
+    /// «Позже»: this update is not offered again; the next connection takes it.
+    func declineServerUpdate() {
+        declinedServers = offeredServers
+        withdrawServerUpdate()
+    }
+
+    private func withdrawServerUpdate() {
+        offeredServers = nil
+        if serverUpdateOffered.value { serverUpdateOffered.set(false) }
     }
 
     /// What the subscription served, and every server that was skipped with why

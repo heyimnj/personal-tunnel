@@ -29,6 +29,51 @@ final class ConfigBuilderTests: XCTestCase {
         XCTAssertEqual(ConfigBuilder.tunnelSubscription(subscription, selected: "Hy2", options: auto).nodes.count, subscription.nodes.count)
     }
 
+    /// 3.2.2: an updated subscription restarts the core only when what the tunnel
+    /// runs changed: not for new names, another order or other servers.
+    func testRunningFingerprintFollowsOnlyTheRunningServers() throws {
+        let subscription = try subscription()
+        let options = TunnelOptions()
+        let original = ConfigBuilder.runningFingerprint(subscription, selected: "Hy2", options: options)
+        XCTAssertEqual(original, ConfigBuilder.runningFingerprint(subscription, selected: "Hy2", options: options))
+
+        var renamed = subscription
+        renamed.nodes = renamed.nodes.reversed().map { node in
+            var node = node
+            node.name += " (новое имя)"
+            node.link = nil
+            return node
+        }
+        XCTAssertEqual(ConfigBuilder.runningFingerprint(renamed, selected: "Hy2", options: options), original)
+
+        let other = try XCTUnwrap(subscription.nodes.first { $0.id != "Hy2" && !ConfigBuilder.tunnelSubscription(subscription, selected: "Hy2", options: options).nodes.contains($0) })
+        var otherChanged = subscription
+        otherChanged.nodes = otherChanged.nodes.map { node in
+            var node = node
+            if node.id == other.id { node.outbound["server_port"] = .int(1) }
+            return node
+        }
+        XCTAssertEqual(ConfigBuilder.runningFingerprint(otherChanged, selected: "Hy2", options: options), original)
+
+        var activeChanged = subscription
+        activeChanged.nodes = activeChanged.nodes.map { node in
+            var node = node
+            if node.id == "Hy2" { node.outbound["server_port"] = .int(1) }
+            return node
+        }
+        XCTAssertNotEqual(ConfigBuilder.runningFingerprint(activeChanged, selected: "Hy2", options: options), original)
+
+        var removed = subscription
+        removed.nodes.removeAll { $0.id == "Hy2" }
+        XCTAssertNotEqual(ConfigBuilder.runningFingerprint(removed, selected: "Hy2", options: options), original)
+
+        // With automatic selection the tunnel runs every server: any of them counts.
+        var auto = options
+        auto.autoSelect = true
+        XCTAssertNotEqual(ConfigBuilder.runningFingerprint(otherChanged, selected: "Hy2", options: auto),
+                          ConfigBuilder.runningFingerprint(subscription, selected: "Hy2", options: auto))
+    }
+
     /// 3.1.6: a subscription's panel goes through the VPN, ahead of every bypass.
     func testSubscriptionPanelsGoThroughTheVPN() throws {
         var options = TunnelOptions()

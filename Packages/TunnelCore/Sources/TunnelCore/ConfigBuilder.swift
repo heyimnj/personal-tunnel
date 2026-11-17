@@ -371,6 +371,27 @@ public enum ConfigBuilder {
         return trimmed
     }
 
+    /// 3.2.2: a fingerprint of what the running tunnel is made of: the outbounds of
+    /// the servers it runs (`tunnelSubscription`) and which one is chosen. Names,
+    /// share links, the provider's source and the order of servers are left out:
+    /// they change nothing in the connection. An updated subscription with the same
+    /// fingerprint needs no restart of the core.
+    public static func runningFingerprint(_ subscription: Subscription, selected: String?, options: TunnelOptions) -> String {
+        let running = tunnelSubscription(subscription, selected: selected, options: options)
+        let chosen = selected.flatMap { id in running.nodes.contains { $0.id == id } ? id : nil } ?? running.nodes.first?.id ?? ""
+        var parts: [JSONValue] = [.string(options.autoSelect ? "auto" : "single"), .string(chosen)]
+        for node in running.nodes.sorted(by: { $0.id < $1.id }) {
+            parts.append(.array([.string(node.id), node.outbound] + node.members))
+        }
+        // FNV-1a, 64 bits: the fingerprint is kept in memory only, never written.
+        var hash: UInt64 = 0xCBF2_9CE4_8422_2325
+        for byte in JSONValue.array(parts).serialized().utf8 {
+            hash ^= UInt64(byte)
+            hash = hash &* 0x0000_0100_0000_01B3
+        }
+        return String(hash, radix: 16)
+    }
+
     /// Every server address of the subscriptions, without repeats (3.1.2).
     public static func serverHosts(of subscriptions: [Subscription]) -> [String] {
         var seen = Set<String>()

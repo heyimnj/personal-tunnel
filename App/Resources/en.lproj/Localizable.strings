@@ -633,3 +633,8 @@
 "ПОДПИСКИ" = "SUBSCRIPTIONS";
 "Автообновление подписок" = "Update subscriptions automatically";
 "Подписки обновляются сами при каждом открытии приложения и раз в 24 часа, пока оно открыто. Выключено — только вручную." = "Subscriptions update themselves every time the app is opened, and every 24 hours while it stays open. Off: only by hand.";
+"Конфиг сервера обновлён — переподключиться?" = "Server configuration updated — reconnect?";
+"Соединение прервётся на пару секунд. Без переподключения обновление применится при следующем подключении." = "The connection will drop for a couple of seconds. Without reconnecting, the update takes effect at the next connection.";
+"Переподключиться" = "Reconnect";
+"Подписка обновлена: параметры текущего сервера изменились. Новые применятся после переподключения." = "Subscription updated: the current server's parameters changed. The new ones take effect after reconnecting.";
+"Позже" = "Later";
