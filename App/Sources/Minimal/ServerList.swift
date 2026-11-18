@@ -963,8 +963,10 @@ final class SurfaceView: UIView {
         header.isHidden = standalone
         plateColor = standalone ? Self.card : Self.blend(Self.card, Self.container, progress, traits: traitCollection)
         plate.backgroundColor = plateColor
-        // The radius changes once, not every frame (a moving radius redraws the shape).
-        let radius: CGFloat = progress > 0.001 ? 22 : 24
+        // 3.5.3 (the owner's video): the radius follows the fold, 24 closed to 22
+        // open. It used to change once, at the end of the spring: the closed card
+        // seemed to shrink a little in its last frame as its corners rounded at once.
+        let radius: CGFloat = standalone ? 24 : ((24 - 2 * max(0, min(1, progress))) * 4).rounded() / 4
         if layer.cornerRadius != radius { layer.cornerRadius = radius; plate.layer.cornerRadius = radius }
         if !standalone { header.show(progress: progress) }
         placePlates()
