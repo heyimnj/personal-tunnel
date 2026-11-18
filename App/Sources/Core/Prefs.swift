@@ -192,6 +192,15 @@ enum Prefs {
         set { defaults.set(newValue, forKey: "personal.modernSortByLatency") }
     }
 
+    /// 3.5 beta 3 (Modern): the servers sheet's layout — `header` (the owner's
+    /// «вариант A»: a large title, «+», capsules), `bottom` («B»: the actions in a
+    /// bar at the bottom) or `search` («C»: the search in the head, the order in
+    /// segments).
+    static var serversLayout: String {
+        get { defaults.string(forKey: "personal.modern.serversLayout") ?? "header" }
+        set { defaults.set(newValue, forKey: "personal.modern.serversLayout"); appearanceChanged.fire() }
+    }
+
     /// 3.5 beta 2 (Modern): servers the owner chose most recently first
     /// (`Arrangement.recent`), under the pinned and the connected one.
     static var sortByRecent: Bool {

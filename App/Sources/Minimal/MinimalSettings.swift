@@ -61,6 +61,11 @@ final class AppearanceViewController: ColorsViewController {
                 .picker(title: L("Оформление"), options: [("system", L("Системная")), ("light", L("Светлая")), ("dark", L("Тёмная"))], get: { Prefs.theme }, set: { Prefs.theme = $0 }),
             ]),
         ] + colorSections(background: true) + [
+            // 3.5 beta 3 (the owner): three layouts of the servers sheet.
+            FormSection(footer: L("«Заголовок слева» — заголовок и кнопки сверху; «Действия снизу» — кнопки в панели внизу; «Поиск в шапке» — поиск сверху, сортировка сегментами."), [
+                .picker(title: L("Панель серверов"), options: [("header", L("Заголовок слева")), ("bottom", L("Действия снизу")), ("search", L("Поиск в шапке"))],
+                        get: { Prefs.serversLayout }, set: { Prefs.serversLayout = $0 }),
+            ]),
             FormSection([
                 .link(symbol: "drop", title: L("Стекло и прозрачность")) { [weak self] in self?.navigationController?.pushViewController(GlassSettingsViewController(), animated: true) },
                 .toggle(title: L("Только иконки вкладок"), get: { Prefs.hideTabLabels }, set: { Prefs.hideTabLabels = $0 }),

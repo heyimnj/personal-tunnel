@@ -705,3 +705,8 @@
 "Плотность фона" = "Background density";
 "Цвет фона" = "Background colour";
 "Сбросить фон карточек" = "Reset card background";
+"Панель серверов" = "Servers panel";
+"Заголовок слева" = "Title on the left";
+"Действия снизу" = "Actions at the bottom";
+"Поиск в шапке" = "Search on top";
+"«Заголовок слева» — заголовок и кнопки сверху; «Действия снизу» — кнопки в панели внизу; «Поиск в шапке» — поиск сверху, сортировка сегментами." = "“Title on the left”: the title and buttons on top; “Actions at the bottom”: the buttons in a bar at the bottom; “Search on top”: the search on top, the order in segments.";

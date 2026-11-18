@@ -98,7 +98,31 @@ final class MinimalServersViewController: UIViewController, UIScrollViewDelegate
     }
     /// 3.5: the bar of the owner's «вариант A» — a large title on the left, «+»
     /// beside it, and a row of capsules under them (it was 70: ✕, title, three buttons).
-    private static let barHeight: CGFloat = 136
+    /// 3.5 beta 3: the owner chooses the sheet's layout on «Внешний вид»: «A» (the
+    /// title on the left), «B» (the actions in a bar at the bottom), «C» (the
+    /// search in the head, the order in segments).
+    private enum Layout: String { case header, bottom, search }
+    private let layout = Layout(rawValue: Prefs.serversLayout) ?? .header
+    private var barHeight: CGFloat {
+        switch layout {
+        case .header: return 136
+        case .bottom: return 136
+        case .search: return 124
+        }
+    }
+    /// The search's slot in the list: only «A» tucks the search under its bar;
+    /// «B» and «C» keep it in the head.
+    private var searchSlot: CGFloat { layout == .header ? Self.searchHeight : 0 }
+    /// «B»: the bottom bar's items.
+    private let pingItem = BarItem()
+    private let sortItem = BarItem()
+    private let refreshItem = BarItem()
+    private let moreItem = BarItem()
+    /// «C»: the ping inside the search field, the order in segments, and the
+    /// capsules of a selection in their place.
+    private let pingDial = PingDial()
+    private let segments = UISegmentedControl()
+    private let selectionPills = UIStackView(.horizontal, spacing: 8, alignment: .fill, [])
     /// Where the last touch began, and whether the search was already out then:
     /// a pull closes the sheet from the bar, or from anywhere once the search is out.
     private var touchStart: CGPoint = .zero
@@ -168,6 +192,210 @@ final class MinimalServersViewController: UIViewController, UIScrollViewDelegate
     // MARK: Header
 
     private func buildHeader() {
+        switch layout {
+        case .header: buildHeaderA()
+        case .bottom: buildHeaderB()
+        case .search: buildHeaderC()
+        }
+    }
+
+    /// The bar of the page's tone and the grabber; «B» and «C» put their own in it.
+    private func addBar() -> UIView {
+        let bar = UIView()
+        bar.backgroundColor = .systemGroupedBackground
+        view.addSubview(bar)
+        bar.translatesAutoresizingMaskIntoConstraints = false
+        let grabber = UIView()
+        grabber.backgroundColor = UIColor.label.withAlphaComponent(0.22)
+        grabber.layer.cornerRadius = 2.5
+        grabber.isAccessibilityElement = true
+        grabber.accessibilityLabel = L("Закрыть")
+        grabber.accessibilityTraits = .button
+        grabber.addGestureRecognizer(UITapGestureRecognizer(target: self, action: #selector(closeTapped)))
+        grabber.translatesAutoresizingMaskIntoConstraints = false
+        bar.addSubview(grabber)
+        NSLayoutConstraint.activate([
+            bar.topAnchor.constraint(equalTo: view.topAnchor), bar.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+            bar.trailingAnchor.constraint(equalTo: view.trailingAnchor), bar.heightAnchor.constraint(equalToConstant: barHeight),
+            grabber.topAnchor.constraint(equalTo: bar.topAnchor, constant: 7), grabber.centerXAnchor.constraint(equalTo: bar.centerXAnchor),
+            grabber.widthAnchor.constraint(equalToConstant: 36), grabber.heightAnchor.constraint(equalToConstant: 5),
+        ])
+        list.contentInset.top = barHeight + 6
+        list.verticalScrollIndicatorInsets.top = barHeight + 6
+        return bar
+    }
+
+    /// The red «+», as «A» draws it.
+    private func stylePlus(size: CGFloat) {
+        var config = UIButton.Configuration.filled()
+        config.image = UIImage(systemName: "plus", withConfiguration: UIImage.SymbolConfiguration(pointSize: size > 50 ? 22 : 18, weight: .bold))
+        config.baseBackgroundColor = Theme.accent
+        config.baseForegroundColor = .white
+        config.cornerStyle = .capsule
+        plusButton.configuration = config
+        plusButton.accessibilityLabel = L("Добавить")
+        plusButton.layer.shadowColor = Theme.accent.cgColor
+        plusButton.layer.shadowOpacity = 0.35
+        plusButton.layer.shadowRadius = 8
+        plusButton.layer.shadowOffset = CGSize(width: 0, height: 4)
+        plusButton.addTarget(self, action: #selector(addTapped), for: .touchUpInside)
+        plusButton.translatesAutoresizingMaskIntoConstraints = false
+        NSLayoutConstraint.activate([plusButton.widthAnchor.constraint(equalToConstant: size), plusButton.heightAnchor.constraint(equalToConstant: size)])
+    }
+
+    private func moreMenu() -> UIMenu {
+        UIMenu(children: [UIDeferredMenuElement.uncached { [weak self] done in done(self?.moreItems() ?? []) }])
+    }
+
+    /// The four orders, with a check at the current one.
+    private func sortMenu() -> UIMenu {
+        UIMenu(title: L("Сортировка"), children: [UIDeferredMenuElement.uncached { [weak self] done in
+            guard let self else { done([]); return }
+            done(Self.sorts.map { option in
+                UIAction(title: Self.title(option), state: self.sort == option ? .on : .off) { [weak self] _ in
+                    Haptics.selection()
+                    self?.apply(option)
+                }
+            })
+        }])
+    }
+
+    /// «B» (the owner's mock-up): the title in the middle over the search; ping,
+    /// order, «+», update and «…» in a bar at the bottom of the sheet.
+    private func buildHeaderB() {
+        let bar = addBar()
+        let title = UILabel(L("Серверы"), font: Theme.font(22, .bold))
+        title.textAlignment = .center
+        title.accessibilityTraits = .header
+        subtitle.textAlignment = .center
+        subtitle.lineBreakMode = .byTruncatingTail
+        for item in [title, subtitle, search] as [UIView] {
+            item.translatesAutoresizingMaskIntoConstraints = false
+            bar.addSubview(item)
+        }
+        NSLayoutConstraint.activate([
+            title.topAnchor.constraint(equalTo: bar.topAnchor, constant: 22), title.centerXAnchor.constraint(equalTo: bar.centerXAnchor),
+            title.leadingAnchor.constraint(greaterThanOrEqualTo: bar.leadingAnchor, constant: 20),
+            subtitle.topAnchor.constraint(equalTo: title.bottomAnchor, constant: 1), subtitle.centerXAnchor.constraint(equalTo: bar.centerXAnchor),
+            subtitle.leadingAnchor.constraint(greaterThanOrEqualTo: bar.leadingAnchor, constant: 20),
+            search.topAnchor.constraint(equalTo: subtitle.bottomAnchor, constant: 12), search.heightAnchor.constraint(equalToConstant: 44),
+            search.leadingAnchor.constraint(equalTo: bar.leadingAnchor, constant: 16), search.trailingAnchor.constraint(equalTo: bar.trailingAnchor, constant: -16),
+        ])
+
+        pingItem.addTarget(self, action: #selector(pingTapped), for: .touchUpInside)
+        sortItem.addTarget(self, action: #selector(bottomSortTapped), for: .touchUpInside)
+        sortItem.menu = sortMenu()
+        refreshItem.show(symbol: "arrow.clockwise", title: L("Обновить"), tint: .label)
+        refreshItem.addTarget(self, action: #selector(refreshTapped), for: .touchUpInside)
+        moreItem.show(symbol: "ellipsis", title: L("Ещё"), tint: .label)
+        moreItem.menu = moreMenu()
+        moreItem.showsMenuAsPrimaryAction = true
+        let room = UIView()
+        room.isUserInteractionEnabled = false
+        let row = UIStackView(.horizontal, spacing: 0, alignment: .fill, [pingItem, sortItem, room, refreshItem, moreItem])
+        row.distribution = .fillEqually
+        let panel = SolidCapsule()
+        panel.layer.shadowColor = UIColor.black.cgColor
+        panel.layer.shadowOpacity = 0.12
+        panel.layer.shadowRadius = 16
+        panel.layer.shadowOffset = CGSize(width: 0, height: 6)
+        panel.contentView.addSubview(row)
+        row.pin(to: panel.contentView, insets: UIEdgeInsets(top: 0, left: 6, bottom: 0, right: 6))
+        view.addSubview(panel)
+        stylePlus(size: 58)
+        view.addSubview(plusButton)
+        panel.translatesAutoresizingMaskIntoConstraints = false
+        NSLayoutConstraint.activate([
+            panel.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 16), panel.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -16),
+            panel.bottomAnchor.constraint(equalTo: view.safeAreaLayoutGuide.bottomAnchor, constant: -8), panel.heightAnchor.constraint(equalToConstant: 66),
+            plusButton.centerXAnchor.constraint(equalTo: panel.centerXAnchor), plusButton.centerYAnchor.constraint(equalTo: panel.centerYAnchor),
+        ])
+        list.contentInset.bottom = 66 + 20
+        list.verticalScrollIndicatorInsets.bottom = 66 + 20
+        showBar()
+    }
+
+    /// «C» (the owner's mock-up): the search in the head, with the ping inside
+    /// it and «+» beside; the order in segments under them.
+    private func buildHeaderC() {
+        let bar = addBar()
+        pingDial.addTarget(self, action: #selector(pingTapped), for: .touchUpInside)
+        let more = UIButton(type: .system)
+        more.setImage(UIImage(systemName: "ellipsis", withConfiguration: UIImage.SymbolConfiguration(pointSize: 15, weight: .bold)), for: .normal)
+        more.tintColor = .secondaryLabel
+        more.accessibilityLabel = L("Ещё")
+        more.menu = moreMenu()
+        more.showsMenuAsPrimaryAction = true
+        let accessory = UIStackView(.horizontal, spacing: 0, alignment: .center, [pingDial, more])
+        let holder = UIView(frame: CGRect(x: 0, y: 0, width: 82, height: 48))
+        holder.addSubview(accessory)
+        accessory.translatesAutoresizingMaskIntoConstraints = false
+        NSLayoutConstraint.activate([
+            more.widthAnchor.constraint(equalToConstant: 40), more.heightAnchor.constraint(equalToConstant: 40),
+            accessory.leadingAnchor.constraint(equalTo: holder.leadingAnchor), accessory.trailingAnchor.constraint(equalTo: holder.trailingAnchor, constant: -4),
+            accessory.centerYAnchor.constraint(equalTo: holder.centerYAnchor),
+            holder.widthAnchor.constraint(equalToConstant: 82), holder.heightAnchor.constraint(equalToConstant: 48),
+        ])
+        search.rightView = holder
+        search.rightViewMode = .always
+        stylePlus(size: 48)
+
+        for (index, option) in Self.sorts.enumerated() { segments.insertSegment(withTitle: Self.title(option), at: index, animated: false) }
+        segments.apportionsSegmentWidthsByContent = true
+        segments.setTitleTextAttributes([.font: Theme.font(13, .medium)], for: .normal)
+        segments.setTitleTextAttributes([.font: Theme.font(13, .semibold)], for: .selected)
+        segments.addTarget(self, action: #selector(segmentChanged), for: .valueChanged)
+        let more2 = UIButton(type: .system)
+        more2.setImage(UIImage(systemName: "ellipsis", withConfiguration: UIImage.SymbolConfiguration(pointSize: 17, weight: .bold)), for: .normal)
+        more2.tintColor = .label
+        more2.accessibilityLabel = L("Ещё")
+        more2.menu = moreMenu()
+        more2.showsMenuAsPrimaryAction = true
+        let moreCapsule = SolidCapsule()
+        moreCapsule.contentView.addSubview(more2)
+        more2.pin(to: moreCapsule.contentView)
+        moreCapsule.widthAnchor.constraint(equalToConstant: 36).isActive = true
+        pingButton.setContentHuggingPriority(.defaultLow, for: .horizontal)
+        for item in [pingButton, sortButton, moreCapsule] as [UIView] { selectionPills.addArrangedSubview(item) }
+        selectionPills.isHidden = true
+
+        for item in [search, plusButton, segments, selectionPills] as [UIView] {
+            item.translatesAutoresizingMaskIntoConstraints = false
+            bar.addSubview(item)
+        }
+        NSLayoutConstraint.activate([
+            search.topAnchor.constraint(equalTo: bar.topAnchor, constant: 20), search.heightAnchor.constraint(equalToConstant: 48),
+            search.leadingAnchor.constraint(equalTo: bar.leadingAnchor, constant: 16), search.trailingAnchor.constraint(equalTo: plusButton.leadingAnchor, constant: -10),
+            plusButton.trailingAnchor.constraint(equalTo: bar.trailingAnchor, constant: -16), plusButton.centerYAnchor.constraint(equalTo: search.centerYAnchor),
+            segments.topAnchor.constraint(equalTo: search.bottomAnchor, constant: 10), segments.heightAnchor.constraint(equalToConstant: 36),
+            segments.leadingAnchor.constraint(equalTo: bar.leadingAnchor, constant: 16), segments.trailingAnchor.constraint(equalTo: bar.trailingAnchor, constant: -16),
+            selectionPills.topAnchor.constraint(equalTo: segments.topAnchor), selectionPills.bottomAnchor.constraint(equalTo: segments.bottomAnchor),
+            selectionPills.leadingAnchor.constraint(equalTo: segments.leadingAnchor), selectionPills.trailingAnchor.constraint(equalTo: segments.trailingAnchor),
+        ])
+        showBar()
+    }
+
+    @objc private func segmentChanged() {
+        let index = segments.selectedSegmentIndex
+        guard Self.sorts.indices.contains(index) else { return }
+        Haptics.selection()
+        apply(Self.sorts[index])
+    }
+
+    /// «B»: the order's item opens its menu; in a selection it copies.
+    @objc private func bottomSortTapped() {
+        guard selecting else { return }
+        Haptics.selection()
+        copySelected()
+    }
+
+    @objc private func refreshTapped() {
+        Haptics.tap()
+        App.shared.refreshAll()
+    }
+
+    /// «A»: the title on the left, «+» beside it, capsules under them.
+    private func buildHeaderA() {
         let bar = UIView()
         // The page's own tone, so the first card does not run into the bar.
         bar.backgroundColor = .systemGroupedBackground
@@ -221,7 +449,7 @@ final class MinimalServersViewController: UIViewController, UIScrollViewDelegate
         }
         NSLayoutConstraint.activate([
             bar.topAnchor.constraint(equalTo: view.topAnchor), bar.leadingAnchor.constraint(equalTo: view.leadingAnchor),
-            bar.trailingAnchor.constraint(equalTo: view.trailingAnchor), bar.heightAnchor.constraint(equalToConstant: Self.barHeight),
+            bar.trailingAnchor.constraint(equalTo: view.trailingAnchor), bar.heightAnchor.constraint(equalToConstant: barHeight),
             grabber.topAnchor.constraint(equalTo: bar.topAnchor, constant: 7), grabber.centerXAnchor.constraint(equalTo: bar.centerXAnchor),
             grabber.widthAnchor.constraint(equalToConstant: 36), grabber.heightAnchor.constraint(equalToConstant: 5),
             title.topAnchor.constraint(equalTo: bar.topAnchor, constant: 24), title.leadingAnchor.constraint(equalTo: bar.leadingAnchor, constant: 20),
@@ -234,8 +462,8 @@ final class MinimalServersViewController: UIViewController, UIScrollViewDelegate
             pills.bottomAnchor.constraint(equalTo: bar.bottomAnchor, constant: -10), pills.heightAnchor.constraint(equalToConstant: 42),
             moreGlass.widthAnchor.constraint(equalToConstant: 42),
         ])
-        list.contentInset.top = Self.barHeight + 6
-        list.verticalScrollIndicatorInsets.top = Self.barHeight + 6
+        list.contentInset.top = barHeight + 6
+        list.verticalScrollIndicatorInsets.top = barHeight + 6
         showBar()
     }
 
@@ -261,31 +489,23 @@ final class MinimalServersViewController: UIViewController, UIScrollViewDelegate
         }
     }
 
+    private static let sorts: [Sort] = [.manual, .name, .latency, .recent]
+
     @objc private func sortTapped() {
         Haptics.selection()
         if selecting {
             copySelected()
             return
         }
+        let index = Self.sorts.firstIndex(of: sort) ?? 0
+        apply(Self.sorts[(index + 1) % Self.sorts.count])
+    }
+
+    private func apply(_ next: Sort) {
         var arrangement = Prefs.arrangement
-        switch sort {
-        case .manual:
-            arrangement.byName = true
-            Prefs.sortByLatency = false
-            Prefs.sortByRecent = false
-        case .name:
-            arrangement.byName = false
-            Prefs.sortByLatency = true
-            Prefs.sortByRecent = false
-        case .latency:
-            arrangement.byName = false
-            Prefs.sortByLatency = false
-            Prefs.sortByRecent = true
-        case .recent:
-            arrangement.byName = false
-            Prefs.sortByLatency = false
-            Prefs.sortByRecent = false
-        }
+        arrangement.byName = next == .name
+        Prefs.sortByLatency = next == .latency
+        Prefs.sortByRecent = next == .recent
         Prefs.arrangement = arrangement
         reload()
         showBar()
@@ -320,6 +540,27 @@ final class MinimalServersViewController: UIViewController, UIScrollViewDelegate
             sortButton.accessibilityLabel = L("Сортировка") + ": " + Self.title(sort)
             show(App.shared.latency.progress.value)
         }
+        switch layout {
+        case .header:
+            break
+        case .bottom:
+            if selecting {
+                pingItem.show(symbol: "trash", title: L("Удалить"), tint: .systemRed)
+                sortItem.show(symbol: "doc.on.doc", title: L("Скопировать"), tint: .label)
+            } else {
+                sortItem.show(symbol: "line.3.horizontal.decrease", title: Self.title(sort), tint: .label)
+                sortItem.accessibilityLabel = L("Сортировка") + ": " + Self.title(sort)
+            }
+            sortItem.showsMenuAsPrimaryAction = !selecting
+            pingItem.isEnabled = !selecting || !selectionEmpty
+            sortItem.isEnabled = !selecting || !selectionEmpty
+        case .search:
+            segments.isHidden = selecting
+            selectionPills.isHidden = !selecting
+            segments.selectedSegmentIndex = Self.sorts.firstIndex(of: sort) ?? 0
+            pingDial.isHidden = selecting
+            if selecting { search.placeholder = subtitle.text }
+        }
     }
 
     private func show(_ progress: LatencyProgress) {
@@ -333,6 +574,19 @@ final class MinimalServersViewController: UIViewController, UIScrollViewDelegate
             pingButton.accessibilityLabel = L("Проверить пинг")
         }
         subtitle.text = listSummary
+        let fraction = progress.total > 0 ? Double(progress.done) / Double(progress.total) : 0
+        switch layout {
+        case .header:
+            break
+        case .bottom:
+            pingItem.show(symbol: progress.running ? "stop.fill" : "waveform.path.ecg",
+                          title: progress.running ? "\(progress.done)/\(progress.total)" : L("Пинг"), tint: Theme.accent)
+            pingItem.accessibilityLabel = progress.running ? L("Остановить проверку") : L("Проверить пинг")
+        case .search:
+            pingDial.show(running: progress.running, progress: fraction)
+            let servers = App.shared.library.subscriptions.reduce(0) { $0 + $1.nodes.count }
+            search.placeholder = progress.running ? Lf("Проверено %@ из %@", "\(progress.done)", "\(progress.total)") : L("Серверы") + " · \(servers)"
+        }
     }
 
     private func moreItems() -> [UIMenuElement] {
@@ -384,7 +638,9 @@ final class MinimalServersViewController: UIViewController, UIScrollViewDelegate
 
     override func viewDidLayoutSubviews() {
         super.viewDidLayoutSubviews()
-        search.frame = CGRect(x: ServerListView.margin, y: 4, width: max(0, list.bounds.width - 2 * ServerListView.margin), height: Self.searchFieldHeight)
+        if layout == .header {
+            search.frame = CGRect(x: ServerListView.margin, y: 4, width: max(0, list.bounds.width - 2 * ServerListView.margin), height: Self.searchFieldHeight)
+        }
         search.layer.borderColor = Self.searchEdge.resolvedColor(with: traitCollection).cgColor
         if !placedSearch, list.bounds.height > 0 {
             placedSearch = true
@@ -397,7 +653,7 @@ final class MinimalServersViewController: UIViewController, UIScrollViewDelegate
 
     /// The list's offsets with the search field out and tucked under the bar.
     private var searchShown: CGFloat { -list.adjustedContentInset.top }
-    private var searchHidden: CGFloat { searchShown + Self.searchHeight }
+    private var searchHidden: CGFloat { searchShown + searchSlot }
 
     private func buildSearch() {
         search.placeholder = L("Поиск")
@@ -415,8 +671,15 @@ final class MinimalServersViewController: UIViewController, UIScrollViewDelegate
         search.clipsToBounds = true
         search.delegate = self
         search.addTarget(self, action: #selector(searchChanged), for: .editingChanged)
-        list.addSubview(search)
-        list.leading = Self.searchHeight
+        if layout == .header {
+            list.addSubview(search)
+        } else {
+            // In the head: the cards' colour, as the mock-ups have it.
+            search.backgroundColor = SurfaceView.card
+            search.layer.borderWidth = 0
+            search.layer.cornerRadius = layout == .bottom ? 22 : 24
+        }
+        list.leading = searchSlot
         list.delegate = self
         list.keyboardDismissMode = .onDrag
         // Touches are noted (never taken) to tell a pull on the bar from one in the list.
@@ -464,7 +727,7 @@ final class MinimalServersViewController: UIViewController, UIScrollViewDelegate
         // a pull, begun with the search out, closes the sheet when let go far
         // enough or fast enough downwards, with the sheet's own closing.
         let stretched = searchShown - list.contentOffset.y
-        if searchOutAtTouch || touchStart.y <= Self.barHeight, stretched > 0,
+        if searchOutAtTouch || touchStart.y <= barHeight, stretched > 0,
            stretched >= Self.pullToClose || velocity.y <= -Self.pullToCloseSpeed {
             targetContentOffset.pointee.y = searchShown
             headingToSearch = true
@@ -489,7 +752,7 @@ final class MinimalServersViewController: UIViewController, UIScrollViewDelegate
     /// title, the buttons), or anywhere once the search is out: the first pull in
     /// the list brings out the search, the next one closes the sheet.
     func presentationControllerShouldDismiss(_: UIPresentationController) -> Bool {
-        touchStart.y <= Self.barHeight || searchOutAtTouch
+        touchStart.y <= barHeight || searchOutAtTouch
     }
 
     /// How far past its top (points) a pull that began with the search out must
@@ -1204,5 +1467,98 @@ final class SolidCapsule: UIView {
         super.layoutSubviews()
         layer.cornerRadius = bounds.height / 2
         contentView.layer.cornerRadius = bounds.height / 2
+    }
+}
+
+/// An item of «B»'s bottom bar: a symbol over a small caption.
+final class BarItem: UIButton {
+    private let icon = UIImageView()
+    private let caption = UILabel(font: Theme.font(10, .medium), color: .secondaryLabel)
+
+    init() {
+        super.init(frame: .zero)
+        icon.contentMode = .center
+        caption.textAlignment = .center
+        caption.adjustsFontSizeToFitWidth = true
+        caption.minimumScaleFactor = 0.75
+        let stack = UIStackView(.vertical, spacing: 3, alignment: .center, [icon, caption])
+        stack.isUserInteractionEnabled = false
+        addSubview(stack)
+        stack.translatesAutoresizingMaskIntoConstraints = false
+        NSLayoutConstraint.activate([
+            stack.centerXAnchor.constraint(equalTo: centerXAnchor), stack.centerYAnchor.constraint(equalTo: centerYAnchor),
+            stack.leadingAnchor.constraint(greaterThanOrEqualTo: leadingAnchor, constant: 2),
+            stack.trailingAnchor.constraint(lessThanOrEqualTo: trailingAnchor, constant: -2),
+            icon.heightAnchor.constraint(equalToConstant: 22),
+        ])
+    }
+
+    @available(*, unavailable)
+    required init?(coder _: NSCoder) { fatalError() }
+
+    func show(symbol: String, title: String, tint: UIColor) {
+        icon.image = UIImage(systemName: symbol, withConfiguration: UIImage.SymbolConfiguration(pointSize: 18, weight: .semibold))
+        icon.tintColor = tint
+        caption.text = title
+        caption.textColor = tint == .systemRed ? .systemRed : .secondaryLabel
+        accessibilityLabel = title
+    }
+
+    override var isHighlighted: Bool {
+        didSet { alpha = isHighlighted ? 0.5 : (isEnabled ? 1 : 0.4) }
+    }
+
+    override var isEnabled: Bool {
+        didSet { alpha = isEnabled ? 1 : 0.4 }
+    }
+}
+
+/// «C»'s ping inside the search field: a round button that fills its rim as
+/// the test goes and stops it when tapped again.
+final class PingDial: UIControl {
+    private let icon = UIImageView()
+    private let ring = CAShapeLayer()
+    private static let side: CGFloat = 34
+
+    override init(frame: CGRect) {
+        super.init(frame: frame)
+        backgroundColor = Theme.accent.withAlphaComponent(0.12)
+        layer.cornerRadius = Self.side / 2
+        icon.contentMode = .center
+        icon.tintColor = Theme.accent
+        icon.isUserInteractionEnabled = false
+        addSubview(icon)
+        ring.fillColor = nil
+        ring.strokeColor = Theme.accent.cgColor
+        ring.lineWidth = 2
+        ring.lineCap = .round
+        ring.strokeEnd = 0
+        layer.addSublayer(ring)
+        isAccessibilityElement = true
+        accessibilityTraits = .button
+        show(running: false, progress: 0)
+        translatesAutoresizingMaskIntoConstraints = false
+        NSLayoutConstraint.activate([widthAnchor.constraint(equalToConstant: Self.side), heightAnchor.constraint(equalToConstant: Self.side)])
+    }
+
+    @available(*, unavailable)
+    required init?(coder _: NSCoder) { fatalError() }
+
+    override func layoutSubviews() {
+        super.layoutSubviews()
+        icon.frame = bounds
+        ring.frame = bounds
+        ring.path = UIBezierPath(arcCenter: CGPoint(x: bounds.midX, y: bounds.midY), radius: bounds.width / 2 - 1,
+                                 startAngle: -.pi / 2, endAngle: .pi * 1.5, clockwise: true).cgPath
+    }
+
+    func show(running: Bool, progress: Double) {
+        icon.image = UIImage(systemName: running ? "stop.fill" : "waveform.path.ecg", withConfiguration: UIImage.SymbolConfiguration(pointSize: running ? 12 : 15, weight: .semibold))
+        ring.strokeEnd = running ? CGFloat(max(0, min(1, progress))) : 0
+        accessibilityLabel = running ? L("Остановить проверку") : L("Проверить пинг")
+    }
+
+    override var isHighlighted: Bool {
+        didSet { alpha = isHighlighted ? 0.5 : 1 }
     }
 }
