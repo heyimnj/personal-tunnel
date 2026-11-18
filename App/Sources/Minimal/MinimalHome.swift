@@ -126,9 +126,12 @@ final class MinimalHomeViewController: UIViewController, UIScrollViewDelegate, U
     private var animatingPage = false
     private var hideDots: DispatchWorkItem?
 
+    /// 3.2.12: the owner's own colours behind both pages (`Wallpaper`).
+    private var wallpaper: UIImageView?
+
     override func viewDidLoad() {
         super.viewDidLoad()
-        view.backgroundColor = Theme.background
+        Wallpaper.apply(to: view, holder: &wallpaper)
         // 3.2.12: the connection events come while Home is up, so analytics has its
         // data the first time it is opened (they are prepared off the main thread
         // and drawn only while the page shows).
@@ -148,6 +151,8 @@ final class MinimalHomeViewController: UIViewController, UIScrollViewDelegate, U
         pager.addSubview(connection)
         analyticsNavigation.delegate = self
         analyticsNavigation.setNavigationBarHidden(true, animated: false)
+        // The wallpaper shows through analytics too.
+        analyticsNavigation.view.backgroundColor = .clear
         addChild(analyticsNavigation)
         pager.addSubview(analyticsNavigation.view)
         analyticsNavigation.didMove(toParent: self)
@@ -171,8 +176,9 @@ final class MinimalHomeViewController: UIViewController, UIScrollViewDelegate, U
         }
         updateDots()
         Prefs.appearanceChanged.observe(self) { [weak self] in
-            self?.view.backgroundColor = Theme.background
-            self?.updateDots()
+            guard let self else { return }
+            Wallpaper.apply(to: self.view, holder: &self.wallpaper)
+            self.updateDots()
         }
     }
 

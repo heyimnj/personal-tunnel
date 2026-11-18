@@ -3,7 +3,7 @@ import UniformTypeIdentifiers
 import TunnelCore
 import UIKit
 
-/// Settings root: four groups, as in 1.5.0.
+/// Settings root (3.2.12: six groups by what they do; 1.5.0 had four).
 final class MinimalSettingsViewController: FormViewController {
     init() {
         super.init(title: L("Настройки"))
@@ -15,6 +15,8 @@ final class MinimalSettingsViewController: FormViewController {
     }
 
     override func build() -> [FormSection] {
+        // 3.2.12 (the owner's choice): grouped by what they do; the network page
+        // («Сеть и безопасность») is split into its parts.
         [
             FormSection([
                 .link(symbol: "paintpalette", title: L("Внешний вид")) { [weak self] in self?.push(AppearanceViewController()) },
@@ -26,24 +28,56 @@ final class MinimalSettingsViewController: FormViewController {
                 },
                 .link(symbol: "folder", title: L("Управление подписками")) { [weak self] in self?.push(SubscriptionsViewController()) },
                 .link(symbol: "arrow.up.arrow.down", title: L("Порядок серверов")) { [weak self] in self?.push(ServerOrderViewController()) },
+                .link(symbol: "arrow.clockwise", title: L("Обновление подписок")) { [weak self] in self?.push(NetworkSettingsViewController(.updates)) },
             ]),
             FormSection([
-                .link(symbol: "network", title: L("Сеть и безопасность")) { [weak self] in self?.push(NetworkSettingsViewController()) },
+                .link(symbol: "wifi", title: L("Подключение")) { [weak self] in self?.push(NetworkSettingsViewController(.connection)) },
+                .link(symbol: "arrow.triangle.branch", title: L("Маршрутизация и DNS")) { [weak self] in self?.push(NetworkSettingsViewController(.routing)) },
+                .link(symbol: "waveform.path.ecg", title: L("Пинг")) { [weak self] in self?.push(NetworkSettingsViewController(.ping)) },
+            ]),
+            FormSection([
+                .symbol("lock", .toggle(title: L("Блокировка приложения"), get: { Prefs.appLock }, set: { Prefs.appLock = $0 })),
+                .link(symbol: "externaldrive.badge.icloud", title: L("Резервные копии")) { [weak self] in self?.push(BackupViewController()) },
+                .link(symbol: "hand.raised", title: L("Конфиденциальность")) { [weak self] in self?.push(PrivacyViewController()) },
+                .link(symbol: "eye", title: L("Сетевая активность приложения")) { [weak self] in self?.push(NetworkActivityViewController()) },
+            ]),
+            FormSection([
                 .link(symbol: "stethoscope", title: L("Проверка соединения")) { [weak self] in self?.push(DiagnosticsViewController()) },
                 .link(symbol: "doc.text.magnifyingglass", title: L("Журнал службы")) { [weak self] in self?.push(ServiceLogViewController()) },
             ]),
             FormSection(footer: AboutViewController.version, [
-                .link(symbol: "externaldrive.badge.icloud", title: L("Резервные копии")) { [weak self] in self?.push(BackupViewController()) },
-                .link(symbol: "eye", title: L("Сетевая активность приложения")) { [weak self] in self?.push(NetworkActivityViewController()) },
-                .link(symbol: "hand.raised", title: L("Конфиденциальность")) { [weak self] in self?.push(PrivacyViewController()) },
                 .link(symbol: "info.circle", title: L("О приложении")) { [weak self] in self?.push(AboutViewController()) },
             ]),
         ]
     }
 }
 
-final class AppearanceViewController: FormViewController {
-    init() { super.init(title: L("Внешний вид")) }
+/// «Внешний вид» (3.2.12, the owner's choice): the colours, the background and
+/// the font are here, not one page further; the glass has its own page.
+/// «Обои» is gone: its one switch (AMOLED) was in «Цвета и шрифт» as well.
+final class AppearanceViewController: ColorsViewController {
+    override init() { super.init(title: L("Внешний вид")) }
+
+    override func build() -> [FormSection] {
+        [
+            FormSection([
+                .picker(title: L("Интерфейс"), options: [("modern", L("Минималистичный")), ("classic", L("Классика"))], get: { Prefs.style.rawValue },
+                        set: { Prefs.style = InterfaceStyle(rawValue: $0) ?? .minimal }),
+                .picker(title: L("Оформление"), options: [("system", L("Системная")), ("light", L("Светлая")), ("dark", L("Тёмная"))], get: { Prefs.theme }, set: { Prefs.theme = $0 }),
+            ]),
+        ] + colorSections(background: true) + [
+            FormSection([
+                .link(symbol: "drop", title: L("Стекло и прозрачность")) { [weak self] in self?.navigationController?.pushViewController(GlassSettingsViewController(), animated: true) },
+                .toggle(title: L("Только иконки вкладок"), get: { Prefs.hideTabLabels }, set: { Prefs.hideTabLabels = $0 }),
+                .toggle(title: L("Акцентная активная точка"), get: { Prefs.accentDots }, set: { Prefs.accentDots = $0 }),
+            ]),
+        ]
+    }
+}
+
+/// The glass and its transparency (3.2.12: its own page, it was on «Внешний вид»).
+final class GlassSettingsViewController: FormViewController {
+    init() { super.init(title: L("Стекло и прозрачность")) }
 
     override func build() -> [FormSection] {
         func slider(_ title: String, _ key: String) -> FormRow {
@@ -51,17 +85,8 @@ final class AppearanceViewController: FormViewController {
         }
         return [
             FormSection([
-                .picker(title: L("Интерфейс"), options: [("modern", L("Минималистичный")), ("classic", L("Классика"))], get: { Prefs.style.rawValue },
-                        set: { Prefs.style = InterfaceStyle(rawValue: $0) ?? .minimal }),
-                .picker(title: L("Оформление"), options: [("system", L("Системная")), ("light", L("Светлая")), ("dark", L("Тёмная"))], get: { Prefs.theme }, set: { Prefs.theme = $0 }),
-                .link(symbol: "photo", title: L("Обои")) { [weak self] in self?.navigationController?.pushViewController(WallpaperViewController(), animated: true) },
-                .link(symbol: "paintpalette", title: L("Цвета и шрифт")) { [weak self] in self?.navigationController?.pushViewController(ColorsViewController(), animated: true) },
-            ]),
-            FormSection([
                 .picker(title: L("Стекло"), options: [("clear", L("Чистое")), ("regular", L("Блюр")), ("tinted", "Tinted")], get: { Prefs.glassStyle }, set: { Prefs.glassStyle = $0 }),
                 .toggle(title: L("Непрозрачные панели настроек"), get: { Prefs.solidSettings }, set: { Prefs.solidSettings = $0 }),
-                .toggle(title: L("Только иконки вкладок"), get: { Prefs.hideTabLabels }, set: { Prefs.hideTabLabels = $0 }),
-                .toggle(title: L("Акцентная активная точка"), get: { Prefs.accentDots }, set: { Prefs.accentDots = $0 }),
             ]),
             FormSection(L("Прозрачность стекла"), [
                 slider(L("Весь интерфейс"), Prefs.glassOpacityKey),
@@ -85,10 +110,27 @@ final class LanguageViewController: FormViewController {
     }
 }
 
+/// The network settings, one part per page (3.2.12: they were one long page,
+/// «Сеть и безопасность»; the app lock went to the settings root).
 final class NetworkSettingsViewController: FormViewController {
-    init() {
-        super.init(title: L("Сеть"))
-        largeTitle = true
+    enum Part {
+        case updates, connection, routing, ping
+
+        var title: String {
+            switch self {
+            case .updates: return L("Обновление подписок")
+            case .connection: return L("Подключение")
+            case .routing: return L("Маршрутизация и DNS")
+            case .ping: return L("Пинг")
+            }
+        }
+    }
+
+    private let part: Part
+
+    init(_ part: Part) {
+        self.part = part
+        super.init(title: part.title)
     }
 
     private var modeNote: String {
@@ -104,8 +146,9 @@ final class NetworkSettingsViewController: FormViewController {
 
     override func build() -> [FormSection] {
         let changed = { App.shared.networkSettingsChanged() }
-        return [
-            FormSection(L("Измерение задержки"), [
+        switch part {
+        case .ping: return [
+            FormSection([
                 .picker(title: L("Режим пинга"), options: [("primary", L("Основной")), ("classic", L("Классика")), ("alternative", L("Альтернативный"))], get: { Prefs.pingMode }, set: { Prefs.pingMode = $0 }),
                 .note(modeNote),
             ] + (Prefs.autoPingAvailable ? [
@@ -114,19 +157,25 @@ final class NetworkSettingsViewController: FormViewController {
             ] : []) + [
                 .note(L("Тест только показывает задержку и не меняет выбранный сервер. Его можно остановить в любой момент.")),
             ]),
-            FormSection(L("Подписки"), [
+        ]
+        case .updates: return [
+            FormSection([
                 .toggle(title: L("Автообновление подписок"), get: { Prefs.autoUpdateSubscriptions }, set: { Prefs.autoUpdateSubscriptions = $0 }),
                 .picker(title: L("Время обновления"), options: Prefs.subscriptionUpdateOptions,
                         get: { String(Prefs.subscriptionUpdateHour) }, set: { Prefs.subscriptionUpdateHour = Int($0) ?? SubscriptionSchedule.everyDay }),
                 .note(L("Подписки обновляются сами раз в 24 часа или каждый день в выбранное время — при первом открытии приложения после него (и пока оно открыто). Выключено — только вручную.")),
             ]),
-            FormSection(L("Подключение"), [
+        ]
+        case .connection: return [
+            FormSection([
                 .toggle(title: L("Автоподключение в неизвестных Wi-Fi"), get: { Prefs.autoConnect }, set: { Prefs.autoConnect = $0; App.shared.tunnel.applySettings() }),
                 .link(symbol: nil, title: L("Мои сети")) { [weak self] in self?.navigationController?.pushViewController(TrustedNetworksViewController(), animated: true) },
                 .note(L("VPN включается сам при подключении к Wi-Fi не из «Моих сетей». В своих сетях и по сотовой связи сам не включается. Выключили VPN кнопкой в неизвестной сети — в ней он не включится сам, пока вы снова не включите его.")),
                 .toggle(title: L("Kill switch"), get: { Prefs.killSwitch }, set: { Prefs.killSwitch = $0; App.shared.tunnel.applySettings() }),
                 .note(L("Пока VPN включён, но не подключён (переподключение, сбой), приложения не выходят в интернет напрямую. Исключения iOS: push-уведомления Apple и службы оператора (звонки, SMS) iOS может пускать мимо VPN. При большом трафике (видео) тратит больше батареи: каждый пакет обрабатывает ядро туннеля. Действует со следующего подключения.")),
             ]),
+        ]
+        case .routing: return [
             FormSection(L("Маршрутизация"), [
                 .link(symbol: nil, title: L("Блокировка рекламы")) { [weak self] in self?.navigationController?.pushViewController(AdBlockViewController(), animated: true) },
                 .toggle(title: L("Обход российских сайтов"), get: { Prefs.bypassRussia }, set: { Prefs.bypassRussia = $0; changed() }),
@@ -139,52 +188,93 @@ final class NetworkSettingsViewController: FormViewController {
                 .picker(title: L("Резолверы"), options: DirectResolvers.presets.map { preset -> (value: String, title: String) in (preset.id, Prefs.resolverTitle(preset.id)) },
                         get: { Prefs.directResolvers }, set: { Prefs.directResolvers = $0; changed() }),
             ]),
-            FormSection(L("Безопасность"), [
-                .toggle(title: L("Блокировка приложения"), get: { Prefs.appLock }, set: { Prefs.appLock = $0 }),
-            ]),
         ]
+        }
     }
 }
 
-final class ColorsViewController: FormViewController {
+/// «Цвета и шрифт». Classic opens it as a page; Minimal has the same rows on
+/// «Внешний вид» (3.2.12), with its background's colours as well.
+class ColorsViewController: FormViewController {
     init() { super.init(title: L("Цвета и шрифт")) }
+    override init(title: String) { super.init(title: title) }
     private var pendingAccent: UIColor?
     private var pendingText: UIColor?
     private var pendingPanel: UIColor?
 
-    override func build() -> [FormSection] {
-        [
-            FormSection(L("Цвета"), footer: L("Цвета этого интерфейса сохраняются отдельно. Выключите AMOLED для тёмно-серого фона."), [
-                .color(title: L("Акцентный цвет"), get: { [weak self] in self?.pendingAccent ?? Theme.accent }, set: { [weak self] in self?.pendingAccent = $0 }),
-                .toggle(title: L("AMOLED — чёрный фон в тёмной теме"), get: { Prefs.amoled }, set: { Prefs.amoled = $0 }),
-                .button(title: L("Применить цвета"), destructive: false) { [weak self] in
-                    if let color = self?.pendingAccent { Prefs.setAccentHex(color.hexString) }
-                    self?.pendingAccent = nil
-                },
-                .button(title: L("Сбросить цвета"), destructive: false) { [weak self] in
-                    self?.pendingAccent = nil
-                    Prefs.setAccentHex(nil)
-                },
-            ]),
-            FormSection(L("Текст и шрифт"), [
-                .color(title: L("Цвет текста"), get: { [weak self] in self?.pendingText ?? Theme.text }, set: { [weak self] in self?.pendingText = $0 }),
-                .color(title: L("Цвет панелей"), get: { [weak self] in self?.pendingPanel ?? Theme.panel }, set: { [weak self] in self?.pendingPanel = $0 }),
-                .button(title: L("Применить цвет текста и панелей"), destructive: false) { [weak self] in
-                    if let color = self?.pendingText { Prefs.textHex = color.hexString }
-                    if let color = self?.pendingPanel { Prefs.panelHex = color.hexString }
-                    self?.pendingText = nil
-                    self?.pendingPanel = nil
-                },
-                .button(title: L("Импорт шрифта TTF / OTF"), destructive: false) { [weak self] in self?.importFont() },
-                .note(L("Шрифт: ") + (Prefs.fontName.isEmpty ? L("системный") : Prefs.fontName)),
-                .button(title: L("Сбросить текст, панели и шрифт"), destructive: false) {
-                    Prefs.fontName = ""
-                    Prefs.textHex = nil
-                    Prefs.panelHex = nil
-                    Prefs.fontFile = nil
-                },
-            ]),
+    override func build() -> [FormSection] { colorSections(background: false) }
+
+    /// `background`: the Minimal background's own colours (`Wallpaper`).
+    func colorSections(background: Bool) -> [FormSection] {
+        var colors: [FormRow] = [
+            .color(title: L("Акцентный цвет"), get: { [weak self] in self?.pendingAccent ?? Theme.accent }, set: { [weak self] in self?.pendingAccent = $0 }),
         ]
+        // Minimal: AMOLED stands with the background.
+        if !background { colors.append(.toggle(title: L("AMOLED — чёрный фон в тёмной теме"), get: { Prefs.amoled }, set: { Prefs.amoled = $0 })) }
+        colors.append(.button(title: L("Применить цвета"), destructive: false) { [weak self] in
+            if let color = self?.pendingAccent { Prefs.setAccentHex(color.hexString) }
+            self?.pendingAccent = nil
+        })
+        colors.append(.button(title: L("Сбросить цвета"), destructive: false) { [weak self] in
+            self?.pendingAccent = nil
+            Prefs.setAccentHex(nil)
+        })
+        var sections: [FormSection] = [
+            FormSection(L("Цвета"), footer: background ? nil : L("Цвета этого интерфейса сохраняются отдельно. Выключите AMOLED для тёмно-серого фона."), colors),
+        ]
+        if background { sections.append(backgroundSection()) }
+        sections.append(FormSection(L("Текст и шрифт"), [
+            .color(title: L("Цвет текста"), get: { [weak self] in self?.pendingText ?? Theme.text }, set: { [weak self] in self?.pendingText = $0 }),
+            .color(title: L("Цвет панелей"), get: { [weak self] in self?.pendingPanel ?? Theme.panel }, set: { [weak self] in self?.pendingPanel = $0 }),
+            .button(title: L("Применить цвет текста и панелей"), destructive: false) { [weak self] in
+                if let color = self?.pendingText { Prefs.textHex = color.hexString }
+                if let color = self?.pendingPanel { Prefs.panelHex = color.hexString }
+                self?.pendingText = nil
+                self?.pendingPanel = nil
+            },
+            .button(title: L("Импорт шрифта TTF / OTF"), destructive: false) { [weak self] in self?.importFont() },
+            .note(L("Шрифт: ") + (Prefs.fontName.isEmpty ? L("системный") : Prefs.fontName)),
+            .button(title: L("Сбросить текст, панели и шрифт"), destructive: false) {
+                Prefs.fontName = ""
+                Prefs.textHex = nil
+                Prefs.panelHex = nil
+                Prefs.fontFile = nil
+            },
+        ]))
+        return sections
+    }
+
+    /// 3.2.12: the Home and analytics background of up to four colours, as 1.x had it.
+    private func backgroundSection() -> FormSection {
+        var rows: [FormRow] = [
+            .toggle(title: L("AMOLED — чёрный фон в тёмной теме"), get: { Prefs.amoled }, set: { Prefs.amoled = $0 }),
+            .toggle(title: L("Свой фон"), get: { Prefs.customBackground }, set: { Prefs.customBackground = $0 }),
+        ]
+        guard Prefs.customBackground else {
+            return FormSection(L("Фон"), footer: L("Фон главной и аналитики: белый в светлой теме, чёрный или тёмно-серый в тёмной."), rows)
+        }
+        let colors = Prefs.backgroundColors
+        for index in colors.indices {
+            rows.append(.color(title: Lf("Цвет %@", "\(index + 1)"), get: { let all = Prefs.backgroundColors; return UIColor(hex: all.indices.contains(index) ? all[index] : nil) ?? .black }, set: { color in
+                var next = Prefs.backgroundColors
+                guard next.indices.contains(index) else { return }
+                next[index] = color.hexString
+                Prefs.backgroundColors = next
+            }))
+        }
+        if colors.count < Prefs.maxBackgroundColors {
+            rows.append(.button(title: L("Добавить цвет"), destructive: false) {
+                var next = Prefs.backgroundColors
+                next.append(next.count.isMultiple(of: 2) ? "BFBFBF" : "404040")
+                Prefs.backgroundColors = next
+            })
+        }
+        if colors.count > 1 {
+            rows.append(.button(title: L("Убрать последний цвет"), destructive: true) {
+                Prefs.backgroundColors = Array(Prefs.backgroundColors.dropLast())
+            })
+        }
+        return FormSection(L("Фон"), footer: L("Фон главной и аналитики, в обеих темах. Два цвета: сверху и снизу. Три: два сверху и один снизу. Четыре: верхний левый, верхний правый, нижний левый, нижний правый."), rows)
     }
 
     private func importFont() {
@@ -192,7 +282,6 @@ final class ColorsViewController: FormViewController {
     }
 }
 
-/// Picks a TTF/OTF in Files and copies it into the app.
 final class FontImporter: NSObject, UIDocumentPickerDelegate {
     static let shared = FontImporter()
     private var done: (() -> Void)?
@@ -222,15 +311,5 @@ final class FontImporter: NSObject, UIDocumentPickerDelegate {
         Prefs.fontName = (CTFontDescriptorCopyAttribute(first, kCTFontDisplayNameAttribute) as? String) ?? url.deletingPathExtension().lastPathComponent
         Prefs.fontFile = name
         done?()
-    }
-}
-
-final class WallpaperViewController: FormViewController {
-    init() { super.init(title: L("Обои")) }
-
-    override func build() -> [FormSection] {
-        [FormSection(footer: L("Фон «Минималистичного»: белый в светлой теме и чёрный в тёмной. AMOLED переключается в «Цвета и шрифт»."), [
-            .toggle(title: L("AMOLED — чёрный фон в тёмной теме"), get: { Prefs.amoled }, set: { Prefs.amoled = $0 }),
-        ])]
     }
 }

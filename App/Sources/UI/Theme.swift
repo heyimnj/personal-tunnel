@@ -450,3 +450,75 @@ class TapControl: UIControl {
         CATransaction.commit()
     }
 }
+
+/// 3.2.12: the owner's own background for the Minimal Home and analytics, up to
+/// four colours blended across the screen, as 1.x had it. One colour fills the
+/// screen; two run top to bottom; three: two along the top, one along the bottom;
+/// four: top left, top right, bottom left, bottom right. Drawn once, small, and
+/// stretched smoothly by the image view: nothing is redrawn per frame.
+enum Wallpaper {
+    /// Shown instead of the plain background.
+    static var active: Bool { Prefs.style == .minimal && Prefs.customBackground }
+
+    private static let cache = NSCache<NSString, UIImage>()
+
+    static func image(_ hexes: [String]) -> UIImage {
+        let key = hexes.joined(separator: "|") as NSString
+        if let cached = cache.object(forKey: key) { return cached }
+        let colors = hexes.compactMap { UIColor(hex: $0) }.map { color -> [CGFloat] in
+            var r: CGFloat = 0, g: CGFloat = 0, b: CGFloat = 0, a: CGFloat = 0
+            color.getRed(&r, green: &g, blue: &b, alpha: &a)
+            return [r, g, b]
+        }
+        let corners: [[CGFloat]]
+        switch colors.count {
+        case 0: corners = Array(repeating: [0.13, 0.13, 0.13], count: 4)
+        case 1: corners = Array(repeating: colors[0], count: 4)
+        case 2: corners = [colors[0], colors[0], colors[1], colors[1]]
+        case 3: corners = [colors[0], colors[1], colors[2], colors[2]]
+        default: corners = Array(colors.prefix(4))
+        }
+        let side = 64
+        var bytes = [UInt8](repeating: 255, count: side * side * 4)
+        for y in 0 ..< side {
+            let v = CGFloat(y) / CGFloat(side - 1)
+            for x in 0 ..< side {
+                let u = CGFloat(x) / CGFloat(side - 1)
+                for channel in 0 ..< 3 {
+                    let top = corners[0][channel] * (1 - u) + corners[1][channel] * u
+                    let bottom = corners[2][channel] * (1 - u) + corners[3][channel] * u
+                    bytes[(y * side + x) * 4 + channel] = UInt8((max(0, min(1, top * (1 - v) + bottom * v)) * 255).rounded())
+                }
+            }
+        }
+        guard let provider = CGDataProvider(data: Data(bytes) as CFData),
+              let picture = CGImage(width: side, height: side, bitsPerComponent: 8, bitsPerPixel: 32, bytesPerRow: side * 4,
+                                    space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGBitmapInfo(rawValue: CGImageAlphaInfo.noneSkipLast.rawValue),
+                                    provider: provider, decode: nil, shouldInterpolate: true, intent: .defaultIntent)
+        else { return UIImage() }
+        let image = UIImage(cgImage: picture)
+        cache.setObject(image, forKey: key)
+        return image
+    }
+
+    /// Puts the background into `view` (under everything) or takes it away.
+    static func apply(to view: UIView, holder: inout UIImageView?) {
+        guard active else {
+            holder?.removeFromSuperview()
+            holder = nil
+            view.backgroundColor = Theme.background
+            return
+        }
+        let imageView = holder ?? UIImageView()
+        imageView.image = image(Prefs.backgroundColors)
+        imageView.contentMode = .scaleToFill
+        imageView.layer.minificationFilter = .linear
+        imageView.layer.magnificationFilter = .linear
+        imageView.isUserInteractionEnabled = false
+        imageView.frame = view.bounds
+        imageView.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+        if imageView.superview !== view { view.insertSubview(imageView, at: 0) } else { view.sendSubviewToBack(imageView) }
+        holder = imageView
+        view.backgroundColor = Theme.background
+    }
+}

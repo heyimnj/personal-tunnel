@@ -668,3 +668,12 @@
 "Убрать" = "Remove";
 "(×%@, последний раз %@)" = "(×%@, last at %@)";
 "(×%@)" = "(×%@)";
+"Маршрутизация и DNS" = "Routing and DNS";
+"Стекло и прозрачность" = "Glass and transparency";
+"Свой фон" = "Custom background";
+"Цвет %@" = "Color %@";
+"Добавить цвет" = "Add a color";
+"Убрать последний цвет" = "Remove the last color";
+"Фон" = "Background";
+"Фон главной и аналитики: белый в светлой теме, чёрный или тёмно-серый в тёмной." = "Home and analytics background: white in the light theme, black or dark grey in the dark one.";
+"Фон главной и аналитики, в обеих темах. Два цвета: сверху и снизу. Три: два сверху и один снизу. Четыре: верхний левый, верхний правый, нижний левый, нижний правый." = "Home and analytics background, in both themes. Two colors: top and bottom. Three: two along the top, one along the bottom. Four: top left, top right, bottom left, bottom right.";

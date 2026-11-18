@@ -229,7 +229,9 @@ final class MinimalAnalyticsViewController: UIViewController {
 
     override func viewDidLoad() {
         super.viewDidLoad()
-        view.backgroundColor = Theme.background
+        // 3.2.12: over Home's wallpaper when the owner chose one.
+        view.backgroundColor = Wallpaper.active ? .clear : Theme.background
+        Prefs.appearanceChanged.observe(self) { [weak self] in self?.view.backgroundColor = Wallpaper.active ? .clear : Theme.background }
         scroll.alwaysBounceVertical = true
         // The page's insets come from Home (see pageInsets), never from UIKit: inside
         // the pager UIKit hands this page its status-bar inset late, which first

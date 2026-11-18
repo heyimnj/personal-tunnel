@@ -96,6 +96,31 @@ enum Prefs {
         set { defaults.set(newValue, forKey: "personal.amoled"); appearanceChanged.fire() }
     }
 
+    /// 3.2.12: the Minimal Home and analytics on a background of the owner's own
+    /// colours, as in 1.x (its keys: `personal.modern.customBackground`, up to four
+    /// «RRGGBB» joined by «|» in `personal.modern.gradientColors`).
+    static var customBackground: Bool {
+        get { bool("personal.modern.customBackground", false) }
+        set { defaults.set(newValue, forKey: "personal.modern.customBackground"); appearanceChanged.fire() }
+    }
+
+    static let maxBackgroundColors = 4
+
+    static var backgroundColors: [String] {
+        get {
+            let raw = defaults.string(forKey: "personal.modern.gradientColors") ?? defaults.string(forKey: "personal.modern.backgroundHex") ?? "212121"
+            let values = raw.split(separator: "|").map(String.init).map { $0.hasPrefix("#") ? String($0.dropFirst()) : $0 }
+                .filter { $0.count == 6 && UInt32($0, radix: 16) != nil }
+            return Array((values.isEmpty ? ["212121"] : values).prefix(maxBackgroundColors))
+        }
+        set {
+            let values = Array(newValue.prefix(maxBackgroundColors))
+            defaults.set(values.joined(separator: "|"), forKey: "personal.modern.gradientColors")
+            if let first = values.first { defaults.set(first, forKey: "personal.modern.backgroundHex") }
+            appearanceChanged.fire()
+        }
+    }
+
     static var textHex: String? {
         get { defaults.string(forKey: "personal.textHex") }
         set { defaults.set(newValue, forKey: "personal.textHex"); appearanceChanged.fire() }
