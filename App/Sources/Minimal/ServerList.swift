@@ -356,7 +356,7 @@ class SwipeRow: UIView, UIGestureRecognizerDelegate {
     private var railStale = false
 
     /// How far the card moves to show every action: the plate and the gap before it.
-    private var railWidth: CGFloat {
+    var railWidth: CGFloat {
         plate.buttons.isEmpty ? 0 : plate.fullWidth + Self.gap
     }
 
@@ -960,8 +960,17 @@ final class SurfaceView: UIView {
         // container, and the provider's line goes with it.
         // Clipped only while it moves: a rounded clip at rest would cost every frame
         // of a scroll for nothing.
-        header.showCard(open ? min(1, pull / 24) : 0, clipped: open && pull > 0.5)
+        // 3.2.12: the head's card comes in over most of the swipe, not in its first
+        // 24 points: at an ordinary speed that was two frames, and the colour seemed to jump.
+        header.showCard(open ? Self.cardShown(pull, travel: header.railWidth) : 0, clipped: open && pull > 0.5)
         info.slide = open ? -pull : 0
+    }
+
+    /// How much of the open head's card shows at `pull`: eased in over the first
+    /// two thirds of the way to the actions.
+    static func cardShown(_ pull: CGFloat, travel: CGFloat) -> CGFloat {
+        let t = max(0, min(1, pull / max(48, travel * 0.66)))
+        return t * t * (3 - 2 * t)
     }
 
     static func blend(_ from: UIColor, _ to: UIColor, _ t: CGFloat, traits: UITraitCollection) -> UIColor {
@@ -1031,8 +1040,10 @@ final class ServerListView: UIScrollView {
     var onFilter: ((Int64, String?) -> Void)?
     var onSelect: ((Int64, String) -> Void)?
     var onPing: ((Int64, String) -> Void)?
-    /// What a long press lifts above the dim under the menu: a view and its part.
-    typealias HoldSource = (view: UIView, rect: CGRect)
+    /// What a long press lifts above the dim under the menu: a view, the pressed
+    /// part (the menu is placed by it) and the part kept bright (3.2.12: an open
+    /// subscription's whole card on screen, not only its head).
+    typealias HoldSource = (view: UIView, rect: CGRect, lift: CGRect)
     /// A long press: the subscription, the server (nil for the head), the pressed
     /// row and how to undo the highlight.
     var onHold: ((Int64, String?, CGPoint, HoldSource?, @escaping () -> Void) -> Void)?
@@ -1570,13 +1581,22 @@ final class ServerListView: UIScrollView {
             let head = section.standalone ? CGRect(x: 0, y: 0, width: surface.bounds.width, height: Self.headerHeight) : headRect(section.id)
             if section.standalone, let node = section.nodes.first, let row = rows[Self.key(section.id, node)] {
                 row.setHeld(true)
-                onHold?(section.id, node, point, (view: surface as UIView, rect: head)) { [weak row] in row?.setHeld(false) }
+                onHold?(section.id, node, point, (view: surface as UIView, rect: head, lift: head)) { [weak row] in row?.setHeld(false) }
             } else if local.y < head.maxY {
                 headerHeld(section.id, true)
-                onHold?(section.id, nil, point, (view: surface as UIView, rect: head)) { [weak self] in self?.headerHeld(section.id, false) }
+                // Open, the subscription is the whole card under its servers: all of
+                // it that is on screen stays bright, not the head alone.
+                var lift = head
+                if isOpen(section.id) {
+                    // Below the bar the list scrolls under.
+                    let screen = bounds.inset(by: UIEdgeInsets(top: adjustedContentInset.top, left: 0, bottom: 0, right: 0))
+                    let visible = convert(screen, to: surface).intersection(surface.bounds)
+                    if !visible.isNull { lift = head.union(visible) }
+                }
+                onHold?(section.id, nil, point, (view: surface as UIView, rect: head, lift: lift)) { [weak self] in self?.headerHeld(section.id, false) }
             } else if let row = rows.values.first(where: { $0.superview === surface && $0.frame.contains(local) }) {
                 row.setHeld(true)
-                onHold?(section.id, row.key.node, point, (view: row.card as UIView, rect: row.card.bounds)) { [weak row] in row?.setHeld(false) }
+                onHold?(section.id, row.key.node, point, (view: row.card as UIView, rect: row.card.bounds, lift: row.card.bounds)) { [weak row] in row?.setHeld(false) }
             }
             return
         }

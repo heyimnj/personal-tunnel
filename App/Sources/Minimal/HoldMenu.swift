@@ -129,8 +129,9 @@ final class HoldMenuView: UIView {
         traits.userInterfaceStyle == .dark ? UIColor(red: 0.173, green: 0.173, blue: 0.180, alpha: 1) : .white
     }
 
-    /// `source`: the pressed row and the part of it to lift above the dim.
-    static func show(in host: UIView, at point: CGPoint, title: String, items: [HoldMenuItem], source: (view: UIView, rect: CGRect)? = nil, onDismiss: (() -> Void)? = nil) {
+    /// `source`: the pressed row, the part the menu is placed by, and the part
+    /// lifted above the dim.
+    static func show(in host: UIView, at point: CGPoint, title: String, items: [HoldMenuItem], source: (view: UIView, rect: CGRect, lift: CGRect)? = nil, onDismiss: (() -> Void)? = nil) {
         let menu = HoldMenuView(frame: host.bounds)
         menu.autoresizingMask = [.flexibleWidth, .flexibleHeight]
         menu.onDismiss = onDismiss
@@ -139,7 +140,7 @@ final class HoldMenuView: UIView {
         host.addSubview(menu)
         var row = CGRect(origin: point, size: .zero)
         if let source {
-            menu.lift(source.view, source.rect)
+            menu.lift(source.view, source.lift)
             row = source.view.convert(source.rect, to: menu)
         }
         menu.place(at: point, row: row)
