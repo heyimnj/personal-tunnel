@@ -695,7 +695,13 @@ final class MinimalAnalyticsViewController: UIViewController {
         let connections = AnalyticsGroup()
         tcpRow = AnalyticsRow("TCP", dot: Self.tcpColor) { [weak self] in self?.present(ConnectionsViewController.wrapped(udp: false), animated: true) }
         udpRow = AnalyticsRow("UDP", dot: Self.udpColor) { [weak self] in self?.present(ConnectionsViewController.wrapped(udp: true), animated: true) }
-        connections.add([Classic.padded(UIStackView(.vertical, spacing: 8, alignment: .fill, [columns, columnsCaption]), UIEdgeInsets(top: 11, left: 0, bottom: 11, right: 0)), tcpRow, udpRow])
+        // 3.5.2 (the owner): the columns open the open connections too, both kinds.
+        let chart = pressable(Classic.padded(UIStackView(.vertical, spacing: 8, alignment: .fill, [columns, columnsCaption]), UIEdgeInsets(top: 11, left: 0, bottom: 11, right: 0)),
+                              label: L("Открытые соединения за минуту")) { [weak self] in
+            self?.present(ConnectionsViewController.wrapped(udp: nil), animated: true)
+        }
+        chart.pressScale = 0.98
+        connections.add([chart, tcpRow, udpRow])
 
         // Routes (4:2): the rings on the left, the largest routes beside them.
         let routes = AnalyticsCard(insets: UIEdgeInsets(top: 14, left: 14, bottom: 14, right: 14))
@@ -1055,21 +1061,25 @@ final class MinimalAnalyticsViewController: UIViewController {
 /// server, and the bytes each way. Live: the core sends the list only while
 /// this sheet is open (`CoreClient.listsConnections`).
 final class ConnectionsViewController: UIViewController, UITableViewDataSource {
-    private let udp: Bool
+    /// nil: both kinds (3.5.2: the columns open the list with a switch on top).
+    private var udp: Bool?
+    private let switchable: Bool
     private let table = UITableView(frame: .zero, style: .plain)
     private let empty = UILabel(L("Данные соединений пока недоступны"), font: Theme.font(.body), color: .secondaryLabel, lines: 0)
     private var items: [CoreConnection] = []
 
-    static func wrapped(udp: Bool) -> UIViewController {
+    /// `udp` nil: every open connection, with «Все / TCP / UDP» to narrow it.
+    static func wrapped(udp: Bool?) -> UIViewController {
         let navigation = UINavigationController(rootViewController: ConnectionsViewController(udp: udp))
         navigation.modalPresentationStyle = .pageSheet
         return navigation
     }
 
-    init(udp: Bool) {
+    init(udp: Bool?) {
         self.udp = udp
+        switchable = udp == nil
         super.init(nibName: nil, bundle: nil)
-        title = udp ? "UDP" : "TCP"
+        title = udp.map { $0 ? "UDP" : "TCP" } ?? L("Соединения")
     }
 
     @available(*, unavailable)
@@ -1080,6 +1090,19 @@ final class ConnectionsViewController: UIViewController, UITableViewDataSource {
         view.backgroundColor = Theme.background
         navigationItem.largeTitleDisplayMode = .never
         navigationItem.rightBarButtonItem = UIBarButtonItem(title: L("Готово"), primaryAction: UIAction { [weak self] _ in self?.dismiss(animated: true) })
+        if switchable {
+            let kinds = UISegmentedControl(items: [L("Все"), "TCP", "UDP"])
+            kinds.selectedSegmentIndex = 0
+            kinds.addAction(UIAction { [weak self, weak kinds] _ in
+                guard let self, let kinds else { return }
+                let choices: [Bool?] = [nil, false, true]
+                self.udp = choices[max(0, min(2, kinds.selectedSegmentIndex))]
+                self.items = []
+                self.table.reloadData()
+                self.show(App.shared.core.connections.value)
+            }, for: .valueChanged)
+            navigationItem.titleView = kinds
+        }
         table.backgroundColor = .clear
         table.separatorStyle = .none
         table.allowsSelection = false
@@ -1112,7 +1135,7 @@ final class ConnectionsViewController: UIViewController, UITableViewDataSource {
     }
 
     private func show(_ connections: CoreConnections) {
-        let next = connections.open.filter { $0.udp == udp }.sorted { $0.createdAt > $1.createdAt }
+        let next = connections.open.filter { udp == nil || $0.udp == udp }.sorted { $0.createdAt > $1.createdAt }
         empty.isHidden = !next.isEmpty
         guard next != items else { return }
         let sameRows = next.map(\.id) == items.map(\.id)
