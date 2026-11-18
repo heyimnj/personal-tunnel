@@ -343,7 +343,9 @@ final class ColumnsView: UIView {
         let count = min(lower.count, upper.count)
         let gap: CGFloat = 3
         let width = (bounds.width - gap * CGFloat(columns - 1)) / CGFloat(columns)
-        let peak = CGFloat(max(4, zip(lower, upper).map { $0 + $1 }.max() ?? 0))
+        var highest = 4
+        for (a, b) in zip(lower, upper) { highest = max(highest, a + b) }
+        let peak = CGFloat(highest)
         // Empty places first: the columns come in from the right.
         for slot in 0 ..< columns {
             let x = CGFloat(slot) * (width + gap)
@@ -779,11 +781,12 @@ final class MinimalAnalyticsViewController: UIViewController {
         downUnit.text = down.1
         upSpeed.text = status == nil ? "—" : ((status?.uplink ?? 0) > 0 ? up.0 : "0")
         upUnit.text = up.1
-        let down = status?.downlinkTotal ?? 0, up = status?.uplinkTotal ?? 0
-        downTotal.text = status == nil ? "—" : Format.bytes(down)
-        upTotal.text = status == nil ? "—" : Format.bytes(up)
-        trafficTotal.text = status == nil ? "—" : Format.bytes(down + up)
-        trafficRing.parts = [(Double(down), SpeedGraphView.downColor), (Double(up), SpeedGraphView.upColor)]
+        let downBytes: Int64 = status?.downlinkTotal ?? 0
+        let upBytes: Int64 = status?.uplinkTotal ?? 0
+        downTotal.text = status == nil ? "—" : Format.bytes(downBytes)
+        upTotal.text = status == nil ? "—" : Format.bytes(upBytes)
+        trafficTotal.text = status == nil ? "—" : Format.bytes(downBytes + upBytes)
+        trafficRing.parts = [(value: Double(downBytes), color: SpeedGraphView.downColor), (value: Double(upBytes), color: SpeedGraphView.upColor)]
         memoryValue.text = status.map { Format.bytes($0.memory) + " · \($0.goroutines) goroutines" } ?? L("Ядро не запущено")
         graphHint.isHidden = status != nil
     }
@@ -798,7 +801,9 @@ final class MinimalAnalyticsViewController: UIViewController {
         if tcpRow.value.text != tcpText { tcpRow.value.text = tcpText }
         if udpRow.value.text != udpText { udpRow.value.text = udpText }
         let top = Array(connections.routes.sorted { $0.value > $1.value }.prefix(Self.routeRowsShown))
-        routesMeter.parts = top.enumerated().map { (Double($1.value), Self.routeColors[$0 % Self.routeColors.count]) }
+        var routeParts: [(value: Double, color: UIColor)] = []
+        for (index, route) in top.enumerated() { routeParts.append((value: Double(route.value), color: Self.routeColors[index % Self.routeColors.count])) }
+        routesMeter.parts = routeParts
         let names = top.map(\.key)
         if names == routeNames, !routeRows.isEmpty || names.isEmpty {
             for (row, route) in zip(routeRows, top) {
@@ -825,11 +830,17 @@ final class MinimalAnalyticsViewController: UIViewController {
 
     /// The memory line and the connection columns (a column per two seconds).
     private func show(_ samples: CoreSamples) {
-        memoryLine.values = samples.memory.map(Double.init)
-        let count = samples.tcp.count
-        let picked = stride(from: count % 2 == 0 ? 1 : 0, to: count, by: 2).map { $0 }.suffix(columns.columns)
-        columns.lower = picked.map { samples.tcp[$0] }
-        columns.upper = picked.map { samples.udp[$0] }
+        memoryLine.values = samples.memory.map { Double($0) }
+        // A column per two seconds, the latest last.
+        let count = min(samples.tcp.count, samples.udp.count)
+        var indices: [Int] = []
+        var index = count - 1
+        while index >= 0, indices.count < columns.columns {
+            indices.insert(index, at: 0)
+            index -= 2
+        }
+        columns.lower = indices.map { samples.tcp[$0] }
+        columns.upper = indices.map { samples.udp[$0] }
     }
 
     private func showDelay() {

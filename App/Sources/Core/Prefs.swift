@@ -108,10 +108,16 @@ enum Prefs {
 
     static var backgroundColors: [String] {
         get {
-            let raw = defaults.string(forKey: "personal.modern.gradientColors") ?? defaults.string(forKey: "personal.modern.backgroundHex") ?? "212121"
-            let values = raw.split(separator: "|").map(String.init).map { $0.hasPrefix("#") ? String($0.dropFirst()) : $0 }
-                .filter { $0.count == 6 && UInt32($0, radix: 16) != nil }
-            return Array((values.isEmpty ? ["212121"] : values).prefix(maxBackgroundColors))
+            let stored: String? = defaults.string(forKey: "personal.modern.gradientColors") ?? defaults.string(forKey: "personal.modern.backgroundHex")
+            let raw: String = stored ?? "212121"
+            var values: [String] = []
+            for part in raw.split(separator: "|") {
+                var hex = String(part)
+                if hex.hasPrefix("#") { hex.removeFirst() }
+                if hex.count == 6, UInt32(hex, radix: 16) != nil { values.append(hex) }
+            }
+            if values.isEmpty { values = ["212121"] }
+            return Array(values.prefix(maxBackgroundColors))
         }
         set {
             let values = Array(newValue.prefix(maxBackgroundColors))
