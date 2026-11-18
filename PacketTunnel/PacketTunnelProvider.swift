@@ -293,6 +293,9 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
         stopXray()
         guard let runtime = xrayRuntime else {
             stopWatchingPath()
+            // 3.2.12: no Xray in this session: its log of an earlier one goes, or the
+            // copied service log carried it as if it were now.
+            try? FileManager.default.removeItem(at: paths.xrayLog)
             return
         }
         #if TUNNEL_XRAY
@@ -473,7 +476,9 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
         }
         guard memoryLogged.map({ sample.differs(from: $0) }) ?? true else { return }
         memoryLogged = sample
-        commandServer?.writeMessage(4, message: sample.line)
+        // 3.2.12: only in the extension's own log, no longer in the service log as
+        // well: a line for every megabyte crowded it out (analytics shows the memory;
+        // near the limit `relieveMemory` still writes a warning there).
         event(sample.line)
     }
 

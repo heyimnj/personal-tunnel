@@ -41,6 +41,21 @@ struct LogLine {
     let id: Int
     let level: Int32
     let text: String
+    /// 3.2.12: when the app received it. The core's own lines carry no clock time;
+    /// nil: it came with the core's buffer, before the app was listening.
+    let date: Date?
+
+    var fromApp: Bool { text.hasPrefix("[app]") }
+
+    /// «12:04:51», or nil without a date.
+    var time: String? { date.map(LogLine.clock.string(from:)) }
+
+    static let clock: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.dateFormat = "HH:mm:ss"
+        return formatter
+    }()
 }
 
 /// Live data from the running core over the Libbox command socket. Each kind
@@ -63,7 +78,6 @@ final class CoreClient {
     /// read, until the socket's buffer filled.
     private var inBackground = false
     private var wantsConnections = false
-    private var wantsLog = false
     private var logCounter = 0
     private let work = DispatchQueue(label: "personaltunnel.core-client", qos: .utility)
     /// Connection events and log lines are prepared here, off the main thread:
@@ -89,7 +103,14 @@ final class CoreClient {
     func start() {
         guard !running else { return }
         running = true
-        connect()
+        // 3.2.12: a new session: the app's own lines of long-gone connections go
+        // (the core starts its own log again by itself); the last minutes stay,
+        // they tell how this start came about.
+        let recent = Date().addingTimeInterval(-600)
+        let before = logs.count
+        logs.removeAll { $0.fromApp && ($0.date ?? .distantPast) < recent }
+        if logs.count != before { logsChanged.fire() }
+        if !inBackground { connect() }
     }
 
     /// The app went to the background or came back (3.2.9).
@@ -134,27 +155,48 @@ final class CoreClient {
     func clearLogs() {
         logs = []
         logsChanged.fire()
+        // 3.2.12: the core's buffer too, or the next stream brings its lines back.
+        if let client { work.async { try? client.clearLogs() } }
     }
 
-    /// The core clears its log when it restarts; the app's own lines stay.
-    fileprivate func clearCoreLines() {
-        logs.removeAll { !$0.text.hasPrefix("[app]") }
+    /// Every new log stream starts with the core's whole buffer (the core starts
+    /// it again when the tunnel starts). 3.2.12: lines already received keep the
+    /// time they first came; the others came before the app was listening. The
+    /// app's own lines stay, and everything stands in the order of its time.
+    fileprivate func replaceCoreLines(_ entries: [(Int32, String)]) {
+        var known: [String: [Date?]] = [:]
+        for line in logs where !line.fromApp { known[line.text, default: []].append(line.date) }
+        // `order`: where the line stands. The core's lines come in their own order,
+        // so one without a date stands right after the dated line before it.
+        var next: [(level: Int32, text: String, date: Date?, order: Date)] = logs.filter(\.fromApp).map { ($0.level, $0.text, $0.date, $0.date ?? .distantPast) }
+        var previous = Date.distantPast
+        for (level, text) in entries {
+            var date: Date?
+            if var dates = known[text], !dates.isEmpty {
+                date = dates.removeFirst()
+                known[text] = dates
+            }
+            if let date { previous = max(previous, date) }
+            next.append((level, text, date, date ?? previous))
+        }
+        let sorted = next.enumerated().sorted { left, right in
+            let a = left.element.order, b = right.element.order
+            return a != b ? a < b : left.offset < right.offset
+        }
+        logs = sorted.map { item in
+            logCounter += 1
+            return LogLine(id: logCounter, level: item.element.level, text: item.element.text, date: item.element.date)
+        }
+        if logs.count > 1500 { logs.removeFirst(logs.count - 1500) }
         logsChanged.fire()
     }
 
-    /// Connection events are streamed only while analytics is on screen.
+    /// Connection events are streamed while the analytics page can be shown
+    /// (3.2.12: the whole Minimal Home, so the page has its data the first time it opens).
     func setConnectionsStreamed(_ enabled: Bool) {
         guard wantsConnections != enabled else { return }
         wantsConnections = enabled
-        if running { disconnect(); connect() }
-    }
-
-    /// The log is streamed only while the log screen is open: a new log stream
-    /// starts with the core's whole buffer, which analytics does not need.
-    func setLogStreamed(_ enabled: Bool) {
-        guard wantsLog != enabled else { return }
-        wantsLog = enabled
-        if running { disconnect(); connect() }
+        if running, !inBackground { disconnect(); connect() }
     }
 
     /// While a screen lists the open connections, they are copied out with every update.
@@ -187,7 +229,9 @@ final class CoreClient {
         let options = LibboxCommandClientOptions()
         options.addCommand(LibboxCommandStatus)
         if wantsConnections { options.addCommand(LibboxCommandConnections) }
-        if wantsLog { options.addCommand(LibboxCommandLog) }
+        // 3.2.12: the log is always streamed (it was only while the log screen was
+        // open): a line gets the time it came, and the screen opens on all of them.
+        options.addCommand(LibboxCommandLog)
         options.statusInterval = Int64(NSEC_PER_SEC)
         guard let client = LibboxNewCommandClient(Handler(owner: self, token: token), options) else { return }
         self.client = client
@@ -229,15 +273,22 @@ final class CoreClient {
 
     /// The app's own lines; cleaned here, they are short and few.
     fileprivate func append(_ entries: [(Int32, String)]) {
-        appendPrepared(entries.map { ($0.0, TunnelText.localize(Redactor.redact(LogText.clean($0.1)))) })
+        appendPrepared(entries.map { ($0.0, CoreClient.prepareLine($0.1)) })
+    }
+
+    /// Colours and the level word out, the core's seconds since its start out
+    /// (3.2.12: the line's time is shown instead), masked, translated.
+    fileprivate static func prepareLine(_ text: String) -> String {
+        TunnelText.localize(Redactor.redact(LogDigest.dropUptime(LogText.clean(text))))
     }
 
     /// Lines already cleaned and masked (on `parse`).
     fileprivate func appendPrepared(_ entries: [(Int32, String)]) {
         guard !logsPaused else { return }
+        let now = Date()
         for (level, text) in entries {
             logCounter += 1
-            logs.append(LogLine(id: logCounter, level: level, text: text))
+            logs.append(LogLine(id: logCounter, level: level, text: text, date: now))
         }
         if logs.count > 1500 { logs.removeFirst(logs.count - 1500) }
         logsChanged.fire()
@@ -286,6 +337,8 @@ final class CoreClient {
     private final class Handler: NSObject, LibboxCommandClientHandlerProtocol {
         weak var owner: CoreClient?
         let token: Int
+        /// The core's next lines are its whole buffer again (a new stream, a new start).
+        private var replay = false
 
         init(owner: CoreClient, token: Int) {
             self.owner = owner
@@ -296,24 +349,22 @@ final class CoreClient {
         func disconnected(_: String?) {}
         func setDefaultLogLevel(_: Int32) {}
 
-        func clearLogs() {
-            // Through `parse`, so it stays in order with the lines prepared there.
-            guard let owner else { return }
-            let token = self.token
-            owner.parse.async { [weak owner] in owner?.receive(token) { $0.clearCoreLines() } }
-        }
+        /// The core always sends its lines right after this (none after a new start).
+        func clearLogs() { replay = true }
 
         func writeLogs(_ messageList: (any LibboxLogIteratorProtocol)?) {
-            guard let messageList, let owner else { return }
+            guard let owner else { return }
             var entries: [(Int32, String)] = []
-            while messageList.hasNext() {
+            while let messageList, messageList.hasNext() {
                 if let entry = messageList.next() { entries.append((entry.level, entry.message)) }
             }
-            guard !entries.isEmpty else { return }
+            let replaced = replay
+            replay = false
+            guard replaced || !entries.isEmpty else { return }
             let token = self.token
             owner.parse.async { [weak owner] in
-                let prepared = entries.map { ($0.0, TunnelText.localize(Redactor.redact(LogText.clean($0.1)))) }
-                owner?.receive(token) { $0.appendPrepared(prepared) }
+                let prepared = entries.map { ($0.0, CoreClient.prepareLine($0.1)) }
+                owner?.receive(token) { replaced ? $0.replaceCoreLines(prepared) : $0.appendPrepared(prepared) }
             }
         }
 

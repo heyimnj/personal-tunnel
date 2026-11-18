@@ -240,13 +240,7 @@ final class ServiceLogViewController: UIViewController, UITableViewDataSource, U
 
     override func viewWillAppear(_ animated: Bool) {
         super.viewWillAppear(animated)
-        App.shared.core.setLogStreamed(true)
         refilter()
-    }
-
-    override func viewDidDisappear(_ animated: Bool) {
-        super.viewDidDisappear(animated)
-        App.shared.core.setLogStreamed(false)
     }
 
     private func refilter() {
@@ -269,21 +263,34 @@ final class ServiceLogViewController: UIViewController, UITableViewDataSource, U
         var text = ["\(TunnelController.appName) \(AboutViewController.version), " + L("ядро туннеля") + ": \(CoreInfo.tunnelCore)",
                     // 3.1.14: which shared container the app really got (a signing tool may give another).
                     "App Group: \(AppGroup.identifier)" + (App.shared.paths == nil ? " — " + L("нет доступа") : ""), ""]
-        text += App.shared.core.logs.map { line in
-            let level = levels.indices.contains(Int(line.level)) ? levels[Int(line.level)] : "LOG"
-            return "\(level) \(line.text)"
-        }
-        if let paths = App.shared.paths {
-            let events = TunnelEvents.read(TunnelEvents.file(paths)).map(TunnelText.localize)
-            if !events.isEmpty { text += ["", L("Расширение:")] + events }
-            let xray = ServiceLogViewController.tail(paths.xrayLog, lines: 80)
-            if !xray.isEmpty { text += ["", "Xray-core:"] + xray }
-            if let crash = ServiceLogViewController.lastCrash(paths) { text += ["", L("Последнее падение ядра:")] + crash }
-        }
+        let hosts = App.shared.library.serverHosts
         // 3.3 (PT-16): no secrets, servers, destinations or addresses but the tunnel's own.
-        UIPasteboard.general.string = Redactor.forSharing(text.joined(separator: "\n"), hosts: App.shared.library.serverHosts)
+        func shared(_ lines: [String]) -> [String] {
+            lines.isEmpty ? [] : Redactor.forSharing(lines.joined(separator: "\n"), hosts: hosts).components(separatedBy: "\n")
+        }
+        // 3.2.12: each line with its time; a line repeated stands once with its count
+        // (masked first: lines that differ only by an address are the same then).
+        let entries = App.shared.core.logs.map { line in
+            LogDigest.Entry(level: levels.indices.contains(Int(line.level)) ? levels[Int(line.level)] : "LOG", time: line.time, text: line.text)
+        }
+        var masked = shared(entries.map(\.text))
+        if masked.count != entries.count { masked = entries.map { Redactor.forSharing($0.text, hosts: hosts) } }
+        let log = LogDigest.collapse(zip(entries, masked).map { LogDigest.Entry(level: $0.level, time: $0.time, text: $1) })
+        text += log
+        if let paths = App.shared.paths {
+            // 3.2.12: only the last three sessions of the extension, not its events of days ago.
+            let all = TunnelEvents.read(TunnelEvents.file(paths))
+            let events = TunnelEvents.digest(all).map(TunnelText.localize)
+            if !events.isEmpty { text += ["", L("Расширение:")] + shared(events) }
+            let xray = ServiceLogViewController.tail(paths.xrayLog, lines: 80)
+            if !xray.isEmpty { text += ["", "Xray-core:"] + shared(xray) }
+            // 3.2.12: a fall of this session or the one before it, not of a day ago.
+            let since = TunnelEvents.starts(all).suffix(2).first ?? Date().addingTimeInterval(-86_400)
+            if let crash = ServiceLogViewController.lastCrash(paths, since: since) { text += ["", L("Последнее падение ядра:")] + shared(crash) }
+        }
+        UIPasteboard.general.string = text.joined(separator: "\n")
         Haptics.result(true)
-        App.shared.notice.value = Lf("Скопировано строк: %@.", "\(App.shared.core.logs.count)")
+        App.shared.notice.value = Lf("Скопировано строк: %@.", "\(log.count)")
     }
 
     static func tail(_ url: URL, lines: Int) -> [String] {
@@ -293,9 +300,9 @@ final class ServiceLogViewController: UIViewController, UITableViewDataSource, U
 
     /// What the core wrote before it last fell (a Go panic), within the last day:
     /// the live file of the running extension, or the newest archived report.
-    static func lastCrash(_ paths: SharedPaths) -> [String]? {
+    static func lastCrash(_ paths: SharedPaths, since: Date) -> [String]? {
         let manager = FileManager.default
-        let dayAgo = Date().addingTimeInterval(-86_400)
+        let dayAgo = max(since.addingTimeInterval(-5), Date().addingTimeInterval(-86_400))
         var candidates: [(URL, Date)] = []
         func add(_ url: URL) {
             guard let date = (try? url.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate, date > dayAgo,
@@ -340,7 +347,9 @@ final class ServiceLogViewController: UIViewController, UITableViewDataSource, U
         cell.backgroundColor = .clear
         let line = lines[indexPath.row]
         var content = cell.defaultContentConfiguration()
-        content.text = ServiceLogViewController.levels.indices.contains(Int(line.level)) ? ServiceLogViewController.levels[Int(line.level)] : "LOG"
+        let level = ServiceLogViewController.levels.indices.contains(Int(line.level)) ? ServiceLogViewController.levels[Int(line.level)] : "LOG"
+        // 3.2.12: the time the line came.
+        content.text = line.time.map { level + " · " + $0 } ?? level
         content.textProperties.font = Theme.font(10, .semibold)
         content.textProperties.color = line.level <= 2 ? .systemRed : (line.level == 3 ? .systemOrange : .secondaryLabel)
         content.secondaryText = line.text

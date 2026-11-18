@@ -197,6 +197,9 @@ final class MinimalAnalyticsViewController: UIViewController {
     private var timer: Timer?
     private var visible = false
 
+    /// 3.2.12: a change of style while the page shows: its clock stops with it.
+    deinit { timer?.invalidate() }
+
     var isAtTop: Bool { scroll.contentOffset.y <= -scroll.adjustedContentInset.top + 1 }
 
     /// A pull past the top, handed to the pager (see HandoffScrollView).
@@ -373,7 +376,9 @@ final class MinimalAnalyticsViewController: UIViewController {
     /// Only the visible page keeps its timer and the detailed streams.
     func setVisible(_ value: Bool) {
         visible = value
-        App.shared.core.setConnectionsStreamed(value)
+        // 3.2.12: the connections are streamed for the whole Home (MinimalHome), not
+        // from the moment this page shows: the first visit after a launch showed an
+        // empty page for a second while the stream started again.
         timer?.invalidate()
         timer = nil
         if value {

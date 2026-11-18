@@ -129,6 +129,10 @@ final class MinimalHomeViewController: UIViewController, UIScrollViewDelegate, U
     override func viewDidLoad() {
         super.viewDidLoad()
         view.backgroundColor = Theme.background
+        // 3.2.12: the connection events come while Home is up, so analytics has its
+        // data the first time it is opened (they are prepared off the main thread
+        // and drawn only while the page shows).
+        App.shared.core.setConnectionsStreamed(true)
         // Paging is ours (see scrollViewWillEndDragging): the page settles with a
         // spring that carries the finger's speed, and while it does the new page
         // already takes touches, so a second swipe scrolls analytics at once
