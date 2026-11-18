@@ -434,8 +434,8 @@ final class AnalyticsRow: UIView {
 
 /// The second Home page (3.5: the owner's «вариант A» — the speed large at the
 /// top over its graph, then tiles). 3.5 (release, the owner: the page was too
-/// busy): the session's two square tiles, connections as one wide tile of two
-/// counts (no chart), then routes and the core's memory as two square tiles.
+/// busy): the session's two square tiles; 3.5.2: routes (4:2), TCP and UDP as two
+/// square plates side by side, the core's memory (4:2).
 final class MinimalAnalyticsViewController: UIViewController {
     private let scroll = HandoffScrollView()
     // 3.5 beta 2 (the owner: the page was larger than the rest of the app): smaller
@@ -465,7 +465,7 @@ final class MinimalAnalyticsViewController: UIViewController {
     private let udpPeak = UILabel(font: Theme.font(.caption2), color: .secondaryLabel)
     private let routeRings = RouteRingsView()
     private let routeLegend = UIStackView(.vertical, spacing: 3, alignment: .fill, [])
-    private let routesEmpty = UILabel(L("Данные соединений пока недоступны"), font: Theme.font(.caption2), color: .secondaryLabel, lines: 0)
+    private let routesEmpty = UILabel(L("Данные соединений пока недоступны"), font: Theme.font(.footnote), color: .secondaryLabel, lines: 0)
     private var timer: Timer?
     private var visible = false
 
@@ -474,8 +474,8 @@ final class MinimalAnalyticsViewController: UIViewController {
     static let routeColors: [UIColor] = [SpeedGraphView.downColor, UIColor(red: 0.37, green: 0.33, blue: 0.91, alpha: 1), .systemGreen, .systemOrange, .systemPink]
     /// The extension's limit, about 50 MiB: the memory line shows it when near.
     private static let memoryLimit: Double = 50 * 1024 * 1024
-    /// Routes in the tile: a ring and a line of the legend each.
-    private static let routesShown = 3
+    /// Routes in the card: a ring and a line of the legend each.
+    private static let routesShown = 4
 
     /// 3.5: a change of style while the page shows: its clock stops with it.
     deinit { timer?.invalidate() }
@@ -630,33 +630,36 @@ final class MinimalAnalyticsViewController: UIViewController {
         let session = AnalyticsGroup()
         session.add([sessionRow])
 
-        // Connections (4:2): two counts side by side, each opens its list.
-        let connections = AnalyticsCard(insets: UIEdgeInsets(top: 10, left: 10, bottom: 10, right: 10))
-        connections.stack.axis = .horizontal
-        connections.stack.alignment = .fill
-        connections.stack.distribution = .fillEqually
-        connections.stack.spacing = 10
-        connections.stack.addArrangedSubview(connectionHalf("TCP", Self.tcpColor, tcpCount, tcpPeak) { [weak self] in
+        // 3.5.2 (the owner): routes (4:2), then TCP and UDP as two plates of their
+        // own side by side (2:2 each, the cards' own colour), then the core's memory (4:2).
+        let tcpPlate = connectionPlate("TCP", Self.tcpColor, tcpCount, tcpPeak) { [weak self] in
             self?.present(ConnectionsViewController.wrapped(udp: false), animated: true)
-        })
-        connections.stack.addArrangedSubview(connectionHalf("UDP", Self.udpColor, udpCount, udpPeak) { [weak self] in
+        }
+        let udpPlate = connectionPlate("UDP", Self.udpColor, udpCount, udpPeak) { [weak self] in
             self?.present(ConnectionsViewController.wrapped(udp: true), animated: true)
-        })
+        }
+        let connections = UIStackView(.horizontal, spacing: 12, alignment: .fill, [tcpPlate, udpPlate])
+        connections.distribution = .fillEqually
+        tcpPlate.heightAnchor.constraint(equalTo: tcpPlate.widthAnchor).isActive = true
 
-        // Routes (2:2): rings, the three largest under them.
+        // Routes (4:2): the rings on the left, the largest routes beside them.
         let routes = AnalyticsCard(insets: UIEdgeInsets(top: 14, left: 14, bottom: 14, right: 14))
         routes.stack.alignment = .fill
-        routes.stack.spacing = 8
+        routes.stack.spacing = 10
         routeRings.setContentHuggingPriority(.defaultLow, for: .vertical)
         routeRings.setContentCompressionResistancePriority(.defaultLow, for: .vertical)
-        routeRings.heightAnchor.constraint(greaterThanOrEqualToConstant: 36).isActive = true
-        routesEmpty.textAlignment = .center
+        routeRings.widthAnchor.constraint(equalTo: routeRings.heightAnchor).isActive = true
+        routesEmpty.textAlignment = .left
+        routeLegend.spacing = 6
         routeLegend.addArrangedSubview(routesEmpty)
-        routeLegend.setContentCompressionResistancePriority(.required, for: .vertical)
-        for item in [small(L("Маршруты")), routeRings, routeLegend] as [UIView] { routes.stack.addArrangedSubview(item) }
+        let above = UIView(), below = UIView()
+        let legendColumn = UIStackView(.vertical, spacing: 0, alignment: .fill, [above, routeLegend, below])
+        above.heightAnchor.constraint(equalTo: below.heightAnchor).isActive = true
+        let routesBody = UIStackView(.horizontal, spacing: 16, alignment: .fill, [routeRings, legendColumn])
+        for item in [small(L("Маршруты")), routesBody] as [UIView] { routes.stack.addArrangedSubview(item) }
 
-        // The core's memory (2:2): the figure, then its line over two minutes,
-        // drawn to whatever room the tile leaves (scaled inside its own box).
+        // The core's memory (4:2): the figure, then its line over two minutes,
+        // drawn to whatever room the card leaves (scaled inside its own box).
         memoryLine.color = .systemPurple
         memoryLine.ceiling = Self.memoryLimit
         memoryLine.clipsToBounds = true
@@ -665,21 +668,16 @@ final class MinimalAnalyticsViewController: UIViewController {
         memoryLine.heightAnchor.constraint(greaterThanOrEqualToConstant: 24).isActive = true
         memoryValue.adjustsFontSizeToFitWidth = true
         memoryValue.minimumScaleFactor = 0.6
-        memoryDetail.adjustsFontSizeToFitWidth = true
-        memoryDetail.minimumScaleFactor = 0.7
+        memoryDetail.textAlignment = .right
+        memoryDetail.setContentHuggingPriority(.required, for: .horizontal)
         let memoryNote = UILabel(L("2 мин · предел ≈ 50 МБ"), font: Theme.font(.caption2), color: .secondaryLabel)
-        memoryNote.adjustsFontSizeToFitWidth = true
-        memoryNote.minimumScaleFactor = 0.7
         let memory = AnalyticsCard(insets: UIEdgeInsets(top: 14, left: 14, bottom: 12, right: 14))
         memory.stack.alignment = .fill
         memory.stack.spacing = 4
-        for item in [small(L("Память ядра")), memoryValue, memoryDetail, memoryLine, memoryNote] as [UIView] { memory.stack.addArrangedSubview(item) }
-        memory.stack.setCustomSpacing(8, after: memoryDetail)
+        let memoryHead = UIStackView(.horizontal, spacing: 8, alignment: .center, [small(L("Память ядра")), UIView(), memoryDetail])
+        for item in [memoryHead, memoryValue, memoryLine, memoryNote] as [UIView] { memory.stack.addArrangedSubview(item) }
+        memory.stack.setCustomSpacing(8, after: memoryValue)
         memory.stack.setCustomSpacing(6, after: memoryLine)
-
-        let pair = UIStackView(.horizontal, spacing: 12, alignment: .fill, [routes, memory])
-        pair.distribution = .fillEqually
-        routes.heightAnchor.constraint(equalTo: routes.widthAnchor).isActive = true
 
         let routesNote = Classic.padded(UILabel(L("Показаны только соединения, полученные от ядра во время наблюдения; это не весь трафик сеанса."), font: Theme.font(.caption2), color: .secondaryLabel, lines: 0),
                                         UIEdgeInsets(top: 0, left: 6, bottom: 0, right: 6))
@@ -697,16 +695,20 @@ final class MinimalAnalyticsViewController: UIViewController {
         let content = UIStackView(.vertical, spacing: 8, alignment: .fill, [
             header, hero,
             AnalyticsGroup.caption(L("Сеанс")), session, tiles,
-            AnalyticsGroup.caption(L("Соединения")), connections, pair, routesNote,
+            routes, AnalyticsGroup.caption(L("Соединения")), connections, memory, routesNote,
             links,
         ])
-        // 4:2 — as tall as the square tiles under it. Only now: the two must
-        // already share a view (3.5 (271) tied them earlier and crashed at launch).
-        connections.heightAnchor.constraint(equalTo: routes.heightAnchor).isActive = true
+        // 4:2 — as tall as the square tiles. Only now: the views must already share
+        // a parent (3.5 (271) tied two of them earlier and crashed at launch).
+        routes.heightAnchor.constraint(equalTo: traffic.heightAnchor).isActive = true
+        memory.heightAnchor.constraint(equalTo: traffic.heightAnchor).isActive = true
         content.setCustomSpacing(6, after: header)
         content.setCustomSpacing(12, after: session)
+        content.setCustomSpacing(12, after: tiles)
+        content.setCustomSpacing(18, after: routes)
         content.setCustomSpacing(12, after: connections)
-        for view in [hero, tiles, routesNote] { content.setCustomSpacing(18, after: view) }
+        content.setCustomSpacing(10, after: memory)
+        for view in [hero, routesNote] { content.setCustomSpacing(18, after: view) }
         scroll.addSubview(content)
         content.translatesAutoresizingMaskIntoConstraints = false
         NSLayoutConstraint.activate([
@@ -778,9 +780,9 @@ final class MinimalAnalyticsViewController: UIViewController {
         return hero
     }
 
-    /// One half of the connections tile: its dot and name, the count now, the
-    /// highest count in the last minute; a tap opens the list.
-    private func connectionHalf(_ name: String, _ color: UIColor, _ count: UILabel, _ peak: UILabel, action: @escaping () -> Void) -> UIView {
+    /// A connections plate (2:2): its dot and name, the count now, the highest
+    /// count in the last minute; a tap opens the list.
+    private func connectionPlate(_ name: String, _ color: UIColor, _ count: UILabel, _ peak: UILabel, action: @escaping () -> Void) -> UIView {
         let dot = UIView()
         dot.backgroundColor = color
         dot.layer.cornerRadius = 4
@@ -795,14 +797,11 @@ final class MinimalAnalyticsViewController: UIViewController {
         count.minimumScaleFactor = 0.6
         peak.adjustsFontSizeToFitWidth = true
         peak.minimumScaleFactor = 0.7
-        let column = UIStackView(.vertical, spacing: 2, alignment: .fill, [head, UIView(), count, peak])
-        let box = UIView()
-        box.backgroundColor = UIColor.label.withAlphaComponent(0.045)
-        box.layer.cornerRadius = 14
-        box.layer.cornerCurve = .continuous
-        box.addSubview(column)
-        column.pin(to: box, insets: UIEdgeInsets(top: 12, left: 12, bottom: 12, right: 12))
-        return pressable(box, label: name, action: action)
+        let card = AnalyticsCard(insets: UIEdgeInsets(top: 14, left: 14, bottom: 14, right: 14))
+        card.stack.alignment = .fill
+        card.stack.spacing = 2
+        for item in [head, UIView(), count, peak] as [UIView] { card.stack.addArrangedSubview(item) }
+        return pressable(card, label: name, action: action)
     }
 
     /// Wraps a tile so the whole of it is one button.
@@ -922,16 +921,16 @@ final class MinimalAnalyticsViewController: UIViewController {
         for (index, route) in top.enumerated() {
             let dot = UIView()
             dot.backgroundColor = Self.routeColors[index % Self.routeColors.count]
-            dot.layer.cornerRadius = 3
+            dot.layer.cornerRadius = 4
             dot.translatesAutoresizingMaskIntoConstraints = false
-            NSLayoutConstraint.activate([dot.widthAnchor.constraint(equalToConstant: 6), dot.heightAnchor.constraint(equalToConstant: 6)])
-            let name = UILabel(route.key, font: Theme.font(.caption2))
+            NSLayoutConstraint.activate([dot.widthAnchor.constraint(equalToConstant: 8), dot.heightAnchor.constraint(equalToConstant: 8)])
+            let name = UILabel(route.key, font: Theme.font(.footnote))
             name.lineBreakMode = .byTruncatingTail
             name.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
-            let value = UILabel(Format.bytes(route.value), font: UIFont.monospacedDigitSystemFont(ofSize: Theme.font(.caption2).pointSize, weight: .regular), color: .secondaryLabel)
+            let value = UILabel(Format.bytes(route.value), font: UIFont.monospacedDigitSystemFont(ofSize: Theme.font(.footnote).pointSize, weight: .regular), color: .secondaryLabel)
             value.setContentHuggingPriority(.required, for: .horizontal)
             value.setContentCompressionResistancePriority(.required, for: .horizontal)
-            routeLegend.addArrangedSubview(UIStackView(.horizontal, spacing: 5, alignment: .center, [dot, name, UIView(), value]))
+            routeLegend.addArrangedSubview(UIStackView(.horizontal, spacing: 7, alignment: .center, [dot, name, UIView(), value]))
             routeValues.append(value)
         }
         routesEmpty.isHidden = !names.isEmpty

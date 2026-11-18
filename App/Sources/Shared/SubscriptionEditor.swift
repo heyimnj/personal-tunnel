@@ -5,6 +5,7 @@ import UIKit
 /// Nothing changes until the check mark: then the name is saved and a moved order
 /// becomes the manual order the server list shows (pinned servers stay on top).
 final class SubscriptionEditorViewController: UITableViewController {
+    private static let pinTag = 0x5054_7069
     private let subscriptionID: Int64
     private var name: String
     private var nodes: [ServerNode]
@@ -176,10 +177,22 @@ final class SubscriptionEditorViewController: UITableViewController {
             content.secondaryTextProperties.font = Theme.font(12)
             content.secondaryTextProperties.color = .secondaryLabel
             cell.contentConfiguration = content
+            // 3.5.2 (the owner): the pin lies in the row itself, not as the editing
+            // accessory — UIKit drew a line between an accessory and the handle.
+            cell.editingAccessoryView = nil
+            cell.contentView.viewWithTag(Self.pinTag)?.removeFromSuperview()
             if Prefs.arrangement.isPinned(Arrangement.server(subscriptionID, node.id)) {
                 let pin = UIImageView(image: UIImage(systemName: "pin.fill", withConfiguration: UIImage.SymbolConfiguration(pointSize: 12, weight: .semibold)))
                 pin.tintColor = Theme.accent
-                cell.editingAccessoryView = pin
+                pin.tag = Self.pinTag
+                pin.translatesAutoresizingMaskIntoConstraints = false
+                cell.contentView.addSubview(pin)
+                NSLayoutConstraint.activate([
+                    pin.trailingAnchor.constraint(equalTo: cell.contentView.trailingAnchor, constant: -8),
+                    pin.centerYAnchor.constraint(equalTo: cell.contentView.centerYAnchor),
+                ])
+                content.directionalLayoutMargins.trailing = 30
+                cell.contentConfiguration = content
             }
             cell.showsReorderControl = true
         }

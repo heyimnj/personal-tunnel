@@ -943,6 +943,7 @@ final class SurfaceView: UIView {
         header.isHidden = standalone
         plateColor = standalone ? Self.card : Self.blend(Self.card, Self.container, progress, traits: traitCollection)
         plate.backgroundColor = plateColor
+        plateShown = 0
         // The radius changes once, not every frame (a moving radius redraws the shape).
         let radius: CGFloat = progress > 0.001 ? 22 : 24
         if layer.cornerRadius != radius { layer.cornerRadius = radius; plate.layer.cornerRadius = radius }
@@ -976,9 +977,20 @@ final class SurfaceView: UIView {
         // of a scroll for nothing.
         // 3.5: the head's card comes in over most of the swipe, not in its first
         // 24 points: at an ordinary speed that was two frames, and the colour seemed to jump.
-        header.showCard(open ? Self.cardShown(pull, travel: header.railWidth) : 0, clipped: open && pull > 0.5)
+        let shown = open ? Self.cardShown(pull, travel: header.railWidth) : 0
+        header.showCard(shown, clipped: open && pull > 0.5)
         info.slide = open ? -pull : 0
+        // 3.5.2 (the owner): the shade spreads over the whole open card as the head is
+        // swiped, as the hold menu's does (the server cards stay as they are), on the
+        // same curve as the head's card — not over the head alone.
+        if abs(shown - plateShown) > 0.002 || (shown == 0 && plateShown != 0) {
+            plateShown = shown
+            plate.backgroundColor = shown > 0 ? Self.blend(plateColor, .label, 0.08 * shown, traits: traitCollection) : plateColor
+        }
     }
+
+    /// How far the swipe's colour has spread over the plate (0: the plate's own).
+    private var plateShown: CGFloat = 0
 
     /// How much of the open head's card shows at `pull`: eased in over the first
     /// two thirds of the way to the actions.
@@ -1604,7 +1616,13 @@ final class ServerListView: UIScrollView {
                 // and nothing else dims (3.5 beta 1–4 dimmed the rest of the sheet
                 // and kept the card bright: the wrong way round).
                 headerHeld(section.id, true)
-                onHold?(section.id, nil, point, (view: surface as UIView, rect: head, lift: CGRect.null)) { [weak self] in self?.headerHeld(section.id, false) }
+                // 3.5.2 (the owner: a little higher): the menu hangs under the title
+                // and the provider's line, over the filters.
+                var place = head
+                if isOpen(section.id), !section.tags.isEmpty, surface.filters.frame.height > 1 {
+                    place.size.height = max(Self.headerHeight, surface.filters.frame.minY)
+                }
+                onHold?(section.id, nil, point, (view: surface as UIView, rect: place, lift: CGRect.null)) { [weak self] in self?.headerHeld(section.id, false) }
             } else if let row = rows.values.first(where: { $0.superview === surface && $0.frame.contains(local) }) {
                 row.setHeld(true)
                 onHold?(section.id, row.key.node, point, (view: row.card as UIView, rect: row.card.bounds, lift: row.card.bounds)) { [weak row] in row?.setHeld(false) }
