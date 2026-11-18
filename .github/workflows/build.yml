@@ -7,11 +7,6 @@ on:
       - "**.md"
       - "handoff/**"
   workflow_dispatch:
-    inputs:
-      core_cache:
-        description: "Взять ядра (AppCore/Libbox) из кэша — только для проверочной сборки, не для беты и релиза"
-        type: boolean
-        default: false
 
 permissions:
   contents: read
@@ -125,53 +120,101 @@ jobs:
         id: pins
         run: echo "go=$(grep '^GO_VERSION=' core/VERSION | cut -d= -f2)" >> "$GITHUB_OUTPUT"
 
-      # 3.3 (PT-17): ядра, которые попадают в IPA, собираются заново в каждой сборке
-      # (push = бета или релиз); кэш — только по ручному запуску с core_cache.
+      # 3.5 (PT-17, п. 4): ядра берутся из кэша, только если их SHA256 совпадает с записью в
+      # core/FRAMEWORKS.sha256 (в репозитории, её пишет владелец ветки по итогам сборки с нуля).
+      # Нет записи или не совпало — ядро собирается заново, как в 3.3. Кэш пишет любой запуск
+      # workflow, поэтому сам по себе он не доверенный; доверенная — запись в репозитории.
+      - name: Ключи кэша ядер
+        id: keys
+        run: |
+          echo "appcore=appcore-v2-${{ runner.arch }}-${{ steps.xcode.outputs.stamp }}-${{ hashFiles('core/VERSION', 'core/patches/**', 'core/bridge/**', 'scripts/build-libbox.sh', 'scripts/core-env.sh') }}" >> "$GITHUB_OUTPUT"
+          echo "libbox=libbox-v2-${{ matrix.tunnel_core }}-${{ runner.arch }}-${{ steps.xcode.outputs.stamp }}-${{ hashFiles('core/VERSION', 'core/patches/**', 'core/bridge/**', 'scripts/build-libbox.sh', 'scripts/core-env.sh') }}" >> "$GITHUB_OUTPUT"
+
       - name: Кэш AppCore
         id: appcore
-        if: github.event_name == 'workflow_dispatch' && inputs.core_cache
         uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
         with:
           path: AppCore.xcframework
-          key: appcore-${{ runner.arch }}-${{ steps.xcode.outputs.stamp }}-${{ hashFiles('core/VERSION', 'core/patches/**', 'core/bridge/**', 'scripts/build-libbox.sh', 'scripts/core-env.sh') }}
+          key: ${{ steps.keys.outputs.appcore }}
 
       - name: Кэш Libbox
         id: libbox
-        if: github.event_name == 'workflow_dispatch' && inputs.core_cache
         uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
         with:
           path: Libbox.xcframework
-          key: libbox-${{ matrix.tunnel_core }}-${{ runner.arch }}-${{ steps.xcode.outputs.stamp }}-${{ hashFiles('core/VERSION', 'core/patches/**', 'core/bridge/**', 'scripts/build-libbox.sh', 'scripts/core-env.sh') }}
+          key: ${{ steps.keys.outputs.libbox }}
+
+      - name: Сверка ядер из кэша
+        id: trusted
+        env:
+          APPCORE_KEY: ${{ steps.keys.outputs.appcore }}
+          LIBBOX_KEY: ${{ steps.keys.outputs.libbox }}
+          APPCORE_HIT: ${{ steps.appcore.outputs.cache-hit }}
+          LIBBOX_HIT: ${{ steps.libbox.outputs.cache-hit }}
+        run: |
+          set -euo pipefail
+          check() {
+            local name="$1" dir="$2" key="$3" hit="$4"
+            if [ "$hit" != "true" ] || [ ! -d "$dir" ]; then
+              echo "$name: в кэше нет — собирается заново"
+              echo "$name=false" >> "$GITHUB_OUTPUT"
+              return
+            fi
+            local sum want
+            sum="$(bash scripts/framework-hash.sh "$dir")"
+            want="$(awk -v k="$key" '$1 == k { print $2 }' core/FRAMEWORKS.sha256 2>/dev/null || true)"
+            if [ -n "$want" ] && [ "$sum" = "$want" ]; then
+              echo "$name: из кэша, SHA256 совпал с core/FRAMEWORKS.sha256 ($sum)"
+              echo "$name=true" >> "$GITHUB_OUTPUT"
+            else
+              echo "::warning::$name из кэша не сверен (${want:-нет записи} / $sum) — собирается заново"
+              rm -rf "$dir"
+              echo "$name=false" >> "$GITHUB_OUTPUT"
+            fi
+          }
+          check appcore AppCore.xcframework "$APPCORE_KEY" "$APPCORE_HIT"
+          check libbox Libbox.xcframework "$LIBBOX_KEY" "$LIBBOX_HIT"
 
       - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5.6.0
-        if: steps.libbox.outputs.cache-hit != 'true' || steps.appcore.outputs.cache-hit != 'true'
+        if: steps.trusted.outputs.libbox != 'true' || steps.trusted.outputs.appcore != 'true'
         with:
           go-version: ${{ steps.pins.outputs.go }}
           cache: false
 
       - name: Сборка AppCore (приложение)
-        if: steps.appcore.outputs.cache-hit != 'true'
+        if: steps.trusted.outputs.appcore != 'true'
         run: bash scripts/build-libbox.sh app
 
       - name: Сохранить AppCore
-        if: steps.appcore.outputs.cache-hit != 'true'
+        if: steps.trusted.outputs.appcore != 'true'
         continue-on-error: true
         uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
         with:
           path: AppCore.xcframework
-          key: appcore-${{ runner.arch }}-${{ steps.xcode.outputs.stamp }}-${{ hashFiles('core/VERSION', 'core/patches/**', 'core/bridge/**', 'scripts/build-libbox.sh', 'scripts/core-env.sh') }}
+          key: ${{ steps.keys.outputs.appcore }}
 
       - name: Сборка Libbox (расширение)
-        if: steps.libbox.outputs.cache-hit != 'true'
+        if: steps.trusted.outputs.libbox != 'true'
         run: bash scripts/build-libbox.sh tunnel
 
       - name: Сохранить Libbox
-        if: steps.libbox.outputs.cache-hit != 'true'
+        if: steps.trusted.outputs.libbox != 'true'
         continue-on-error: true
         uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
         with:
           path: Libbox.xcframework
-          key: libbox-${{ matrix.tunnel_core }}-${{ runner.arch }}-${{ steps.xcode.outputs.stamp }}-${{ hashFiles('core/VERSION', 'core/patches/**', 'core/bridge/**', 'scripts/build-libbox.sh', 'scripts/core-env.sh') }}
+          key: ${{ steps.keys.outputs.libbox }}
+
+      # Строки для core/FRAMEWORKS.sha256: ключ кэша и SHA256 ядра этой сборки.
+      - name: Суммы ядер
+        env:
+          APPCORE_KEY: ${{ steps.keys.outputs.appcore }}
+          LIBBOX_KEY: ${{ steps.keys.outputs.libbox }}
+        run: |
+          set -euo pipefail
+          mkdir -p build
+          { echo "$APPCORE_KEY $(bash scripts/framework-hash.sh AppCore.xcframework)"
+            echo "$LIBBOX_KEY $(bash scripts/framework-hash.sh Libbox.xcframework)"; } | tee build/frameworks.sha256
 
       - name: Проект Xcode
         run: |
@@ -243,6 +286,7 @@ jobs:
             build/SHA256SUMS
             build/source-commit.txt
             build/core.txt
+            build/frameworks.sha256
           if-no-files-found: error
           retention-days: 14
 
