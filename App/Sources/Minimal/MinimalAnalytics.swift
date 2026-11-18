@@ -156,6 +156,218 @@ final class MeterBar: UIView {
     }
 }
 
+/// A ring split between parts (3.2.12): the session's traffic, download against
+/// upload, with the total in the middle.
+final class RingChart: UIView {
+    var parts: [(value: Double, color: UIColor)] = [] { didSet { setNeedsDisplay() } }
+    var lineWidth: CGFloat = 11
+
+    override init(frame: CGRect) {
+        super.init(frame: frame)
+        backgroundColor = .clear
+        contentMode = .redraw
+        isOpaque = false
+    }
+
+    @available(*, unavailable)
+    required init?(coder _: NSCoder) { fatalError() }
+
+    override func draw(_: CGRect) {
+        guard let context = UIGraphicsGetCurrentContext() else { return }
+        let radius = min(bounds.width, bounds.height) / 2 - lineWidth / 2
+        let center = CGPoint(x: bounds.midX, y: bounds.midY)
+        context.setLineWidth(lineWidth)
+        context.setLineCap(.round)
+        context.setStrokeColor(UIColor.label.withAlphaComponent(0.07).cgColor)
+        context.addArc(center: center, radius: radius, startAngle: 0, endAngle: .pi * 2, clockwise: false)
+        context.strokePath()
+        let shown = parts.filter { $0.value > 0 }
+        let total = shown.reduce(0) { $0 + $1.value }
+        guard total > 0 else { return }
+        // A small gap between parts, where the round caps meet.
+        let gap = shown.count > 1 ? lineWidth / radius * 1.1 : 0
+        var angle = -CGFloat.pi / 2
+        for part in shown {
+            let sweep = CGFloat(part.value / total) * .pi * 2
+            let drawn = max(0.001, sweep - gap)
+            context.setStrokeColor(part.color.cgColor)
+            context.addArc(center: center, radius: radius, startAngle: angle + gap / 2, endAngle: angle + gap / 2 + drawn, clockwise: false)
+            context.strokePath()
+            angle += sweep
+        }
+    }
+}
+
+/// A half-circle gauge (3.2.12): the connected server's delay. Its track is
+/// tinted green, orange and red where those values lie; the arc fills up to the
+/// value in its own colour and a dot marks the end.
+final class GaugeView: UIView {
+    /// The value and the scale's end; nil: no value (only the track).
+    var value: Double? { didSet { setNeedsDisplay() } }
+    var maximum: Double = 600
+    /// Where the colours change, ascending, with the colour below each.
+    var zones: [(upTo: Double, color: UIColor)] = [(150, .systemGreen), (400, .systemOrange), (.infinity, .systemRed)]
+    var lineWidth: CGFloat = 10
+
+    override init(frame: CGRect) {
+        super.init(frame: frame)
+        backgroundColor = .clear
+        contentMode = .redraw
+        isOpaque = false
+    }
+
+    @available(*, unavailable)
+    required init?(coder _: NSCoder) { fatalError() }
+
+    func color(for value: Double) -> UIColor {
+        zones.first { value <= $0.upTo }?.color ?? .systemRed
+    }
+
+    override func draw(_: CGRect) {
+        guard let context = UIGraphicsGetCurrentContext() else { return }
+        let radius = min(bounds.width / 2, bounds.height) - lineWidth / 2 - 1
+        let center = CGPoint(x: bounds.midX, y: bounds.maxY - 1)
+        func angle(_ v: Double) -> CGFloat { .pi + CGFloat(min(max(v / maximum, 0), 1)) * .pi }
+        context.setLineWidth(lineWidth)
+        context.setLineCap(.round)
+        // The track, tinted by zone.
+        var start = 0.0
+        for zone in zones {
+            let end = min(zone.upTo, maximum)
+            guard end > start else { continue }
+            context.setStrokeColor(zone.color.withAlphaComponent(0.16).cgColor)
+            context.setLineCap(.butt)
+            context.addArc(center: center, radius: radius, startAngle: angle(start), endAngle: angle(end), clockwise: false)
+            context.strokePath()
+            start = end
+        }
+        guard let value else { return }
+        let tint = color(for: value)
+        context.setLineCap(.round)
+        context.setStrokeColor(tint.cgColor)
+        context.addArc(center: center, radius: radius, startAngle: .pi, endAngle: max(.pi + 0.001, angle(value)), clockwise: false)
+        context.strokePath()
+        let tip = CGPoint(x: center.x + radius * cos(angle(value)), y: center.y + radius * sin(angle(value)))
+        let dot = lineWidth * 0.42
+        context.setFillColor(UIColor.white.cgColor)
+        context.fillEllipse(in: CGRect(x: tip.x - dot, y: tip.y - dot, width: dot * 2, height: dot * 2))
+    }
+}
+
+/// An area line over time (3.2.12): the core's memory in the last two minutes,
+/// scaled to the extension's limit, which shows as a dashed line when it is near.
+final class SparklineView: UIView {
+    var values: [Double] = [] { didSet { setNeedsDisplay() } }
+    var capacity = 120
+    var color: UIColor = .systemPurple { didSet { setNeedsDisplay() } }
+    /// The top of the scale; the line of the limit is drawn when values reach half of it.
+    var ceiling: Double = 1
+
+    override init(frame: CGRect) {
+        super.init(frame: frame)
+        backgroundColor = .clear
+        contentMode = .redraw
+        isOpaque = false
+    }
+
+    @available(*, unavailable)
+    required init?(coder _: NSCoder) { fatalError() }
+
+    override func draw(_: CGRect) {
+        guard let context = UIGraphicsGetCurrentContext() else { return }
+        let peak = values.max() ?? 0
+        // Scaled to what is drawn, with room above; the limit only when it matters.
+        let top = max(peak * 1.25, ceiling * 0.5, 1)
+        let showsLimit = peak > ceiling * 0.5
+        let scale = showsLimit ? max(top, ceiling * 1.05) : top
+        let height = bounds.height - 2
+        func y(_ v: Double) -> CGFloat { bounds.height - 1 - CGFloat(v / scale) * height }
+        if showsLimit {
+            context.setStrokeColor(UIColor.systemRed.withAlphaComponent(0.5).cgColor)
+            context.setLineWidth(1)
+            context.setLineDash(phase: 0, lengths: [3, 3])
+            context.move(to: CGPoint(x: 0, y: y(ceiling)))
+            context.addLine(to: CGPoint(x: bounds.width, y: y(ceiling)))
+            context.strokePath()
+            context.setLineDash(phase: 0, lengths: [])
+        }
+        guard values.count > 1 else { return }
+        let step = bounds.width / CGFloat(max(1, capacity - 1))
+        let offset = CGFloat(capacity - values.count) * step
+        let line = UIBezierPath()
+        for (index, value) in values.enumerated() {
+            let point = CGPoint(x: offset + CGFloat(index) * step, y: y(value))
+            if index == 0 { line.move(to: point) } else { line.addLine(to: point) }
+        }
+        let area = UIBezierPath(cgPath: line.cgPath)
+        area.addLine(to: CGPoint(x: bounds.width, y: bounds.height))
+        area.addLine(to: CGPoint(x: offset, y: bounds.height))
+        area.close()
+        context.saveGState()
+        context.addPath(area.cgPath)
+        context.clip()
+        let colors = [color.withAlphaComponent(0.3).cgColor, color.withAlphaComponent(0).cgColor] as CFArray
+        if let gradient = CGGradient(colorsSpace: CGColorSpaceCreateDeviceRGB(), colors: colors, locations: [0, 1]) {
+            context.drawLinearGradient(gradient, start: .zero, end: CGPoint(x: 0, y: bounds.height), options: [])
+        }
+        context.restoreGState()
+        context.setStrokeColor(color.cgColor)
+        context.setLineWidth(2)
+        context.setLineJoin(.round)
+        context.addPath(line.cgPath)
+        context.strokePath()
+    }
+}
+
+/// Columns over time, two series stacked (3.2.12): the open TCP and UDP
+/// connections in the last minute, a column every two seconds.
+final class ColumnsView: UIView {
+    var lower: [Int] = [] { didSet { setNeedsDisplay() } }
+    var upper: [Int] = [] { didSet { setNeedsDisplay() } }
+    var lowerColor: UIColor = .systemIndigo
+    var upperColor: UIColor = .systemOrange
+    var columns = 30
+
+    override init(frame: CGRect) {
+        super.init(frame: frame)
+        backgroundColor = .clear
+        contentMode = .redraw
+        isOpaque = false
+    }
+
+    @available(*, unavailable)
+    required init?(coder _: NSCoder) { fatalError() }
+
+    override func draw(_: CGRect) {
+        guard let context = UIGraphicsGetCurrentContext() else { return }
+        let count = min(lower.count, upper.count)
+        let gap: CGFloat = 3
+        let width = (bounds.width - gap * CGFloat(columns - 1)) / CGFloat(columns)
+        let peak = CGFloat(max(4, zip(lower, upper).map { $0 + $1 }.max() ?? 0))
+        // Empty places first: the columns come in from the right.
+        for slot in 0 ..< columns {
+            let x = CGFloat(slot) * (width + gap)
+            let index = count - columns + slot
+            context.setFillColor(UIColor.label.withAlphaComponent(0.05).cgColor)
+            context.addPath(UIBezierPath(roundedRect: CGRect(x: x, y: 0, width: width, height: bounds.height), cornerRadius: min(3, width / 2)).cgPath)
+            context.fillPath()
+            guard index >= 0 else { continue }
+            let below = CGFloat(lower[index]) / peak * bounds.height
+            let above = CGFloat(upper[index]) / peak * bounds.height
+            let column = CGRect(x: x, y: bounds.height - below - above, width: width, height: below + above)
+            guard column.height > 0.5 else { continue }
+            context.saveGState()
+            context.addPath(UIBezierPath(roundedRect: column, cornerRadius: min(3, width / 2)).cgPath)
+            context.clip()
+            context.setFillColor(upperColor.cgColor)
+            context.fill(CGRect(x: x, y: column.minY, width: width, height: above))
+            context.setFillColor(lowerColor.cgColor)
+            context.fill(CGRect(x: x, y: bounds.height - below, width: width, height: below))
+            context.restoreGState()
+        }
+    }
+}
+
 /// A grouped card of rows, as the settings draw them (3.2.12, the owner's
 /// «вариант A»): a list a glance runs down, with small charts where they help.
 final class AnalyticsGroup: UIView {
@@ -260,10 +472,17 @@ final class MinimalAnalyticsViewController: UIViewController {
     private let graph = SpeedGraphView()
     private let graphHint = UILabel(L("Данные появятся после подключения"), font: Theme.font(.caption1), color: .secondaryLabel)
     private let sessionRow = AnalyticsRow(L("Сеанс"))
-    private let trafficRow = AnalyticsRow(L("Трафик"), meter: true)
-    private let delayRow = AnalyticsRow(L("Задержка"), meter: true)
-    private let memoryRow = AnalyticsRow(L("Память ядра"), meter: true)
-    private let connectionsMeter = MeterBar()
+    // 3.2.12: each measure drawn its own way — a ring, a gauge, a line, columns.
+    private let trafficRing = RingChart()
+    private let trafficTotal = UILabel(font: UIFont.monospacedDigitSystemFont(ofSize: Theme.font(.subheadline).pointSize, weight: .semibold))
+    private let downTotal = UILabel(font: UIFont.monospacedDigitSystemFont(ofSize: Theme.font(.body).pointSize, weight: .semibold))
+    private let upTotal = UILabel(font: UIFont.monospacedDigitSystemFont(ofSize: Theme.font(.body).pointSize, weight: .semibold))
+    private let delayGauge = GaugeView()
+    private let delayValue = UILabel(font: UIFont.monospacedDigitSystemFont(ofSize: 28, weight: .semibold))
+    private let delayCaption = UILabel(font: Theme.font(.footnote), color: .secondaryLabel, lines: 2)
+    private let memoryLine = SparklineView()
+    private let memoryValue = UILabel(font: UIFont.monospacedDigitSystemFont(ofSize: Theme.font(.body).pointSize, weight: .regular), color: .secondaryLabel)
+    private let columns = ColumnsView()
     private var tcpRow: AnalyticsRow!
     private var udpRow: AnalyticsRow!
     private let routesMeter = MeterBar()
@@ -387,15 +606,62 @@ final class MinimalAnalyticsViewController: UIViewController {
         hero.setCustomSpacing(18, after: speeds)
         hero.setCustomSpacing(6, after: graphHolder)
 
-        let session = AnalyticsGroup()
-        session.add([sessionRow, trafficRow, delayRow, memoryRow])
+        func block(_ views: [UIView], spacing: CGFloat = 10) -> UIView {
+            Classic.padded(UIStackView(.vertical, spacing: spacing, alignment: .fill, views), UIEdgeInsets(top: 14, left: 0, bottom: 14, right: 0))
+        }
+        func small(_ text: String) -> UILabel { UILabel(text, font: Theme.font(.subheadline, .medium), color: .secondaryLabel) }
+        func legend(_ symbol: String, _ caption: String, _ color: UIColor, _ amount: UILabel) -> UIView {
+            let icon = UIImageView(image: UIImage(systemName: symbol, withConfiguration: UIImage.SymbolConfiguration(font: Theme.font(.footnote, .bold))))
+            icon.tintColor = color
+            let top = UIStackView(.horizontal, spacing: 4, alignment: .center, [icon, UILabel(caption, font: Theme.font(.footnote), color: .secondaryLabel)])
+            return UIStackView(.vertical, spacing: 2, alignment: .leading, [top, amount])
+        }
 
+        // The session's traffic: a ring, the total inside.
+        trafficRing.translatesAutoresizingMaskIntoConstraints = false
+        NSLayoutConstraint.activate([trafficRing.widthAnchor.constraint(equalToConstant: 92), trafficRing.heightAnchor.constraint(equalToConstant: 92)])
+        trafficTotal.textAlignment = .center
+        trafficTotal.adjustsFontSizeToFitWidth = true
+        trafficTotal.minimumScaleFactor = 0.6
+        trafficRing.addSubview(trafficTotal)
+        trafficTotal.translatesAutoresizingMaskIntoConstraints = false
+        NSLayoutConstraint.activate([
+            trafficTotal.centerXAnchor.constraint(equalTo: trafficRing.centerXAnchor), trafficTotal.centerYAnchor.constraint(equalTo: trafficRing.centerYAnchor),
+            trafficTotal.widthAnchor.constraint(equalToConstant: 64),
+        ])
+        let trafficLegend = UIStackView(.vertical, spacing: 12, alignment: .leading, [
+            legend("arrow.down", L("Загрузка"), SpeedGraphView.downColor, downTotal), legend("arrow.up", L("Отдача"), SpeedGraphView.upColor, upTotal),
+        ])
+        let traffic = block([small(L("Трафик за сеанс")), UIStackView(.horizontal, spacing: 22, alignment: .center, [trafficRing, trafficLegend, UIView()])])
+
+        // The delay: a half-circle gauge.
+        delayGauge.translatesAutoresizingMaskIntoConstraints = false
+        NSLayoutConstraint.activate([delayGauge.widthAnchor.constraint(equalToConstant: 132), delayGauge.heightAnchor.constraint(equalToConstant: 70)])
+        delayValue.adjustsFontSizeToFitWidth = true
+        delayValue.minimumScaleFactor = 0.6
+        let delayText = UIStackView(.vertical, spacing: 2, alignment: .leading, [delayValue, delayCaption])
+        let delay = block([small(L("Задержка")), UIStackView(.horizontal, spacing: 16, alignment: .center, [delayText, UIView(), delayGauge])])
+
+        let session = AnalyticsGroup()
+        session.add([sessionRow, traffic, delay])
+
+        // The core's memory: its line over two minutes.
+        memoryLine.color = .systemPurple
+        memoryLine.ceiling = Self.memoryLimit
+        memoryLine.heightAnchor.constraint(equalToConstant: 64).isActive = true
+        memoryValue.textAlignment = .right
+        let core = AnalyticsGroup()
+        core.add([block([UIStackView(.horizontal, spacing: 8, alignment: .center, [small(L("Память ядра")), UIView(), memoryValue]), memoryLine,
+                         UILabel(L("За 2 минуты. Предел расширения — около 50 МБ."), font: Theme.font(.caption2), color: .secondaryLabel, lines: 0)])])
+
+        // Connections: columns over the last minute, TCP under UDP.
+        columns.lowerColor = Self.tcpColor
+        columns.upperColor = Self.udpColor
+        columns.heightAnchor.constraint(equalToConstant: 64).isActive = true
         let connections = AnalyticsGroup()
         tcpRow = AnalyticsRow("TCP", dot: Self.tcpColor) { [weak self] in self?.present(ConnectionsViewController.wrapped(udp: false), animated: true) }
         udpRow = AnalyticsRow("UDP", dot: Self.udpColor) { [weak self] in self?.present(ConnectionsViewController.wrapped(udp: true), animated: true) }
-        connections.add([Classic.padded(connectionsMeter, UIEdgeInsets(top: 14, left: 0, bottom: 4, right: 0)), tcpRow, udpRow])
-        // The meter and the first row are one block: no line between them.
-        if connections.stack.arrangedSubviews.count > 1 { connections.stack.arrangedSubviews[1].isHidden = true }
+        connections.add([block([columns, UILabel(L("Открытые соединения за минуту"), font: Theme.font(.caption2), color: .secondaryLabel)], spacing: 8), tcpRow, udpRow])
 
         routes.add([Classic.padded(routesMeter, UIEdgeInsets(top: 14, left: 0, bottom: 4, right: 0)), Classic.padded(routesEmpty, UIEdgeInsets(top: 10, left: 0, bottom: 12, right: 0))])
         if routes.stack.arrangedSubviews.count > 1 { routes.stack.arrangedSubviews[1].isHidden = true }
@@ -419,12 +685,13 @@ final class MinimalAnalyticsViewController: UIViewController {
         let content = UIStackView(.vertical, spacing: 8, alignment: .fill, [
             header, hero,
             AnalyticsGroup.caption(L("Сеанс")), session,
+            AnalyticsGroup.caption(L("Ядро")), core,
             AnalyticsGroup.caption(L("Соединения")), connections,
             AnalyticsGroup.caption(L("Маршруты")), routes, routesNote,
             links,
         ])
         content.setCustomSpacing(10, after: header)
-        for view in [hero, session, connections, routesNote] { content.setCustomSpacing(26, after: view) }
+        for view in [hero, session, core, connections, routesNote] { content.setCustomSpacing(26, after: view) }
         scroll.addSubview(content)
         content.translatesAutoresizingMaskIntoConstraints = false
         NSLayoutConstraint.activate([
@@ -434,13 +701,17 @@ final class MinimalAnalyticsViewController: UIViewController {
             content.trailingAnchor.constraint(equalTo: scroll.frameLayoutGuide.trailingAnchor, constant: -20),
         ])
 
-        let core = App.shared.core
-        core.status.observe(self) { [weak self] in self?.show($0) }
-        core.history.observe(self) { [weak self] history in
+        let client = App.shared.core
+        client.status.observe(self) { [weak self] in self?.show($0) }
+        client.history.observe(self) { [weak self] history in
             guard let self, self.visible else { return }
             self.graph.history = history
         }
-        core.connections.observe(self) { [weak self] connections in
+        client.samples.observe(self) { [weak self] samples in
+            guard let self, self.visible else { return }
+            self.show(samples)
+        }
+        client.connections.observe(self) { [weak self] connections in
             guard let self, self.visible else { return }
             self.show(connections)
         }
@@ -479,6 +750,7 @@ final class MinimalAnalyticsViewController: UIViewController {
             // The first redraw in two steps: the graph and the session now, the
             // lists (views built) on the next turn of the run loop.
             graph.history = App.shared.core.history.value
+            show(App.shared.core.samples.value)
             DispatchQueue.main.async { [weak self] in
                 guard let self, self.visible else { return }
                 self.show(App.shared.core.connections.value)
@@ -507,18 +779,12 @@ final class MinimalAnalyticsViewController: UIViewController {
         downUnit.text = down.1
         upSpeed.text = status == nil ? "—" : ((status?.uplink ?? 0) > 0 ? up.0 : "0")
         upUnit.text = up.1
-        let downTotal = status?.downlinkTotal ?? 0, upTotal = status?.uplinkTotal ?? 0
-        trafficRow.value.text = status == nil ? "—" : "↓ \(Format.bytes(downTotal))  ↑ \(Format.bytes(upTotal))"
-        trafficRow.meter?.parts = [(Double(downTotal), SpeedGraphView.downColor), (Double(upTotal), SpeedGraphView.upColor)]
-        if let status {
-            memoryRow.value.text = Format.bytes(status.memory) + " · \(status.goroutines) goroutines"
-            let share = Double(status.memory) / Self.memoryLimit
-            memoryRow.meter?.total = Self.memoryLimit
-            memoryRow.meter?.parts = [(Double(status.memory), share < 0.6 ? .systemGreen : (share < 0.8 ? .systemOrange : .systemRed))]
-        } else {
-            memoryRow.value.text = L("Ядро не запущено")
-            memoryRow.meter?.parts = []
-        }
+        let down = status?.downlinkTotal ?? 0, up = status?.uplinkTotal ?? 0
+        downTotal.text = status == nil ? "—" : Format.bytes(down)
+        upTotal.text = status == nil ? "—" : Format.bytes(up)
+        trafficTotal.text = status == nil ? "—" : Format.bytes(down + up)
+        trafficRing.parts = [(Double(down), SpeedGraphView.downColor), (Double(up), SpeedGraphView.upColor)]
+        memoryValue.text = status.map { Format.bytes($0.memory) + " · \($0.goroutines) goroutines" } ?? L("Ядро не запущено")
         graphHint.isHidden = status != nil
     }
 
@@ -531,7 +797,6 @@ final class MinimalAnalyticsViewController: UIViewController {
         let tcpText = "\(connections.tcp)", udpText = "\(connections.udp)"
         if tcpRow.value.text != tcpText { tcpRow.value.text = tcpText }
         if udpRow.value.text != udpText { udpRow.value.text = udpText }
-        connectionsMeter.parts = [(Double(connections.tcp), Self.tcpColor), (Double(connections.udp), Self.udpColor)]
         let top = Array(connections.routes.sorted { $0.value > $1.value }.prefix(Self.routeRowsShown))
         routesMeter.parts = top.enumerated().map { (Double($1.value), Self.routeColors[$0 % Self.routeColors.count]) }
         let names = top.map(\.key)
@@ -558,29 +823,39 @@ final class MinimalAnalyticsViewController: UIViewController {
         routesEmpty.superview?.isHidden = !names.isEmpty
     }
 
+    /// The memory line and the connection columns (a column per two seconds).
+    private func show(_ samples: CoreSamples) {
+        memoryLine.values = samples.memory.map(Double.init)
+        let count = samples.tcp.count
+        let picked = stride(from: count % 2 == 0 ? 1 : 0, to: count, by: 2).map { $0 }.suffix(columns.columns)
+        columns.lower = picked.map { samples.tcp[$0] }
+        columns.upper = picked.map { samples.udp[$0] }
+    }
+
     private func showDelay() {
         let library = App.shared.library
-        var milliseconds: Int?
+        let kind = Prefs.pingMode == "alternative" ? "HTTP" : "HTTPS"
         if let subscription = library.activeSubscription, let node = library.activeNode,
            let entry = App.shared.latency.entry(subscription.id, node.id)
         {
+            let name = App.shared.store.label(of: node, in: subscription).text
             switch entry.result {
             case let .delay(value):
-                milliseconds = value
-                delayRow.value.text = "\(value) ms"
-            case let .failed(reason): delayRow.value.text = reason.title
+                delayValue.text = "\(value) ms"
+                delayValue.textColor = delayGauge.color(for: Double(value))
+                delayGauge.value = Double(value)
+            case let .failed(reason):
+                delayValue.text = reason.title
+                delayValue.textColor = .systemRed
+                delayGauge.value = nil
             }
+            delayCaption.text = Lf("%@ до «%@»", kind, name)
         } else {
-            delayRow.value.text = "—"
+            delayValue.text = "—"
+            delayValue.textColor = .label
+            delayGauge.value = nil
+            delayCaption.text = kind
         }
-        // Fills against 600 ms: green up to 150, orange up to 400, red beyond.
-        if let milliseconds {
-            delayRow.meter?.total = 600
-            delayRow.meter?.parts = [(Double(min(milliseconds, 600)), milliseconds <= 150 ? .systemGreen : (milliseconds <= 400 ? .systemOrange : .systemRed))]
-        } else {
-            delayRow.meter?.parts = []
-        }
-        delayRow.title.text = L("Задержка") + " · " + (Prefs.pingMode == "alternative" ? "HTTP" : "HTTPS")
     }
 }
 

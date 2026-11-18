@@ -683,3 +683,8 @@
 "Сеанс" = "Session";
 "Соединения" = "Connections";
 "Маршруты" = "Routes";
+"Трафик за сеанс" = "Session traffic";
+"За 2 минуты. Предел расширения — около 50 МБ." = "Over 2 minutes. The extension's limit is about 50 MB.";
+"Открытые соединения за минуту" = "Open connections over a minute";
+"%@ до «%@»" = "%@ to «%@»";
+"Сервер не отвечает" = "Server not responding";

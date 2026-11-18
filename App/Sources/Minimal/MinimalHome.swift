@@ -429,8 +429,10 @@ final class MinimalConnectionView: UIView {
 
     private let button = TapControl()
     private let buttonGlass = ControlGlassView(circle: true, opacityKey: Prefs.buttonOpacityKey)
-    private let power = UIImageView(image: UIImage(systemName: "power", withConfiguration: UIImage.SymbolConfiguration(pointSize: 44, weight: .regular)))
-    private let dot = UIView()
+    /// 3.2.12: a switch of our own in place of the power symbol, and a ring round
+    /// the button in place of the dot under it.
+    private let power = SwitchGlyph()
+    private let ring = ConnectionRing()
     private let spinner = UIActivityIndicatorView(style: .medium)
     private let status = UILabel(font: Theme.font(.headline), color: .secondaryLabel)
     private lazy var statusRow = UIStackView(.horizontal, spacing: 8, alignment: .center, [spinner, status])
@@ -439,17 +441,14 @@ final class MinimalConnectionView: UIView {
     private let flag = UILabel(font: .systemFont(ofSize: 21))
     private let mark = UIImageView(image: MinimalIcons.home)
     private let name = UILabel(font: Theme.font(17, .medium))
-    private let chevron = UIImageView()
-    private lazy var capsuleRow = UIStackView(.horizontal, spacing: 8, alignment: .center, [flag, mark, name, UIView(), chevron])
+    /// 3.2.12: no up-and-down chevrons at the end (the owner's choice).
+    private lazy var capsuleRow = UIStackView(.horizontal, spacing: 8, alignment: .center, [flag, mark, name, UIView()])
 
     override init(frame: CGRect) {
         super.init(frame: frame)
         button.ripple = true
         button.addSubview(buttonGlass)
-        power.tintColor = .label
-        power.contentMode = .scaleAspectFit
-        dot.layer.cornerRadius = 2.5
-        for view in [power, dot] as [UIView] {
+        for view in [ring, power] as [UIView] {
             view.isUserInteractionEnabled = false
             button.addSubview(view)
         }
@@ -472,8 +471,6 @@ final class MinimalConnectionView: UIView {
             NSLayoutConstraint.activate([view.widthAnchor.constraint(equalToConstant: 26), view.heightAnchor.constraint(equalToConstant: 26)])
         }
         name.lineBreakMode = .byTruncatingTail
-        chevron.tintColor = UIColor.label.withAlphaComponent(0.7)
-        chevron.setContentHuggingPriority(.required, for: .horizontal)
         capsuleRow.isUserInteractionEnabled = false
         capsule.addSubview(capsuleRow)
         capsule.onTap = { [weak self] in Haptics.tap(); self?.onChooseServer?() }
@@ -481,6 +478,7 @@ final class MinimalConnectionView: UIView {
         for view in [button, statusRow, capsule] as [UIView] { addSubview(view) }
         restyle()
         App.shared.tunnel.state.observe(self) { [weak self] in self?.show($0) }
+        App.shared.health.state.observe(self, fireNow: false) { [weak self] _ in self?.showRing(animated: true) }
         App.shared.store.library.observe(self) { [weak self] _ in self?.showServer() }
         Prefs.appearanceChanged.observe(self) { [weak self] in
             self?.restyle()
@@ -495,7 +493,6 @@ final class MinimalConnectionView: UIView {
         status.font = Theme.font(.headline)
         name.font = Theme.font(17, .medium)
         name.textColor = Theme.text
-        chevron.image = UIImage(systemName: "chevron.up.chevron.down", withConfiguration: UIImage.SymbolConfiguration(font: Theme.font(12, .semibold)))
         setNeedsLayout()
     }
 
@@ -518,10 +515,9 @@ final class MinimalConnectionView: UIView {
         button.bounds = CGRect(x: 0, y: 0, width: side, height: side)
         button.center = CGPoint(x: bounds.midX, y: top + side / 2)
         buttonGlass.frame = button.bounds
-        let glyph = power.image?.size ?? CGSize(width: 1, height: 1)
-        let glyphWidth = 40 * glyph.width / max(glyph.height, 1)
-        power.frame = CGRect(x: (side - glyphWidth) / 2, y: (side - 40) / 2, width: glyphWidth, height: 40)
-        dot.frame = CGRect(x: side / 2 - 2.5, y: side / 2 + 45 - 2.5, width: 5, height: 5)
+        let glyph = SwitchGlyph.size
+        power.frame = CGRect(x: (side - glyph.width) / 2, y: (side - glyph.height) / 2, width: glyph.width, height: glyph.height)
+        ring.frame = button.bounds
         statusRow.frame = CGRect(x: bounds.midX - statusSize.width / 2, y: top + side + 20, width: statusSize.width, height: statusSize.height)
         // bounds and center, never frame: the press scales the capsule, and a frame
         // set under a transform moved it (the jump on tap).
@@ -533,16 +529,42 @@ final class MinimalConnectionView: UIView {
 
     private func show(_ state: TunnelState) {
         switch state {
-        case .connected: status.text = L("Подключено"); dot.backgroundColor = Theme.connected
-        case .connecting: status.text = L("Подключение…"); dot.backgroundColor = .systemOrange
-        case .disconnecting: status.text = L("Отключение…"); dot.backgroundColor = .systemOrange
-        case .reasserting: status.text = L("Смена сервера…"); dot.backgroundColor = .systemOrange
-        case .disconnected: status.text = L("Не подключено"); dot.backgroundColor = UIColor.systemGray.withAlphaComponent(0.8)
+        case .connected: status.text = L("Подключено")
+        case .connecting: status.text = L("Подключение…")
+        case .disconnecting: status.text = L("Отключение…")
+        case .reasserting: status.text = L("Смена сервера…")
+        case .disconnected: status.text = L("Не подключено")
         }
+        // The switch is on from the moment the tunnel is asked to come up.
+        power.set(on: state == .connecting || state.isOn, animated: window != nil)
+        showRing(animated: window != nil)
         if state.isBusy { spinner.startAnimating() } else { spinner.stopAnimating() }
         button.accessibilityLabel = state.isOn ? L("Отключить") : L("Подключить")
         button.accessibilityValue = status.text
         setNeedsLayout()
+    }
+
+    private func showRing(animated: Bool) {
+        let look: ConnectionRing.Look
+        switch App.shared.tunnel.state.value {
+        case .disconnected: look = .off
+        case .connecting, .disconnecting, .reasserting: look = .working
+        // Green only once a test through the server has answered; until then the
+        // ring keeps running.
+        case .connected:
+            switch App.shared.health.state.value {
+            case .unknown: look = .working
+            case .ok: look = .ok
+            case .failing: look = .failing
+            }
+            let text = look == .failing ? L("Сервер не отвечает") : L("Подключено")
+            if status.text != text {
+                status.text = text
+                button.accessibilityValue = text
+                setNeedsLayout()
+            }
+        }
+        ring.show(look, animated: animated)
     }
 
     private func showServer() {
@@ -564,5 +586,237 @@ final class MinimalConnectionView: UIView {
         mark.isHidden = emoji != nil
         mark.image = MinimalIcons.home
         mark.tintColor = .label
+    }
+}
+
+/// The connection button's glyph (3.2.12, the owner's own): a switch, off on
+/// the left and on on the right. On, its track takes a soft fill; the knob
+/// slides with a spring.
+final class SwitchGlyph: UIView {
+    private let track = CAShapeLayer()
+    private let knob = CAShapeLayer()
+    private(set) var isOn = false
+    static let size = CGSize(width: 58, height: 32)
+    private static let line: CGFloat = 3
+    private static let knobInset: CGFloat = 6.5
+
+    override init(frame: CGRect) {
+        super.init(frame: frame)
+        isUserInteractionEnabled = false
+        for item in [track, knob] { layer.addSublayer(item) }
+        track.lineWidth = Self.line
+        knob.lineWidth = 0
+        restyle()
+    }
+
+    @available(*, unavailable)
+    required init?(coder _: NSCoder) { fatalError() }
+
+    override var intrinsicContentSize: CGSize { Self.size }
+
+    override func traitCollectionDidChange(_ previous: UITraitCollection?) {
+        super.traitCollectionDidChange(previous)
+        restyle()
+    }
+
+    private func restyle() {
+        let ink = UIColor.label.resolvedColor(with: traitCollection)
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        track.strokeColor = ink.cgColor
+        track.fillColor = isOn ? ink.withAlphaComponent(0.2).cgColor : UIColor.clear.cgColor
+        knob.fillColor = ink.cgColor
+        CATransaction.commit()
+    }
+
+    override func layoutSubviews() {
+        super.layoutSubviews()
+        let rect = bounds.insetBy(dx: Self.line / 2, dy: Self.line / 2)
+        track.frame = bounds
+        track.path = UIBezierPath(roundedRect: rect, cornerRadius: rect.height / 2).cgPath
+        let diameter = bounds.height - Self.knobInset * 2
+        knob.bounds = CGRect(x: 0, y: 0, width: diameter, height: diameter)
+        knob.path = UIBezierPath(ovalIn: knob.bounds).cgPath
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        knob.position = knobCenter(isOn)
+        CATransaction.commit()
+    }
+
+    private func knobCenter(_ on: Bool) -> CGPoint {
+        let radius = (bounds.height - Self.knobInset * 2) / 2
+        let x = on ? bounds.width - Self.knobInset - radius : Self.knobInset + radius
+        return CGPoint(x: x, y: bounds.midY)
+    }
+
+    func set(on: Bool, animated: Bool) {
+        guard on != isOn else { return }
+        isOn = on
+        let from = knob.presentation()?.position ?? knob.position
+        let to = knobCenter(on)
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        knob.position = to
+        CATransaction.commit()
+        if animated, !UIAccessibility.isReduceMotionEnabled {
+            let slide = CASpringAnimation(keyPath: "position")
+            slide.fromValue = from
+            slide.toValue = to
+            slide.damping = 16
+            slide.stiffness = 260
+            slide.mass = 1
+            slide.duration = slide.settlingDuration
+            knob.add(slide, forKey: "slide")
+            let fade = CABasicAnimation(keyPath: "fillColor")
+            fade.fromValue = track.presentation()?.fillColor ?? track.fillColor
+            fade.duration = 0.22
+            track.add(fade, forKey: "fillColor")
+        }
+        restyle()
+    }
+}
+
+/// The ring round the connection button (3.2.12, in place of the dot under its
+/// glyph): yellow while the tunnel comes up or goes down, an arc running round;
+/// green when it is up and traffic goes through the server; red when the server
+/// does not answer (`ConnectionHealth`). It closes into a full ring when the
+/// connection is made and opens away when it ends. Thin, to be seen, not to shout.
+final class ConnectionRing: UIView {
+    enum Look: Equatable { case off, working, ok, failing }
+
+    private let spin = CALayer()
+    private let ring = CAShapeLayer()
+    private(set) var look: Look = .off
+    static let width: CGFloat = 2.5
+
+    override init(frame: CGRect) {
+        super.init(frame: frame)
+        isUserInteractionEnabled = false
+        layer.addSublayer(spin)
+        spin.addSublayer(ring)
+        ring.fillColor = nil
+        ring.lineWidth = Self.width
+        ring.lineCap = .round
+        ring.strokeStart = 0
+        ring.strokeEnd = 0
+        ring.opacity = 0
+    }
+
+    @available(*, unavailable)
+    required init?(coder _: NSCoder) { fatalError() }
+
+    override func layoutSubviews() {
+        super.layoutSubviews()
+        spin.frame = bounds
+        ring.frame = bounds
+        let inset = Self.width / 2 + 1
+        // From the top, clockwise.
+        ring.path = UIBezierPath(arcCenter: CGPoint(x: bounds.midX, y: bounds.midY), radius: bounds.width / 2 - inset,
+                                 startAngle: -.pi / 2, endAngle: .pi * 1.5, clockwise: true).cgPath
+    }
+
+    private static func color(_ look: Look) -> UIColor {
+        switch look {
+        case .off, .working: return .systemYellow
+        case .ok: return .systemGreen
+        case .failing: return .systemRed
+        }
+    }
+
+    func show(_ next: Look, animated: Bool) {
+        guard next != look else { return }
+        let previous = look
+        look = next
+        let still = !animated || UIAccessibility.isReduceMotionEnabled
+        let present = ring.presentation()
+        func animate(_ key: String, to value: Any, duration: CFTimeInterval, timing: CAMediaTimingFunctionName = .easeInEaseOut) {
+            let from = present?.value(forKeyPath: key) ?? ring.value(forKeyPath: key)
+            ring.setValue(value, forKeyPath: key)
+            guard !still else { return }
+            let animation = CABasicAnimation(keyPath: key)
+            animation.fromValue = from
+            animation.toValue = value
+            animation.duration = duration
+            animation.timingFunction = CAMediaTimingFunction(name: timing)
+            ring.add(animation, forKey: key)
+        }
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        animate("strokeColor", to: Self.color(next).cgColor, duration: 0.45)
+        switch next {
+        case .working:
+            // A quarter of the ring runs round.
+            animate("opacity", to: Float(0.9), duration: 0.25)
+            animate("strokeStart", to: CGFloat(0), duration: 0.35)
+            animate("strokeEnd", to: CGFloat(0.26), duration: 0.35)
+            startSpinning()
+        case .ok, .failing:
+            animate("opacity", to: Float(0.85), duration: 0.25)
+            // The running arc closes into the whole ring.
+            animate("strokeStart", to: CGFloat(0), duration: 0.6, timing: .easeOut)
+            animate("strokeEnd", to: CGFloat(1), duration: 0.6, timing: .easeOut)
+            if previous == .working { stopSpinning(settle: !still) } else { stopSpinning(settle: false) }
+            if next == .failing, !still { pulse() } else { ring.removeAnimation(forKey: "pulse") }
+        case .off:
+            // The ring opens away from the top and fades.
+            stopSpinning(settle: false)
+            ring.removeAnimation(forKey: "pulse")
+            animate("strokeStart", to: CGFloat(1), duration: 0.5)
+            animate("opacity", to: Float(0), duration: 0.5)
+            DispatchQueue.main.asyncAfter(deadline: .now() + (still ? 0 : 0.55)) { [weak self] in
+                guard let self, self.look == .off else { return }
+                CATransaction.begin()
+                CATransaction.setDisableActions(true)
+                self.ring.strokeStart = 0
+                self.ring.strokeEnd = 0
+                CATransaction.commit()
+            }
+        }
+        CATransaction.commit()
+    }
+
+    private func startSpinning() {
+        guard spin.animation(forKey: "spin") == nil, !UIAccessibility.isReduceMotionEnabled else { return }
+        let turn = CABasicAnimation(keyPath: "transform.rotation.z")
+        turn.fromValue = (spin.presentation()?.value(forKeyPath: "transform.rotation.z") as? CGFloat) ?? 0
+        turn.byValue = CGFloat.pi * 2
+        turn.duration = 1.1
+        turn.repeatCount = .infinity
+        turn.isRemovedOnCompletion = false
+        spin.add(turn, forKey: "spin")
+    }
+
+    /// Stops the run; `settle`: the ring turns on to the top before it closes.
+    private func stopSpinning(settle: Bool) {
+        guard spin.animation(forKey: "spin") != nil else { return }
+        let angle = (spin.presentation()?.value(forKeyPath: "transform.rotation.z") as? CGFloat) ?? 0
+        spin.removeAnimation(forKey: "spin")
+        guard settle else { return }
+        var target = CGFloat.pi * 2
+        while target < angle { target += .pi * 2 }
+        let finish = CABasicAnimation(keyPath: "transform.rotation.z")
+        finish.fromValue = angle
+        finish.toValue = target
+        finish.duration = 0.6
+        finish.timingFunction = CAMediaTimingFunction(name: .easeOut)
+        spin.add(finish, forKey: "settle")
+    }
+
+    /// Red breathes softly, so a hung server is noticed.
+    private func pulse() {
+        let breathe = CABasicAnimation(keyPath: "opacity")
+        breathe.fromValue = 0.85
+        breathe.toValue = 0.35
+        breathe.duration = 1.1
+        breathe.autoreverses = true
+        breathe.repeatCount = .infinity
+        breathe.beginTime = CACurrentMediaTime() + 0.6
+        ring.add(breathe, forKey: "pulse")
+    }
+
+    /// The run is lost when the app leaves the screen; it starts again on return.
+    override func didMoveToWindow() {
+        super.didMoveToWindow()
+        if window != nil, look == .working { startSpinning() }
     }
 }

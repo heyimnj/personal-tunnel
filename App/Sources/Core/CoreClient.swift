@@ -37,6 +37,25 @@ struct CoreConnection: Equatable {
     let protocolName: String
 }
 
+/// The core's memory and open connections, a sample a second (3.2.12).
+struct CoreSamples: Equatable {
+    static let capacity = 120
+    private(set) var memory: [Int64] = []
+    private(set) var tcp: [Int] = []
+    private(set) var udp: [Int] = []
+
+    mutating func append(memory value: Int64, tcp tcpCount: Int, udp udpCount: Int) {
+        memory.append(value)
+        tcp.append(tcpCount)
+        udp.append(udpCount)
+        if memory.count > Self.capacity {
+            memory.removeFirst(memory.count - Self.capacity)
+            tcp.removeFirst(tcp.count - Self.capacity)
+            udp.removeFirst(udp.count - Self.capacity)
+        }
+    }
+}
+
 struct LogLine {
     let id: Int
     let level: Int32
@@ -64,6 +83,9 @@ final class CoreClient {
     let status = Observable<CoreStatus?>(nil)
     let connections = Observable(CoreConnections())
     let history = Observable(TrafficHistory())
+    /// 3.2.12: the core's memory and the open connections, once a second over the
+    /// last two minutes (analytics draws them).
+    let samples = Observable(CoreSamples())
     /// Fired when lines are appended to `logs`.
     let logsChanged = Signal()
     private(set) var logs: [LogLine] = []
@@ -143,6 +165,7 @@ final class CoreClient {
             status.set(current)
         }
         history.value = TrafficHistory()
+        samples.value = CoreSamples()
         connections.value = CoreConnections()
         parse.async { self.store = nil }
     }
@@ -269,6 +292,9 @@ final class CoreClient {
         var next = history.value
         next.append(down: value.downlink, up: value.uplink)
         history.value = next
+        var more = samples.value
+        more.append(memory: value.memory, tcp: connections.value.tcp, udp: connections.value.udp)
+        samples.value = more
     }
 
     /// The app's own lines; cleaned here, they are short and few.
