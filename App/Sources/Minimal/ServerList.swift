@@ -892,6 +892,16 @@ final class SurfaceView: UIView {
     /// 3.2.4: the press shade of the whole head — its title, the provider's line
     /// and the filters — under them, so the text stays as it is.
     let pressShade = UIView()
+    private let swipeClip = UIView()
+    private let swipeCard = UIView()
+
+    /// 3.5.3 (the owner): what lights when an open subscription is held or
+    /// swiped — the title and the provider's line, down to the filters.
+    var headLightHeight: CGFloat {
+        if !filters.isHidden, filters.frame.height > 1 { return max(ServerListView.headerHeight, filters.frame.minY) }
+        if !info.isHidden { return max(ServerListView.headerHeight, info.frame.maxY) }
+        return ServerListView.headerHeight
+    }
     static let card = UIColor.secondarySystemGroupedBackground
     static let container = UIColor { traits in
         traits.userInterfaceStyle == .dark ? UIColor(red: 0.067, green: 0.067, blue: 0.075, alpha: 1) : UIColor(red: 0.914, green: 0.914, blue: 0.933, alpha: 1)
@@ -918,6 +928,16 @@ final class SurfaceView: UIView {
         pressShade.isUserInteractionEnabled = false
         pressShade.layer.cornerCurve = .continuous
         addSubview(pressShade)
+        // 3.5.3: an open head swiped lights as a card from its title to the
+        // provider's line (not the filters), clipped at the surface's edge.
+        swipeClip.isUserInteractionEnabled = false
+        swipeClip.clipsToBounds = true
+        swipeClip.isHidden = true
+        swipeCard.backgroundColor = Self.card
+        swipeCard.layer.cornerRadius = 22
+        swipeCard.layer.cornerCurve = .continuous
+        swipeClip.addSubview(swipeCard)
+        addSubview(swipeClip)
         addSubview(filters)
         addSubview(header)
         // Over the head (it takes no touches): the open head's own card, while it
@@ -977,8 +997,20 @@ final class SurfaceView: UIView {
         // 3.5: the head's card comes in over most of the swipe, not in its first
         // 24 points: at an ordinary speed that was two frames, and the colour seemed to jump.
         let shown = open ? Self.cardShown(pull, travel: header.railWidth) : 0
-        header.showCard(shown, clipped: open && pull > 0.5)
+        // The head's own card covers the title only; the taller one below it
+        // takes the provider's line too (3.5.3).
+        header.showCard(0, clipped: open && pull > 0.5)
         info.slide = open ? -pull : 0
+        if shown > 0.001 {
+            let height = headLightHeight
+            let clip = CGRect(x: 0, y: 0, width: bounds.width, height: height)
+            if swipeClip.frame != clip { swipeClip.frame = clip }
+            swipeCard.frame = CGRect(x: -pull, y: 0, width: bounds.width, height: height)
+            swipeClip.alpha = shown
+            swipeClip.isHidden = false
+        } else if !swipeClip.isHidden {
+            swipeClip.isHidden = true
+        }
     }
 
     /// How much of the open head's card shows at `pull`: eased in over the first
@@ -1268,10 +1300,10 @@ final class ServerListView: UIScrollView {
         guard let surface = surfaces[id] else { return }
         let shade = surface.pressShade
         if held {
-            // 3.5.2 (the owner): the head alone, in the shape of the closed card
-            // (all corners round) — the whole card's shade ran into the menu.
-            shade.frame = CGRect(x: 0, y: 0, width: surface.bounds.width, height: Self.headerHeight)
-            shade.layer.cornerRadius = 24
+            // 3.5.3 (the owner): the title and the provider's line, as a card of
+            // their own (all corners round) — not the filters, not the whole card.
+            shade.frame = CGRect(x: 0, y: 0, width: surface.bounds.width, height: isOpen(id) ? surface.headLightHeight : Self.headerHeight)
+            shade.layer.cornerRadius = isOpen(id) ? 22 : 24
             shade.layer.maskedCorners = [.layerMinXMinYCorner, .layerMaxXMinYCorner, .layerMinXMaxYCorner, .layerMaxXMaxYCorner]
         }
         UIView.animate(withDuration: 0.18) { shade.backgroundColor = held ? UIColor.label.withAlphaComponent(0.08) : .clear }
