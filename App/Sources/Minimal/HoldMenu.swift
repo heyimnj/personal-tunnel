@@ -122,6 +122,8 @@ final class HoldMenuView: UIView {
     private var direction: CGFloat = 1
     private var leaving = false
     private var onDismiss: (() -> Void)?
+    /// The sheet dims under the menu (not for a held subscription).
+    private var dims = true
 
     /// The menu's surface: the cards' colour, a step lighter in dark mode so it
     /// stands off the cards it covers.
@@ -130,17 +132,23 @@ final class HoldMenuView: UIView {
     }
 
     /// `source`: the pressed row, the part the menu is placed by, and the part
-    /// lifted above the dim.
+    /// lifted above the dim (`.null`: nothing dims).
     static func show(in host: UIView, at point: CGPoint, title: String, items: [HoldMenuItem], source: (view: UIView, rect: CGRect, lift: CGRect)? = nil, onDismiss: (() -> Void)? = nil) {
         let menu = HoldMenuView(frame: host.bounds)
         menu.autoresizingMask = [.flexibleWidth, .flexibleHeight]
         menu.onDismiss = onDismiss
         menu.accessibilityLabel = title
-        menu.build(items)
+        // 3.5: in the host first, so the menu takes the app's theme: built outside
+        // the window it resolved its colours with the system's (a dark menu over
+        // the light theme on a phone set to dark).
         host.addSubview(menu)
+        menu.overrideUserInterfaceStyle = host.traitCollection.userInterfaceStyle
+        // A held subscription (lift .null) darkens its own card instead; the rest stays as it is.
+        menu.dims = !(source?.lift.isNull ?? false)
+        menu.build(items)
         var row = CGRect(origin: point, size: .zero)
         if let source {
-            menu.lift(source.view, source.lift)
+            if !source.lift.isNull { menu.lift(source.view, source.lift) }
             row = source.view.convert(source.rect, to: menu)
         }
         menu.place(at: point, row: row)
@@ -150,7 +158,8 @@ final class HoldMenuView: UIView {
 
     private func build(_ list: [HoldMenuItem]) {
         backdrop.addTarget(self, action: #selector(backdropTouched), for: .touchDown)
-        backdrop.backgroundColor = UIColor.black.withAlphaComponent(traitCollection.userInterfaceStyle == .dark ? 0.4 : 0.16)
+        // Clear when it does not dim: it still takes the touch that closes the menu.
+        backdrop.backgroundColor = dims ? UIColor.black.withAlphaComponent(traitCollection.userInterfaceStyle == .dark ? 0.4 : 0.16) : UIColor.black.withAlphaComponent(0.001)
         backdrop.alpha = 0
         addSubview(backdrop)
         backdrop.pin(to: self)

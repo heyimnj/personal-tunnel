@@ -8,6 +8,10 @@ final class HandoffScrollView: UIScrollView {
     var onPull: ((CGFloat) -> Void)?
     /// The pull ended; the finger's speed in points per second (positive downwards).
     var onPullEnd: ((CGFloat) -> Void)?
+    /// 3.5: whether the list may take a drag now. While the page is still moving
+    /// (or heading back to the connection page) a swipe belongs to the pager: the
+    /// list used to take it, scrolled to its end, and the page swipe was lost.
+    var acceptsDrag: (() -> Bool)?
     private var anchor: CGFloat?
     /// How far past its top the list stood when the pull began (a drag that
     /// caught it in the bounce after a flick); the pull starts from there.
@@ -82,6 +86,7 @@ final class HandoffScrollView: UIScrollView {
 
     override func gestureRecognizerShouldBegin(_ gestureRecognizer: UIGestureRecognizer) -> Bool {
         if gestureRecognizer === panGestureRecognizer {
+            if let acceptsDrag, !acceptsDrag() { return false }
             let top = -adjustedContentInset.top
             let velocity = panGestureRecognizer.velocity(in: self)
             let downward = velocity.y > 0 && abs(velocity.y) > abs(velocity.x)
@@ -158,6 +163,7 @@ final class MinimalHomeViewController: UIViewController, UIScrollViewDelegate, U
         analyticsNavigation.didMove(toParent: self)
         analytics.onPull = { [weak self] pull in self?.pullPage(pull) }
         analytics.onPullEnd = { [weak self] velocity in self?.releasePage(velocity) }
+        analytics.acceptsDrag = { [weak self] in self?.analyticsTakesDrag ?? true }
         connection.onChooseServer = { [weak self] in
             self?.present(MinimalServersViewController.wrapped(), animated: true)
         }
@@ -202,6 +208,16 @@ final class MinimalHomeViewController: UIViewController, UIScrollViewDelegate, U
         super.viewSafeAreaInsetsDidChange()
         analytics.pageInsets = view.safeAreaInsets
         applyAnalyticsInsets()
+    }
+
+    /// The analytics list takes a drag only once its page is (nearly) in place
+    /// and staying: a swipe while the page still moves, or while it heads back to
+    /// the connection page, goes to the pager, which catches the page mid-way.
+    private var analyticsTakesDrag: Bool {
+        let height = pager.bounds.height
+        guard height > 0 else { return true }
+        if pullingPage || pager.isDragging { return false }
+        return page == 1 && pager.contentOffset.y >= height * 0.92
     }
 
     private var pageMoving: Bool { animatingPage || pullingPage || pager.isDragging || pager.isDecelerating }
@@ -321,6 +337,9 @@ final class MinimalHomeViewController: UIViewController, UIScrollViewDelegate, U
     /// carried into the spring.
     private func go(to next: Int, animated: Bool, velocity: CGFloat = 0) {
         guard pager.bounds.height > 0 else { return }
+        // 3.5: leaving analytics, a fling of its list stops where it is (it ran on
+        // to the end of the page under the moving page).
+        if next == 0 { analytics.stopScrolling() }
         let target = CGFloat(next) * pager.bounds.height
         if animated, !UIAccessibility.isReduceMotionEnabled {
             animatingPage = true

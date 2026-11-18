@@ -30,38 +30,50 @@ final class AnalyticsCard: UIView {
 }
 
 /// Download and upload speed over the last two minutes.
+///
+/// 3.5 (the owner: the graph kept the old look while everything round it
+/// changed): drawn as the core's memory line is — smooth lines over soft washes
+/// of their own colour, no grid, a dot where each line ends now. It runs from
+/// edge to edge of its card, under the figures.
 final class SpeedGraphView: UIView {
     private let down = CAShapeLayer()
     private let up = CAShapeLayer()
-    private let grid = CAShapeLayer()
-    /// 3.5: a soft wash under the download line.
-    private let wash = CAGradientLayer()
-    private let washShape = CAShapeLayer()
-    /// The dashed lines across; off where the graph stands without a card.
-    var showsGrid = true { didSet { grid.isHidden = !showsGrid } }
+    private let downWash = CAGradientLayer()
+    private let downWashShape = CAShapeLayer()
+    private let upWash = CAGradientLayer()
+    private let upWashShape = CAShapeLayer()
+    private let downDot = CAShapeLayer()
+    private let upDot = CAShapeLayer()
     static let downColor = UIColor(red: 0.33, green: 0.75, blue: 0.91, alpha: 1)
     static let upColor = UIColor(red: 0.93, green: 0.26, blue: 0.36, alpha: 1)
     var history = TrafficHistory() { didSet { setNeedsLayout() } }
+    /// The highest speed shown, bytes per second (for the caption).
+    private(set) var peak: Int64 = 0
 
     override init(frame: CGRect) {
         super.init(frame: frame)
-        grid.strokeColor = UIColor.separator.withAlphaComponent(0.35).cgColor
-        grid.lineWidth = 0.5
-        for (layer, color) in [(down, SpeedGraphView.downColor), (up, SpeedGraphView.upColor)] {
-            layer.fillColor = nil
-            layer.strokeColor = color.cgColor
-            layer.lineWidth = 2
-            layer.lineJoin = .round
-            layer.lineCap = .round
+        let washes: [(CAGradientLayer, CAShapeLayer, UIColor, CGFloat)] = [(downWash, downWashShape, Self.downColor, 0.32), (upWash, upWashShape, Self.upColor, 0.22)]
+        for (wash, shape, color, strength) in washes {
+            wash.colors = [color.withAlphaComponent(strength).cgColor, color.withAlphaComponent(0).cgColor]
+            wash.mask = shape
+            layer.addSublayer(wash)
+        }
+        for (line, color) in [(down, Self.downColor), (up, Self.upColor)] {
+            line.fillColor = nil
+            line.strokeColor = color.cgColor
+            line.lineWidth = 2.2
+            line.lineJoin = .round
+            line.lineCap = .round
+            layer.addSublayer(line)
+        }
+        for (dot, color) in [(downDot, Self.downColor), (upDot, Self.upColor)] {
+            dot.fillColor = color.cgColor
+            dot.strokeColor = UIColor.white.withAlphaComponent(0.9).cgColor
+            dot.lineWidth = 1.5
+            layer.addSublayer(dot)
         }
         // Nothing is drawn outside the graph's own box.
         layer.masksToBounds = true
-        wash.colors = [SpeedGraphView.downColor.withAlphaComponent(0.26).cgColor, SpeedGraphView.downColor.withAlphaComponent(0).cgColor]
-        wash.mask = washShape
-        layer.addSublayer(wash)
-        layer.addSublayer(grid)
-        layer.addSublayer(down)
-        layer.addSublayer(up)
     }
 
     @available(*, unavailable)
@@ -69,91 +81,65 @@ final class SpeedGraphView: UIView {
 
     override func layoutSubviews() {
         super.layoutSubviews()
-        let lines = UIBezierPath()
-        for index in 0 ..< 3 {
-            let y = bounds.height * CGFloat(index) / 3
-            lines.move(to: CGPoint(x: 0, y: y))
-            lines.addLine(to: CGPoint(x: bounds.width, y: y))
-        }
-        grid.path = lines.cgPath
-        let peak = max(1, (history.down + history.up).max() ?? 1)
+        peak = max(0, (history.down + history.up).max() ?? 0)
+        let scale = max(1, peak)
         CATransaction.begin()
         CATransaction.setDisableActions(true)
-        let downPath = path(history.down, peak: peak)
-        down.path = downPath
-        up.path = path(history.up, peak: peak)
-        wash.frame = bounds
-        let area = UIBezierPath(cgPath: downPath)
-        area.addLine(to: CGPoint(x: bounds.width, y: bounds.height))
-        area.addLine(to: CGPoint(x: 0, y: bounds.height))
-        area.close()
-        washShape.path = area.cgPath
+        let series: [([Int64], CAShapeLayer, CAGradientLayer, CAShapeLayer, CAShapeLayer)] = [
+            (history.down, down, downWash, downWashShape, downDot), (history.up, up, upWash, upWashShape, upDot),
+        ]
+        for (samples, line, wash, shape, dot) in series {
+            let points = self.points(samples, peak: scale)
+            let path = Self.smooth(points)
+            line.path = path
+            wash.frame = bounds
+            let area = UIBezierPath(cgPath: path)
+            area.addLine(to: CGPoint(x: bounds.width, y: bounds.height))
+            area.addLine(to: CGPoint(x: points.first?.x ?? 0, y: bounds.height))
+            area.close()
+            shape.path = area.cgPath
+            if let last = points.last, samples.count > 1 {
+                let x = min(last.x, bounds.width - 5)
+                dot.path = UIBezierPath(ovalIn: CGRect(x: x - 3.5, y: last.y - 3.5, width: 7, height: 7)).cgPath
+            } else {
+                dot.path = nil
+            }
+        }
         CATransaction.commit()
     }
 
-    private func path(_ samples: [Int64], peak: Int64) -> CGPath {
-        let path = UIBezierPath()
+    private func points(_ samples: [Int64], peak: Int64) -> [CGPoint] {
         let count = TrafficHistory.capacity
-        let step = bounds.width / CGFloat(count - 1)
-        let base = bounds.height - 1
+        let step = bounds.width / CGFloat(max(1, count - 1))
+        // Room for the end dots at the top and the bottom.
+        let base = bounds.height - 4
+        let room = max(1, bounds.height - 9)
         let offset = count - samples.count
-        path.move(to: CGPoint(x: 0, y: base))
-        if offset > 0 { path.addLine(to: CGPoint(x: CGFloat(offset) * step, y: base)) }
+        var points: [CGPoint] = []
+        if offset > 0 { points.append(CGPoint(x: 0, y: base)) }
         for (index, sample) in samples.enumerated() {
             let share = min(1, max(0, CGFloat(sample) / CGFloat(peak)))
-            let y = base - share * (bounds.height - 6)
-            path.addLine(to: CGPoint(x: CGFloat(offset + index) * step, y: y))
+            points.append(CGPoint(x: CGFloat(offset + index) * step, y: base - share * room))
         }
+        return points
+    }
+
+    /// Through the midpoints, each point a control: the curve never leaves the
+    /// range of its points (no dip under the floor, no peak over the top).
+    static func smooth(_ points: [CGPoint]) -> CGPath {
+        let path = UIBezierPath()
+        guard let first = points.first else { return path.cgPath }
+        path.move(to: first)
+        guard points.count > 2 else {
+            points.dropFirst().forEach { path.addLine(to: $0) }
+            return path.cgPath
+        }
+        for index in 1 ..< points.count - 1 {
+            let point = points[index], next = points[index + 1]
+            path.addQuadCurve(to: CGPoint(x: (point.x + next.x) / 2, y: (point.y + next.y) / 2), controlPoint: point)
+        }
+        path.addLine(to: points[points.count - 1])
         return path.cgPath
-    }
-}
-
-/// A thin rounded bar split into coloured parts (3.5): what a number is made
-/// of, at a glance — download against upload, TCP against UDP, the routes, how
-/// full the core's memory is. Parts are laid out by frame; nothing is redrawn.
-final class MeterBar: UIView {
-    /// (share, colour); shares are relative to each other, or to `total` when set.
-    var parts: [(value: Double, color: UIColor)] = [] { didSet { rebuild() } }
-    /// With a total the bar is that long and the parts fill only their share of it.
-    var total: Double? { didSet { setNeedsLayout() } }
-    private var pieces: [UIView] = []
-    private static let gap: CGFloat = 2
-
-    init(height: CGFloat = 8) {
-        super.init(frame: .zero)
-        backgroundColor = UIColor.label.withAlphaComponent(0.07)
-        layer.cornerRadius = height / 2
-        layer.cornerCurve = .continuous
-        clipsToBounds = true
-        heightAnchor.constraint(equalToConstant: height).isActive = true
-    }
-
-    @available(*, unavailable)
-    required init?(coder _: NSCoder) { fatalError() }
-
-    private func rebuild() {
-        if pieces.count != parts.count {
-            pieces.forEach { $0.removeFromSuperview() }
-            pieces = parts.map { _ in UIView() }
-            pieces.forEach(addSubview)
-        }
-        for (piece, part) in zip(pieces, parts) { piece.backgroundColor = part.color }
-        setNeedsLayout()
-    }
-
-    override func layoutSubviews() {
-        super.layoutSubviews()
-        let sum = parts.reduce(0) { $0 + max(0, $1.value) }
-        let whole = max(sum, total ?? 0)
-        guard whole > 0 else { pieces.forEach { $0.frame = .zero }; return }
-        let shown = parts.filter { $0.value > 0 }.count
-        let room = bounds.width - Self.gap * CGFloat(max(0, shown - 1))
-        var x: CGFloat = 0
-        for (piece, part) in zip(pieces, parts) {
-            let width = part.value > 0 ? room * CGFloat(part.value / whole) : 0
-            piece.frame = CGRect(x: x, y: 0, width: width, height: bounds.height)
-            if width > 0 { x += width + Self.gap }
-        }
     }
 }
 
@@ -320,14 +306,10 @@ final class SparklineView: UIView {
     }
 }
 
-/// Columns over time, two series stacked (3.5): the open TCP and UDP
-/// connections in the last minute, a column every two seconds.
-final class ColumnsView: UIView {
-    var lower: [Int] = [] { didSet { setNeedsDisplay() } }
-    var upper: [Int] = [] { didSet { setNeedsDisplay() } }
-    var lowerColor: UIColor = .systemIndigo
-    var upperColor: UIColor = .systemOrange
-    var columns = 30
+/// Routes as rings, one inside the other (3.5): each route its own track, its
+/// arc as long as its share of the traffic seen; the largest outside.
+final class RouteRingsView: UIView {
+    var parts: [(value: Double, color: UIColor)] = [] { didSet { setNeedsDisplay() } }
 
     override init(frame: CGRect) {
         super.init(frame: frame)
@@ -341,32 +323,27 @@ final class ColumnsView: UIView {
 
     override func draw(_: CGRect) {
         guard let context = UIGraphicsGetCurrentContext() else { return }
-        let count = min(lower.count, upper.count)
-        let gap: CGFloat = 3
-        let width = (bounds.width - gap * CGFloat(columns - 1)) / CGFloat(columns)
-        var highest = 4
-        for (a, b) in zip(lower, upper) { highest = max(highest, a + b) }
-        let peak = CGFloat(highest)
-        // Empty places first: the columns come in from the right.
-        for slot in 0 ..< columns {
-            let x = CGFloat(slot) * (width + gap)
-            let index = count - columns + slot
-            context.setFillColor(UIColor.label.withAlphaComponent(0.05).cgColor)
-            context.addPath(UIBezierPath(roundedRect: CGRect(x: x, y: 0, width: width, height: bounds.height), cornerRadius: min(3, width / 2)).cgPath)
-            context.fillPath()
-            guard index >= 0 else { continue }
-            let below = CGFloat(lower[index]) / peak * bounds.height
-            let above = CGFloat(upper[index]) / peak * bounds.height
-            let column = CGRect(x: x, y: bounds.height - below - above, width: width, height: below + above)
-            guard column.height > 0.5 else { continue }
-            context.saveGState()
-            context.addPath(UIBezierPath(roundedRect: column, cornerRadius: min(3, width / 2)).cgPath)
-            context.clip()
-            context.setFillColor(upperColor.cgColor)
-            context.fill(CGRect(x: x, y: column.minY, width: width, height: above))
-            context.setFillColor(lowerColor.cgColor)
-            context.fill(CGRect(x: x, y: bounds.height - below, width: width, height: below))
-            context.restoreGState()
+        let side = min(bounds.width, bounds.height)
+        guard side > 8 else { return }
+        let rings = max(3, parts.count)
+        let line = max(4, min(9, side / CGFloat(rings * 2 + 3)))
+        let gap = line * 0.45
+        let center = CGPoint(x: bounds.midX, y: bounds.midY)
+        let total = parts.reduce(0) { $0 + max(0, $1.value) }
+        context.setLineWidth(line)
+        context.setLineCap(.round)
+        for ring in 0 ..< rings {
+            let radius = side / 2 - line / 2 - CGFloat(ring) * (line + gap)
+            guard radius > line / 2 else { break }
+            context.setStrokeColor(UIColor.label.withAlphaComponent(0.07).cgColor)
+            context.addArc(center: center, radius: radius, startAngle: 0, endAngle: .pi * 2, clockwise: false)
+            context.strokePath()
+            guard ring < parts.count, total > 0, parts[ring].value > 0 else { continue }
+            let share = CGFloat(parts[ring].value / total)
+            let start = -CGFloat.pi / 2
+            context.setStrokeColor(parts[ring].color.cgColor)
+            context.addArc(center: center, radius: radius, startAngle: start, endAngle: start + max(0.02, share * .pi * 2 - 0.001), clockwise: false)
+            context.strokePath()
         }
     }
 }
@@ -401,16 +378,14 @@ final class AnalyticsGroup: UIView {
     }
 }
 
-/// One row: a title and its value, a meter under them when it has one, and a
+/// One row: a title and its value, and a
 /// chevron when it opens something.
 final class AnalyticsRow: UIView {
     let title = UILabel(font: Theme.font(.subheadline))
     let value = UILabel(font: UIFont.monospacedDigitSystemFont(ofSize: Theme.font(.subheadline).pointSize, weight: .regular), color: .secondaryLabel)
-    let meter: MeterBar?
     private let press = TapControl()
 
-    init(_ text: String, meter: Bool = false, dot: UIColor? = nil, onTap: (() -> Void)? = nil) {
-        self.meter = meter ? MeterBar() : nil
+    init(_ text: String, dot: UIColor? = nil, onTap: (() -> Void)? = nil) {
         super.init(frame: .zero)
         title.text = text
         title.lineBreakMode = .byTruncatingTail
@@ -435,7 +410,7 @@ final class AnalyticsRow: UIView {
         }
         let top = UIStackView(.horizontal, spacing: 10, alignment: .center, line)
         top.heightAnchor.constraint(greaterThanOrEqualToConstant: 20).isActive = true
-        let column = UIStackView(.vertical, spacing: 8, alignment: .fill, [top] + (self.meter.map { [$0] } ?? []))
+        let column = UIStackView(.vertical, spacing: 8, alignment: .fill, [top])
         column.isUserInteractionEnabled = false
         press.pressScale = 1
         press.onTap = onTap
@@ -457,9 +432,10 @@ final class AnalyticsRow: UIView {
     }
 }
 
-/// The second Home page (3.5: rebuilt as the owner's «вариант A» — the speed
-/// large at the top over its graph, then lists with small charts; it was a grid
-/// of cards).
+/// The second Home page (3.5: the owner's «вариант A» — the speed large at the
+/// top over its graph, then tiles). 3.5 (release, the owner: the page was too
+/// busy): the session's two square tiles, connections as one wide tile of two
+/// counts (no chart), then routes and the core's memory as two square tiles.
 final class MinimalAnalyticsViewController: UIViewController {
     private let scroll = HandoffScrollView()
     // 3.5 beta 2 (the owner: the page was larger than the rest of the app): smaller
@@ -469,9 +445,10 @@ final class MinimalAnalyticsViewController: UIViewController {
     private let upSpeed = UILabel(font: UIFont.monospacedDigitSystemFont(ofSize: 28, weight: .semibold))
     private let upUnit = UILabel(font: Theme.font(13, .medium), color: .secondaryLabel)
     private let graph = SpeedGraphView()
+    private let graphPeak = UILabel(font: UIFont.monospacedDigitSystemFont(ofSize: Theme.font(.caption2).pointSize, weight: .medium), color: .secondaryLabel)
     private let graphHint = UILabel(L("Данные появятся после подключения"), font: Theme.font(.caption1), color: .secondaryLabel)
     private let sessionRow = AnalyticsRow(L("Сеанс"))
-    // 3.5: each measure drawn its own way — a ring, a gauge, a line, columns.
+    // 3.5: each measure drawn its own way — a ring, a gauge, rings, a line.
     private let trafficRing = RingChart()
     private let trafficTotal = UILabel(font: UIFont.monospacedDigitSystemFont(ofSize: Theme.font(.footnote).pointSize, weight: .semibold))
     private let downTotal = UILabel(font: UIFont.monospacedDigitSystemFont(ofSize: Theme.font(.subheadline).pointSize, weight: .semibold))
@@ -480,21 +457,25 @@ final class MinimalAnalyticsViewController: UIViewController {
     private let delayValue = UILabel(font: UIFont.monospacedDigitSystemFont(ofSize: 22, weight: .semibold))
     private let delayCaption = UILabel(font: Theme.font(.footnote), color: .secondaryLabel, lines: 2)
     private let memoryLine = SparklineView()
-    private let memoryValue = UILabel(font: UIFont.monospacedDigitSystemFont(ofSize: Theme.font(.footnote).pointSize, weight: .regular), color: .secondaryLabel)
-    private let columns = ColumnsView()
-    private var tcpRow: AnalyticsRow!
-    private var udpRow: AnalyticsRow!
-    private let routesMeter = MeterBar()
-    private let routes = AnalyticsGroup()
-    private let routesEmpty = UILabel(L("Данные соединений пока недоступны"), font: Theme.font(.subheadline), color: .secondaryLabel, lines: 0)
+    private let memoryValue = UILabel(font: UIFont.monospacedDigitSystemFont(ofSize: 20, weight: .semibold))
+    private let memoryDetail = UILabel(font: UIFont.monospacedDigitSystemFont(ofSize: Theme.font(.caption2).pointSize, weight: .regular), color: .secondaryLabel)
+    private let tcpCount = UILabel(font: UIFont.monospacedDigitSystemFont(ofSize: 30, weight: .semibold))
+    private let udpCount = UILabel(font: UIFont.monospacedDigitSystemFont(ofSize: 30, weight: .semibold))
+    private let tcpPeak = UILabel(font: Theme.font(.caption2), color: .secondaryLabel)
+    private let udpPeak = UILabel(font: Theme.font(.caption2), color: .secondaryLabel)
+    private let routeRings = RouteRingsView()
+    private let routeLegend = UIStackView(.vertical, spacing: 3, alignment: .fill, [])
+    private let routesEmpty = UILabel(L("Данные соединений пока недоступны"), font: Theme.font(.caption2), color: .secondaryLabel, lines: 0)
     private var timer: Timer?
     private var visible = false
 
     static let tcpColor = UIColor.systemIndigo
     static let udpColor = UIColor.systemOrange
     static let routeColors: [UIColor] = [SpeedGraphView.downColor, UIColor(red: 0.37, green: 0.33, blue: 0.91, alpha: 1), .systemGreen, .systemOrange, .systemPink]
-    /// The extension's limit, about 50 MiB: the memory meter fills against it.
+    /// The extension's limit, about 50 MiB: the memory line shows it when near.
     private static let memoryLimit: Double = 50 * 1024 * 1024
+    /// Routes in the tile: a ring and a line of the legend each.
+    private static let routesShown = 3
 
     /// 3.5: a change of style while the page shows: its clock stops with it.
     deinit { timer?.invalidate() }
@@ -510,6 +491,21 @@ final class MinimalAnalyticsViewController: UIViewController {
     var onPullEnd: ((CGFloat) -> Void)? {
         get { scroll.onPullEnd }
         set { scroll.onPullEnd = newValue }
+    }
+
+    /// Whether the list may take a drag now (Home: only while this page stands
+    /// on screen; a swipe during the page's move is the pager's).
+    var acceptsDrag: (() -> Bool)? {
+        get { scroll.acceptsDrag }
+        set { scroll.acceptsDrag = newValue }
+    }
+
+    /// Stops a fling of the list where it is (the page is leaving).
+    func stopScrolling() {
+        guard scroll.isDecelerating || scroll.isDragging else { return }
+        let top = -scroll.adjustedContentInset.top
+        let bottom = max(top, scroll.contentSize.height + scroll.adjustedContentInset.bottom - scroll.bounds.height)
+        scroll.setContentOffset(CGPoint(x: 0, y: min(max(top, scroll.contentOffset.y), bottom)), animated: false)
     }
 
     /// The screen's insets (status bar, tab bar), set by Home.
@@ -563,60 +559,19 @@ final class MinimalAnalyticsViewController: UIViewController {
             moreGlass.widthAnchor.constraint(equalToConstant: 44), moreGlass.heightAnchor.constraint(equalToConstant: 44),
         ])
 
-        // The speed now, large, over the last two minutes.
-        func speed(_ number: UILabel, _ unit: UILabel, _ symbol: String, _ caption: String, _ color: UIColor) -> UIView {
-            number.adjustsFontSizeToFitWidth = true
-            number.minimumScaleFactor = 0.6
-            let figure = UIStackView(.horizontal, spacing: 4, alignment: .firstBaseline, [number, unit])
-            let icon = UIImageView(image: UIImage(systemName: symbol, withConfiguration: UIImage.SymbolConfiguration(font: Theme.font(.footnote, .semibold))))
-            icon.tintColor = color
-            let label = UIStackView(.horizontal, spacing: 4, alignment: .center, [icon, UILabel(caption, font: Theme.font(.footnote, .medium), color: color)])
-            return UIStackView(.vertical, spacing: 2, alignment: .leading, [figure, label])
-        }
-        let now = UILabel(L("СЕЙЧАС"), font: Theme.font(.caption2, .semibold), color: .secondaryLabel)
-        let speeds = UIStackView(.horizontal, spacing: 28, alignment: .top, [
-            speed(downSpeed, downUnit, "arrow.down", L("Загрузка"), SpeedGraphView.downColor),
-            speed(upSpeed, upUnit, "arrow.up", L("Отдача"), SpeedGraphView.upColor), UIView(),
-        ])
-        // 3.5 beta 2 (the owner): the graph sits in a card of its own, as the
-        // groups below do (it ran from edge to edge of the screen, on the page itself).
-        let graphHolder = UIView()
-        graph.translatesAutoresizingMaskIntoConstraints = false
-        graphHolder.addSubview(graph)
-        NSLayoutConstraint.activate([
-            graphHolder.heightAnchor.constraint(equalToConstant: 96),
-            graph.topAnchor.constraint(equalTo: graphHolder.topAnchor), graph.bottomAnchor.constraint(equalTo: graphHolder.bottomAnchor),
-            graph.leadingAnchor.constraint(equalTo: graphHolder.leadingAnchor),
-            graph.trailingAnchor.constraint(equalTo: graphHolder.trailingAnchor),
-        ])
-        graph.showsGrid = true
-        graphHint.textAlignment = .center
-        graphHint.numberOfLines = 0
-        graphHolder.addSubview(graphHint)
-        graphHint.translatesAutoresizingMaskIntoConstraints = false
-        NSLayoutConstraint.activate([
-            graphHint.centerYAnchor.constraint(equalTo: graphHolder.centerYAnchor), graphHint.leadingAnchor.constraint(equalTo: graphHolder.leadingAnchor),
-            graphHint.trailingAnchor.constraint(equalTo: graphHolder.trailingAnchor),
-        ])
-        let axis = UIStackView(.horizontal, spacing: 0, alignment: .center, [
-            UILabel(L("2 мин назад"), font: Theme.font(.caption2), color: .secondaryLabel), UIView(),
-            UILabel(L("сейчас"), font: Theme.font(.caption2), color: .secondaryLabel),
-        ])
-        let heroStack = UIStackView(.vertical, spacing: 6, alignment: .fill, [now, speeds, graphHolder, axis])
-        heroStack.setCustomSpacing(12, after: speeds)
-        heroStack.setCustomSpacing(4, after: graphHolder)
-        let hero = AnalyticsCard(insets: UIEdgeInsets(top: 14, left: 14, bottom: 12, right: 14))
-        hero.stack.alignment = .fill
-        hero.stack.addArrangedSubview(heroStack)
+        let hero = makeHero()
 
-        func block(_ views: [UIView], spacing: CGFloat = 10) -> UIView {
-            Classic.padded(UIStackView(.vertical, spacing: spacing, alignment: .fill, views), UIEdgeInsets(top: 11, left: 0, bottom: 11, right: 0))
-        }
         func small(_ text: String) -> UILabel { UILabel(text, font: Theme.font(.footnote, .medium), color: .secondaryLabel) }
+        func tile() -> AnalyticsCard {
+            let card = AnalyticsCard(insets: UIEdgeInsets(top: 14, left: 14, bottom: 14, right: 14))
+            card.stack.alignment = .center
+            card.stack.distribution = .equalSpacing
+            return card
+        }
 
         // The session's traffic: a ring, the total inside.
         trafficRing.translatesAutoresizingMaskIntoConstraints = false
-        trafficRing.lineWidth = 8
+        trafficRing.lineWidth = 9
         NSLayoutConstraint.activate([trafficRing.widthAnchor.constraint(equalToConstant: 76), trafficRing.heightAnchor.constraint(equalToConstant: 76)])
         trafficTotal.textAlignment = .center
         trafficTotal.adjustsFontSizeToFitWidth = true
@@ -627,8 +582,6 @@ final class MinimalAnalyticsViewController: UIViewController {
             trafficTotal.centerXAnchor.constraint(equalTo: trafficRing.centerXAnchor), trafficTotal.centerYAnchor.constraint(equalTo: trafficRing.centerYAnchor),
             trafficTotal.widthAnchor.constraint(equalToConstant: 54),
         ])
-        // 3.5 beta 4 (the owner): the traffic and the delay are two square tiles side by side.
-        trafficRing.lineWidth = 9
         // In the tile: «↓ 1.6 MB   ↑ 988 KB» on one line under the ring.
         func amount(_ symbol: String, _ color: UIColor, _ label: UILabel) -> UIView {
             let icon = UIImageView(image: UIImage(systemName: symbol, withConfiguration: UIImage.SymbolConfiguration(font: Theme.font(.caption1, .bold))))
@@ -642,14 +595,12 @@ final class MinimalAnalyticsViewController: UIViewController {
         let tileLegend = UIStackView(.horizontal, spacing: 10, alignment: .center, [
             amount("arrow.down", SpeedGraphView.downColor, downTotal), amount("arrow.up", SpeedGraphView.upColor, upTotal),
         ])
-        let traffic = AnalyticsCard(insets: UIEdgeInsets(top: 14, left: 14, bottom: 14, right: 14))
-        traffic.stack.alignment = .center
-        traffic.stack.distribution = .equalSpacing
+        let traffic = tile()
         let trafficTitle = small(L("Трафик за сеанс"))
         for item in [trafficTitle, trafficRing, tileLegend] as [UIView] { traffic.stack.addArrangedSubview(item) }
         trafficTitle.widthAnchor.constraint(equalTo: traffic.stack.widthAnchor).isActive = true
 
-        // The delay: a half-circle gauge.
+        // The delay: a half-circle gauge. 3.5: a tap tests the connected server again.
         delayGauge.translatesAutoresizingMaskIntoConstraints = false
         delayGauge.lineWidth = 8
         NSLayoutConstraint.activate([delayGauge.widthAnchor.constraint(equalToConstant: 110), delayGauge.heightAnchor.constraint(equalToConstant: 58)])
@@ -658,15 +609,20 @@ final class MinimalAnalyticsViewController: UIViewController {
         delayValue.textAlignment = .center
         delayCaption.textAlignment = .center
         delayCaption.font = Theme.font(.caption1)
-        let delay = AnalyticsCard(insets: UIEdgeInsets(top: 14, left: 14, bottom: 14, right: 14))
-        delay.stack.alignment = .center
-        delay.stack.distribution = .equalSpacing
+        let delay = tile()
         let delayTitle = small(L("Задержка"))
+        let refresh = UIImageView(image: UIImage(systemName: "arrow.clockwise", withConfiguration: UIImage.SymbolConfiguration(font: Theme.font(.caption1, .semibold))))
+        refresh.tintColor = .tertiaryLabel
+        refresh.setContentHuggingPriority(.required, for: .horizontal)
+        let delayHead = UIStackView(.horizontal, spacing: 6, alignment: .center, [delayTitle, UIView(), refresh])
         let reading = UIStackView(.vertical, spacing: 4, alignment: .center, [delayGauge, delayValue, delayCaption])
-        for item in [delayTitle, reading, UIView()] as [UIView] { delay.stack.addArrangedSubview(item) }
-        for item in [delayTitle, reading] { item.widthAnchor.constraint(equalTo: delay.stack.widthAnchor).isActive = true }
+        for item in [delayHead, reading, UIView()] as [UIView] { delay.stack.addArrangedSubview(item) }
+        for item in [delayHead, reading] { item.widthAnchor.constraint(equalTo: delay.stack.widthAnchor).isActive = true }
         delayCaption.widthAnchor.constraint(equalTo: reading.widthAnchor).isActive = true
-        let tiles = UIStackView(.horizontal, spacing: 12, alignment: .fill, [traffic, delay])
+        let delayButton = pressable(delay, label: L("Задержка")) { [weak self] in self?.testConnected() }
+        delayButton.accessibilityHint = L("Проверить пинг")
+
+        let tiles = UIStackView(.horizontal, spacing: 12, alignment: .fill, [traffic, delayButton])
         tiles.distribution = .fillEqually
         // Square: as tall as each tile is wide.
         traffic.heightAnchor.constraint(equalTo: traffic.widthAnchor).isActive = true
@@ -674,25 +630,59 @@ final class MinimalAnalyticsViewController: UIViewController {
         let session = AnalyticsGroup()
         session.add([sessionRow])
 
-        // The core's memory: its line over two minutes.
+        // Connections (4:2): two counts side by side, each opens its list.
+        let connections = AnalyticsCard(insets: UIEdgeInsets(top: 10, left: 10, bottom: 10, right: 10))
+        connections.stack.axis = .horizontal
+        connections.stack.alignment = .fill
+        connections.stack.distribution = .fillEqually
+        connections.stack.spacing = 10
+        connections.stack.addArrangedSubview(connectionHalf("TCP", Self.tcpColor, tcpCount, tcpPeak) { [weak self] in
+            self?.present(ConnectionsViewController.wrapped(udp: false), animated: true)
+        })
+        connections.stack.addArrangedSubview(connectionHalf("UDP", Self.udpColor, udpCount, udpPeak) { [weak self] in
+            self?.present(ConnectionsViewController.wrapped(udp: true), animated: true)
+        })
+
+        // Routes (2:2): rings, the three largest under them.
+        let routes = AnalyticsCard(insets: UIEdgeInsets(top: 14, left: 14, bottom: 14, right: 14))
+        routes.stack.alignment = .fill
+        routes.stack.spacing = 8
+        routeRings.setContentHuggingPriority(.defaultLow, for: .vertical)
+        routeRings.setContentCompressionResistancePriority(.defaultLow, for: .vertical)
+        routeRings.heightAnchor.constraint(greaterThanOrEqualToConstant: 36).isActive = true
+        routesEmpty.textAlignment = .center
+        routeLegend.addArrangedSubview(routesEmpty)
+        routeLegend.setContentCompressionResistancePriority(.required, for: .vertical)
+        for item in [small(L("Маршруты")), routeRings, routeLegend] as [UIView] { routes.stack.addArrangedSubview(item) }
+
+        // The core's memory (2:2): the figure, then its line over two minutes,
+        // drawn to whatever room the tile leaves (scaled inside its own box).
         memoryLine.color = .systemPurple
         memoryLine.ceiling = Self.memoryLimit
-        memoryLine.heightAnchor.constraint(equalToConstant: 48).isActive = true
-        memoryValue.textAlignment = .right
-        let core = AnalyticsGroup()
-        core.add([block([UIStackView(.horizontal, spacing: 8, alignment: .center, [small(L("Память ядра")), UIView(), memoryValue]), memoryLine,
-                         UILabel(L("За 2 минуты. Предел расширения — около 50 МБ."), font: Theme.font(.caption2), color: .secondaryLabel, lines: 0)])])
+        memoryLine.clipsToBounds = true
+        memoryLine.setContentHuggingPriority(.defaultLow, for: .vertical)
+        memoryLine.setContentCompressionResistancePriority(.defaultLow, for: .vertical)
+        memoryLine.heightAnchor.constraint(greaterThanOrEqualToConstant: 24).isActive = true
+        memoryValue.adjustsFontSizeToFitWidth = true
+        memoryValue.minimumScaleFactor = 0.6
+        memoryDetail.adjustsFontSizeToFitWidth = true
+        memoryDetail.minimumScaleFactor = 0.7
+        let memoryNote = UILabel(L("2 мин · предел ≈ 50 МБ"), font: Theme.font(.caption2), color: .secondaryLabel)
+        memoryNote.adjustsFontSizeToFitWidth = true
+        memoryNote.minimumScaleFactor = 0.7
+        let memory = AnalyticsCard(insets: UIEdgeInsets(top: 14, left: 14, bottom: 12, right: 14))
+        memory.stack.alignment = .fill
+        memory.stack.spacing = 4
+        for item in [small(L("Память ядра")), memoryValue, memoryDetail, memoryLine, memoryNote] as [UIView] { memory.stack.addArrangedSubview(item) }
+        memory.stack.setCustomSpacing(8, after: memoryDetail)
+        memory.stack.setCustomSpacing(6, after: memoryLine)
 
-        // Connections: columns over the last minute, TCP under UDP.
-        columns.lowerColor = Self.tcpColor
-        columns.upperColor = Self.udpColor
-        columns.heightAnchor.constraint(equalToConstant: 48).isActive = true
-        let connections = AnalyticsGroup()
-        tcpRow = AnalyticsRow("TCP", dot: Self.tcpColor) { [weak self] in self?.present(ConnectionsViewController.wrapped(udp: false), animated: true) }
-        udpRow = AnalyticsRow("UDP", dot: Self.udpColor) { [weak self] in self?.present(ConnectionsViewController.wrapped(udp: true), animated: true) }
-        connections.add([block([columns, UILabel(L("Открытые соединения за минуту"), font: Theme.font(.caption2), color: .secondaryLabel)], spacing: 8), tcpRow, udpRow])
+        let pair = UIStackView(.horizontal, spacing: 12, alignment: .fill, [routes, memory])
+        pair.distribution = .fillEqually
+        routes.heightAnchor.constraint(equalTo: routes.widthAnchor).isActive = true
+        // 4:2 — as tall as the square tiles under it.
+        connections.heightAnchor.constraint(equalTo: routes.heightAnchor).isActive = true
 
-        routes.add([Classic.padded(routesMeter, UIEdgeInsets(top: 14, left: 0, bottom: 4, right: 0)), Classic.padded(routesEmpty, UIEdgeInsets(top: 10, left: 0, bottom: 12, right: 0))])
         let routesNote = Classic.padded(UILabel(L("Показаны только соединения, полученные от ядра во время наблюдения; это не весь трафик сеанса."), font: Theme.font(.caption2), color: .secondaryLabel, lines: 0),
                                         UIEdgeInsets(top: 0, left: 6, bottom: 0, right: 6))
 
@@ -709,14 +699,13 @@ final class MinimalAnalyticsViewController: UIViewController {
         let content = UIStackView(.vertical, spacing: 8, alignment: .fill, [
             header, hero,
             AnalyticsGroup.caption(L("Сеанс")), session, tiles,
-            AnalyticsGroup.caption(L("Ядро")), core,
-            AnalyticsGroup.caption(L("Соединения")), connections,
-            AnalyticsGroup.caption(L("Маршруты")), routes, routesNote,
+            AnalyticsGroup.caption(L("Соединения")), connections, pair, routesNote,
             links,
         ])
         content.setCustomSpacing(6, after: header)
         content.setCustomSpacing(12, after: session)
-        for view in [hero, tiles, core, connections, routesNote] { content.setCustomSpacing(18, after: view) }
+        content.setCustomSpacing(12, after: connections)
+        for view in [hero, tiles, routesNote] { content.setCustomSpacing(18, after: view) }
         scroll.addSubview(content)
         content.translatesAutoresizingMaskIntoConstraints = false
         NSLayoutConstraint.activate([
@@ -730,7 +719,7 @@ final class MinimalAnalyticsViewController: UIViewController {
         client.status.observe(self) { [weak self] in self?.show($0) }
         client.history.observe(self) { [weak self] history in
             guard let self, self.visible else { return }
-            self.graph.history = history
+            self.showGraph(history)
         }
         client.samples.observe(self) { [weak self] samples in
             guard let self, self.visible else { return }
@@ -743,6 +732,89 @@ final class MinimalAnalyticsViewController: UIViewController {
         App.shared.latency.changed.observe(self) { [weak self] _ in self?.showDelay() }
         App.shared.tunnel.connectedSince.observe(self) { [weak self] _ in self?.tick() }
         showDelay()
+    }
+
+    /// The speed now, large, over the last two minutes: the graph runs from edge
+    /// to edge of the card's lower part, under the figures.
+    private func makeHero() -> UIView {
+        func speed(_ number: UILabel, _ unit: UILabel, _ symbol: String, _ caption: String, _ color: UIColor) -> UIView {
+            number.adjustsFontSizeToFitWidth = true
+            number.minimumScaleFactor = 0.6
+            let figure = UIStackView(.horizontal, spacing: 4, alignment: .firstBaseline, [number, unit])
+            let icon = UIImageView(image: UIImage(systemName: symbol, withConfiguration: UIImage.SymbolConfiguration(font: Theme.font(.footnote, .semibold))))
+            icon.tintColor = color
+            let label = UIStackView(.horizontal, spacing: 4, alignment: .center, [icon, UILabel(caption, font: Theme.font(.footnote, .medium), color: color)])
+            return UIStackView(.vertical, spacing: 2, alignment: .leading, [figure, label])
+        }
+        let now = UILabel(L("СЕЙЧАС"), font: Theme.font(.caption2, .semibold), color: .secondaryLabel)
+        graphPeak.textAlignment = .right
+        let top = UIStackView(.horizontal, spacing: 8, alignment: .center, [now, UIView(), graphPeak])
+        let speeds = UIStackView(.horizontal, spacing: 28, alignment: .top, [
+            speed(downSpeed, downUnit, "arrow.down", L("Загрузка"), SpeedGraphView.downColor),
+            speed(upSpeed, upUnit, "arrow.up", L("Отдача"), SpeedGraphView.upColor), UIView(),
+        ])
+        let room = UIView()
+        room.heightAnchor.constraint(equalToConstant: 92).isActive = true
+        let hero = AnalyticsCard(insets: UIEdgeInsets(top: 14, left: 16, bottom: 0, right: 16))
+        hero.stack.alignment = .fill
+        hero.stack.spacing = 6
+        for item in [top, speeds, room] as [UIView] { hero.stack.addArrangedSubview(item) }
+        hero.stack.setCustomSpacing(6, after: speeds)
+        // The card's rounded corners cut the graph's lower edge.
+        hero.clipsToBounds = true
+        graph.translatesAutoresizingMaskIntoConstraints = false
+        hero.addSubview(graph)
+        graphHint.textAlignment = .center
+        graphHint.numberOfLines = 0
+        graphHint.translatesAutoresizingMaskIntoConstraints = false
+        hero.addSubview(graphHint)
+        NSLayoutConstraint.activate([
+            graph.topAnchor.constraint(equalTo: room.topAnchor), graph.bottomAnchor.constraint(equalTo: hero.bottomAnchor),
+            graph.leadingAnchor.constraint(equalTo: hero.leadingAnchor), graph.trailingAnchor.constraint(equalTo: hero.trailingAnchor),
+            graphHint.centerYAnchor.constraint(equalTo: room.centerYAnchor),
+            graphHint.leadingAnchor.constraint(equalTo: room.leadingAnchor), graphHint.trailingAnchor.constraint(equalTo: room.trailingAnchor),
+        ])
+        return hero
+    }
+
+    /// One half of the connections tile: its dot and name, the count now, the
+    /// highest count in the last minute; a tap opens the list.
+    private func connectionHalf(_ name: String, _ color: UIColor, _ count: UILabel, _ peak: UILabel, action: @escaping () -> Void) -> UIView {
+        let dot = UIView()
+        dot.backgroundColor = color
+        dot.layer.cornerRadius = 4
+        dot.translatesAutoresizingMaskIntoConstraints = false
+        NSLayoutConstraint.activate([dot.widthAnchor.constraint(equalToConstant: 8), dot.heightAnchor.constraint(equalToConstant: 8)])
+        let chevron = UIImageView(image: UIImage(systemName: "chevron.right", withConfiguration: UIImage.SymbolConfiguration(font: Theme.font(.caption1, .semibold))))
+        chevron.tintColor = .tertiaryLabel
+        chevron.setContentHuggingPriority(.required, for: .horizontal)
+        let head = UIStackView(.horizontal, spacing: 7, alignment: .center, [dot, UILabel(name, font: Theme.font(.subheadline, .semibold)), UIView(), chevron])
+        count.text = "—"
+        count.adjustsFontSizeToFitWidth = true
+        count.minimumScaleFactor = 0.6
+        peak.adjustsFontSizeToFitWidth = true
+        peak.minimumScaleFactor = 0.7
+        let column = UIStackView(.vertical, spacing: 2, alignment: .fill, [head, UIView(), count, peak])
+        let box = UIView()
+        box.backgroundColor = UIColor.label.withAlphaComponent(0.045)
+        box.layer.cornerRadius = 14
+        box.layer.cornerCurve = .continuous
+        box.addSubview(column)
+        column.pin(to: box, insets: UIEdgeInsets(top: 12, left: 12, bottom: 12, right: 12))
+        return pressable(box, label: name, action: action)
+    }
+
+    /// Wraps a tile so the whole of it is one button.
+    private func pressable(_ content: UIView, label: String, action: @escaping () -> Void) -> TapControl {
+        let control = TapControl()
+        content.isUserInteractionEnabled = false
+        control.addSubview(content)
+        content.pin(to: control)
+        control.onTap = action
+        control.isAccessibilityElement = true
+        control.accessibilityTraits = .button
+        control.accessibilityLabel = label
+        return control
     }
 
     private func link(_ symbol: String, _ title: String, action: @escaping () -> Void) -> UIView {
@@ -774,7 +846,7 @@ final class MinimalAnalyticsViewController: UIViewController {
         if value {
             // The first redraw in two steps: the graph and the session now, the
             // lists (views built) on the next turn of the run loop.
-            graph.history = App.shared.core.history.value
+            showGraph(App.shared.core.history.value)
             show(App.shared.core.samples.value)
             DispatchQueue.main.async { [weak self] in
                 guard let self, self.visible else { return }
@@ -797,6 +869,13 @@ final class MinimalAnalyticsViewController: UIViewController {
         return (String(text[..<space]), String(text[text.index(after: space)...]))
     }
 
+    private func showGraph(_ history: TrafficHistory) {
+        graph.history = history
+        let peak = max(0, (history.down + history.up).max() ?? 0)
+        let text = peak > 0 ? Lf("пик %@", Format.speed(peak)) : ""
+        if graphPeak.text != text { graphPeak.text = text }
+    }
+
     private func show(_ status: CoreStatus?) {
         let down = Self.split(Format.speed(max(1, status?.downlink ?? 0)))
         let up = Self.split(Format.speed(max(1, status?.uplink ?? 0)))
@@ -810,83 +889,124 @@ final class MinimalAnalyticsViewController: UIViewController {
         upTotal.text = status == nil ? "—" : Format.bytes(upBytes)
         trafficTotal.text = status == nil ? "—" : Format.bytes(downBytes + upBytes)
         trafficRing.parts = [(value: Double(downBytes), color: SpeedGraphView.downColor), (value: Double(upBytes), color: SpeedGraphView.upColor)]
-        memoryValue.text = status.map { Format.bytes($0.memory) + " · \($0.goroutines) goroutines" } ?? L("Ядро не запущено")
+        memoryValue.text = status.map { Format.bytes($0.memory) } ?? "—"
+        memoryDetail.text = status.map { "\($0.goroutines) goroutines" } ?? L("Ядро не запущено")
         graphHint.isHidden = status != nil
     }
 
-    /// Names of the route rows, in order; the rows are rebuilt only when they change.
+    /// Names in the routes legend, in order; its lines are rebuilt only when they change.
     private var routeNames: [String] = []
-    private var routeRows: [AnalyticsRow] = []
-    private static let routeRowsShown = 5
+    private var routeValues: [UILabel] = []
 
     private func show(_ connections: CoreConnections) {
         let tcpText = "\(connections.tcp)", udpText = "\(connections.udp)"
-        if tcpRow.value.text != tcpText { tcpRow.value.text = tcpText }
-        if udpRow.value.text != udpText { udpRow.value.text = udpText }
-        let top = Array(connections.routes.sorted { $0.value > $1.value }.prefix(Self.routeRowsShown))
-        var routeParts: [(value: Double, color: UIColor)] = []
-        for (index, route) in top.enumerated() { routeParts.append((value: Double(route.value), color: Self.routeColors[index % Self.routeColors.count])) }
-        routesMeter.parts = routeParts
+        if tcpCount.text != tcpText { tcpCount.text = tcpText }
+        if udpCount.text != udpText { udpCount.text = udpText }
+        let top = Array(connections.routes.sorted { $0.value > $1.value }.prefix(Self.routesShown))
+        routeRings.parts = top.enumerated().map { index, route in
+            (value: Double(route.value), color: Self.routeColors[index % Self.routeColors.count])
+        }
         let names = top.map(\.key)
-        if names == routeNames, !routeRows.isEmpty || names.isEmpty {
-            for (row, route) in zip(routeRows, top) {
+        if names == routeNames, !routeValues.isEmpty || names.isEmpty {
+            for (label, route) in zip(routeValues, top) {
                 let text = Format.bytes(route.value)
-                if row.value.text != text { row.value.text = text }
+                if label.text != text { label.text = text }
             }
-            routesEmpty.superview?.isHidden = !names.isEmpty
+            routesEmpty.isHidden = !names.isEmpty
             return
         }
         routeNames = names
-        // Rows after the meter and the «no data» line go; the new ones come in order.
-        let keep = Array(routes.stack.arrangedSubviews.prefix(2))
-        for view in routes.stack.arrangedSubviews where !keep.contains(view) { view.removeFromSuperview() }
-        routeRows = top.enumerated().map { index, route in
-            let row = AnalyticsRow(route.key, dot: Self.routeColors[index % Self.routeColors.count])
-            row.value.text = Format.bytes(route.value)
-            return row
+        for view in routeLegend.arrangedSubviews where view !== routesEmpty { view.removeFromSuperview() }
+        routeValues = []
+        for (index, route) in top.enumerated() {
+            let dot = UIView()
+            dot.backgroundColor = Self.routeColors[index % Self.routeColors.count]
+            dot.layer.cornerRadius = 3
+            dot.translatesAutoresizingMaskIntoConstraints = false
+            NSLayoutConstraint.activate([dot.widthAnchor.constraint(equalToConstant: 6), dot.heightAnchor.constraint(equalToConstant: 6)])
+            let name = UILabel(route.key, font: Theme.font(.caption2))
+            name.lineBreakMode = .byTruncatingTail
+            name.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+            let value = UILabel(Format.bytes(route.value), font: UIFont.monospacedDigitSystemFont(ofSize: Theme.font(.caption2).pointSize, weight: .regular), color: .secondaryLabel)
+            value.setContentHuggingPriority(.required, for: .horizontal)
+            value.setContentCompressionResistancePriority(.required, for: .horizontal)
+            routeLegend.addArrangedSubview(UIStackView(.horizontal, spacing: 5, alignment: .center, [dot, name, UIView(), value]))
+            routeValues.append(value)
         }
-        routes.add(routeRows)
-        routesEmpty.superview?.isHidden = !names.isEmpty
+        routesEmpty.isHidden = !names.isEmpty
     }
 
-    /// The memory line and the connection columns (a column per two seconds).
+    /// The memory line and the most connections open at once in the last minute.
     private func show(_ samples: CoreSamples) {
         memoryLine.values = samples.memory.map { Double($0) }
-        // A column per two seconds, the latest last.
-        let count = min(samples.tcp.count, samples.udp.count)
-        var indices: [Int] = []
-        var index = count - 1
-        while index >= 0, indices.count < columns.columns {
-            indices.insert(index, at: 0)
-            index -= 2
-        }
-        columns.lower = indices.map { samples.tcp[$0] }
-        columns.upper = indices.map { samples.udp[$0] }
+        let tcp = samples.tcp.suffix(60).max() ?? 0
+        let udp = samples.udp.suffix(60).max() ?? 0
+        let tcpText = Lf("Макс. за минуту: %@", "\(tcp)"), udpText = Lf("Макс. за минуту: %@", "\(udp)")
+        if tcpPeak.text != tcpText { tcpPeak.text = tcpText }
+        if udpPeak.text != udpText { udpPeak.text = udpText }
     }
+
+    /// 3.5: the delay tile tests the connected server again.
+    private func testConnected() {
+        let library = App.shared.library
+        guard let subscription = library.activeSubscription, let node = library.activeNode else { return }
+        guard !App.shared.latency.isTesting(subscription.id, node.id) else { return }
+        Haptics.tap()
+        App.shared.ping(node: node, in: subscription)
+        showDelay()
+    }
+
+    private var delayPulsing = false
 
     private func showDelay() {
         let library = App.shared.library
         let kind = Prefs.pingMode == "alternative" ? "HTTP" : "HTTPS"
-        if let subscription = library.activeSubscription, let node = library.activeNode,
-           let entry = App.shared.latency.entry(subscription.id, node.id)
-        {
+        var testing = false
+        if let subscription = library.activeSubscription, let node = library.activeNode {
+            testing = App.shared.latency.isTesting(subscription.id, node.id)
             let name = App.shared.store.label(of: node, in: subscription).text
-            switch entry.result {
-            case let .delay(value):
-                delayValue.text = "\(value) ms"
-                delayValue.textColor = delayGauge.color(for: Double(value))
-                delayGauge.value = Double(value)
-            case let .failed(reason):
-                delayValue.text = reason.title
-                delayValue.textColor = .systemRed
+            if let entry = App.shared.latency.entry(subscription.id, node.id) {
+                switch entry.result {
+                case let .delay(value):
+                    delayValue.text = "\(value) ms"
+                    delayValue.textColor = delayGauge.color(for: Double(value))
+                    delayGauge.value = Double(value)
+                case let .failed(reason):
+                    delayValue.text = reason.title
+                    delayValue.textColor = .systemRed
+                    delayGauge.value = nil
+                }
+            } else {
+                delayValue.text = "—"
+                delayValue.textColor = .label
                 delayGauge.value = nil
             }
-            delayCaption.text = Lf("%@ до «%@»", kind, name)
+            delayCaption.text = testing ? L("Проверка") + "…" : Lf("%@ до «%@»", kind, name)
         } else {
             delayValue.text = "—"
             delayValue.textColor = .label
             delayGauge.value = nil
             delayCaption.text = kind
+        }
+        setDelayPulse(testing)
+    }
+
+    /// The gauge breathes while its server is being tested.
+    private func setDelayPulse(_ on: Bool) {
+        guard on != delayPulsing else { return }
+        delayPulsing = on
+        let layer = delayGauge.layer
+        if on, !UIAccessibility.isReduceMotionEnabled {
+            let pulse = CABasicAnimation(keyPath: "opacity")
+            pulse.fromValue = 1
+            pulse.toValue = 0.35
+            pulse.duration = 0.6
+            pulse.autoreverses = true
+            pulse.repeatCount = .infinity
+            pulse.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+            layer.add(pulse, forKey: "testing")
+        } else {
+            layer.removeAnimation(forKey: "testing")
         }
     }
 }

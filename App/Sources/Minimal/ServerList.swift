@@ -1055,8 +1055,8 @@ final class ServerListView: UIScrollView {
     var onSelect: ((Int64, String) -> Void)?
     var onPing: ((Int64, String) -> Void)?
     /// What a long press lifts above the dim under the menu: a view, the pressed
-    /// part (the menu is placed by it) and the part kept bright (3.5: an open
-    /// subscription's whole card on screen, not only its head).
+    /// part (the menu is placed by it) and the part kept bright. `.null` for a
+    /// subscription: nothing dims, its own card darkens instead (3.5).
     typealias HoldSource = (view: UIView, rect: CGRect, lift: CGRect)
     /// A long press: the subscription, the server (nil for the head), the pressed
     /// row and how to undo the highlight.
@@ -1267,11 +1267,13 @@ final class ServerListView: UIScrollView {
         guard let surface = surfaces[id] else { return }
         let shade = surface.pressShade
         if held {
-            shade.frame = headRect(id)
+            // 3.5: the whole card, open or closed; the server rows lie above the
+            // shade, so only the subscription's own background darkens.
+            shade.frame = surface.bounds
             shade.layer.cornerRadius = surface.layer.cornerRadius
-            shade.layer.maskedCorners = isOpen(id) ? [.layerMinXMinYCorner, .layerMaxXMinYCorner] : [.layerMinXMinYCorner, .layerMaxXMinYCorner, .layerMinXMaxYCorner, .layerMaxXMaxYCorner]
+            shade.layer.maskedCorners = [.layerMinXMinYCorner, .layerMaxXMinYCorner, .layerMinXMaxYCorner, .layerMaxXMaxYCorner]
         }
-        UIView.animate(withDuration: 0.18) { shade.backgroundColor = held ? UIColor.label.withAlphaComponent(0.07) : .clear }
+        UIView.animate(withDuration: 0.18) { shade.backgroundColor = held ? UIColor.label.withAlphaComponent(0.08) : .clear }
     }
 
     /// The subscription's head in its surface: the title, and when open the
@@ -1597,17 +1599,12 @@ final class ServerListView: UIScrollView {
                 row.setHeld(true)
                 onHold?(section.id, node, point, (view: surface as UIView, rect: head, lift: head)) { [weak row] in row?.setHeld(false) }
             } else if local.y < head.maxY {
+                // 3.5 (owner): a held subscription darkens its own card — the whole
+                // of it, open or closed, under its servers (they stay as they are) —
+                // and nothing else dims (3.5 beta 1–4 dimmed the rest of the sheet
+                // and kept the card bright: the wrong way round).
                 headerHeld(section.id, true)
-                // Open, the subscription is the whole card under its servers: all of
-                // it that is on screen stays bright, not the head alone.
-                var lift = head
-                if isOpen(section.id) {
-                    // Below the bar the list scrolls under.
-                    let screen = bounds.inset(by: UIEdgeInsets(top: adjustedContentInset.top, left: 0, bottom: 0, right: 0))
-                    let visible = convert(screen, to: surface).intersection(surface.bounds)
-                    if !visible.isNull { lift = head.union(visible) }
-                }
-                onHold?(section.id, nil, point, (view: surface as UIView, rect: head, lift: lift)) { [weak self] in self?.headerHeld(section.id, false) }
+                onHold?(section.id, nil, point, (view: surface as UIView, rect: head, lift: CGRect.null)) { [weak self] in self?.headerHeld(section.id, false) }
             } else if let row = rows.values.first(where: { $0.superview === surface && $0.frame.contains(local) }) {
                 row.setHeld(true)
                 onHold?(section.id, row.key.node, point, (view: row.card as UIView, rect: row.card.bounds, lift: row.card.bounds)) { [weak row] in row?.setHeld(false) }

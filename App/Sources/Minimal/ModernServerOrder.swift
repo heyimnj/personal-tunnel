@@ -98,10 +98,71 @@ final class ModernServerOrderViewController: UIViewController, UICollectionViewD
         if open { unfolded.insert(id) } else { unfolded.remove(id) }
         Haptics.soft(open ? 0.55 : 0.4)
         let paths = groups[section - 1].nodes.indices.map { IndexPath(item: $0, section: section) }
-        collection.performBatchUpdates {
-            if open { collection.insertItems(at: paths) } else { collection.deleteItems(at: paths) }
+        if open {
+            collection.performBatchUpdates { collection.insertItems(at: paths) }
+        } else {
+            collapse(section, paths)
         }
         (collection.supplementaryView(forElementKind: UICollectionView.elementKindSectionHeader, at: IndexPath(item: 0, section: section)) as? GroupHeader)?.setOpen(open, animated: true)
+    }
+
+    /// 3.5 (the owner's video: closing a subscription went in jerks). The flow
+    /// layout's own animation of a deletion moved the headers below from where it
+    /// guessed they had been (off screen, under dozens of servers) and back. Now
+    /// the change is made at once, and drawn over: the servers that were on screen
+    /// fade as a picture, and what lies below the head rises into its place.
+    private func collapse(_ section: Int, _ paths: [IndexPath]) {
+        let kind = UICollectionView.elementKindSectionHeader
+        let headPath = IndexPath(item: 0, section: section)
+        guard !UIAccessibility.isReduceMotionEnabled, view.window != nil,
+              let head = collection.supplementaryView(forElementKind: kind, at: headPath) else {
+            collection.performBatchUpdates { collection.deleteItems(at: paths) }
+            return
+        }
+        let bounds = collection.bounds
+        let oldTop = head.frame.maxY - bounds.minY
+        let below = CGRect(x: bounds.minX, y: max(head.frame.maxY, bounds.minY), width: bounds.width, height: max(0, bounds.maxY - max(head.frame.maxY, bounds.minY)))
+        let picture = below.height > 1 ? collection.resizableSnapshotView(from: below, afterScreenUpdates: false, withCapInsets: .zero) : nil
+        UIView.performWithoutAnimation {
+            collection.performBatchUpdates { collection.deleteItems(at: paths) }
+            collection.layoutIfNeeded()
+        }
+        guard let newHead = collection.supplementaryView(forElementKind: kind, at: headPath) else { return }
+        let newBounds = collection.bounds
+        let newTop = newHead.frame.maxY - newBounds.minY
+        // The list may have been pulled up to its new end: everything moves by as much.
+        let shift = oldTop - newTop
+        let rise = min(max(0, newBounds.height - newTop), 240)
+        var moved: [UIView] = []
+        var views: [UIView] = collection.visibleCells
+        views += collection.visibleSupplementaryViews(ofKind: kind) as [UIView]
+        for item in views {
+            if item.frame.minY >= newHead.frame.maxY - 0.5 {
+                item.transform = CGAffineTransform(translationX: 0, y: shift + rise)
+                item.alpha = 0
+            } else {
+                item.transform = CGAffineTransform(translationX: 0, y: shift)
+            }
+            moved.append(item)
+        }
+        if let picture {
+            picture.frame = collection.convert(below, to: view)
+            picture.isUserInteractionEnabled = false
+            view.addSubview(picture)
+        }
+        let travel = shift
+        UIView.animate(withDuration: 0.42, delay: 0, usingSpringWithDamping: 0.92, initialSpringVelocity: 0, options: [.allowUserInteraction, .beginFromCurrentState]) {
+            for item in moved {
+                item.transform = .identity
+                item.alpha = 1
+            }
+            picture?.frame.origin.y += -travel - 24
+        }
+        UIView.animate(withDuration: 0.2, delay: 0, options: [.curveEaseOut]) {
+            picture?.alpha = 0
+        } completion: { _ in
+            picture?.removeFromSuperview()
+        }
     }
 
     // MARK: Moving
