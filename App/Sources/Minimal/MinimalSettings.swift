@@ -3,7 +3,7 @@ import UniformTypeIdentifiers
 import TunnelCore
 import UIKit
 
-/// Settings root (3.5: six groups by what they do; 1.5.0 had four).
+/// Settings root (3.5: five groups by what they do; 1.5.0 had four).
 final class MinimalSettingsViewController: FormViewController {
     init() {
         super.init(title: L("Настройки"))
@@ -22,12 +22,11 @@ final class MinimalSettingsViewController: FormViewController {
                 .link(symbol: "paintpalette", title: L("Внешний вид")) { [weak self] in self?.push(AppearanceViewController()) },
                 .link(symbol: "globe", title: L("Язык")) { [weak self] in self?.push(LanguageViewController()) },
             ]),
+            // 3.5 (the owner's choice): «Подписки и серверы», «Порядок серверов» and
+            // «Проверка соединения» are gone from here — Home reaches all three (the
+            // server capsule, the servers' «…», the bottom of analytics).
             FormSection([
-                .link(symbol: "server.rack", title: L("Подписки и серверы")) { [weak self] in
-                    self?.present(MinimalServersViewController.wrapped(), animated: true)
-                },
                 .link(symbol: "folder", title: L("Управление подписками")) { [weak self] in self?.push(SubscriptionsViewController()) },
-                .link(symbol: "arrow.up.arrow.down", title: L("Порядок серверов")) { [weak self] in self?.push(ServerOrderViewController()) },
                 .link(symbol: "arrow.clockwise", title: L("Обновление подписок")) { [weak self] in self?.push(NetworkSettingsViewController(.updates)) },
             ]),
             FormSection([
@@ -41,11 +40,8 @@ final class MinimalSettingsViewController: FormViewController {
                 .link(symbol: "hand.raised", title: L("Конфиденциальность")) { [weak self] in self?.push(PrivacyViewController()) },
                 .link(symbol: "eye", title: L("Сетевая активность приложения")) { [weak self] in self?.push(NetworkActivityViewController()) },
             ]),
-            FormSection([
-                .link(symbol: "stethoscope", title: L("Проверка соединения")) { [weak self] in self?.push(DiagnosticsViewController()) },
-                .link(symbol: "doc.text.magnifyingglass", title: L("Журнал службы")) { [weak self] in self?.push(ServiceLogViewController()) },
-            ]),
             FormSection(footer: AboutViewController.version, [
+                .link(symbol: "doc.text.magnifyingglass", title: L("Журнал службы")) { [weak self] in self?.push(ServiceLogViewController()) },
                 .link(symbol: "info.circle", title: L("О приложении")) { [weak self] in self?.push(AboutViewController()) },
             ]),
         ]
