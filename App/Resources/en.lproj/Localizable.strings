@@ -689,3 +689,14 @@
 "%@ до «%@»" = "%@ to «%@»";
 "Сервер не отвечает" = "Server not responding";
 "Современный" = "Modern";
+"Закрыть" = "Close";
+"Ещё" = "More";
+"По порядку" = "In order";
+"По имени" = "By name";
+"По задержке" = "By latency";
+"Сортировка" = "Sorting";
+"Скопировать" = "Copy";
+"Стоп" = "Stop";
+"подписка" = "subscription";
+"подписки" = "subscriptions";
+"подписок" = "subscriptions";

@@ -451,7 +451,7 @@ class TapControl: UIControl {
     }
 }
 
-/// 3.2.12: the owner's own background for the Minimal Home and analytics, up to
+/// 3.5: the owner's own background for the Minimal Home and analytics, up to
 /// four colours blended across the screen, as 1.x had it. One colour fills the
 /// screen; two run top to bottom; three: two along the top, one along the bottom;
 /// four: top left, top right, bottom left, bottom right. Drawn once, small, and

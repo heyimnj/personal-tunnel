@@ -96,7 +96,7 @@ enum Prefs {
         set { defaults.set(newValue, forKey: "personal.amoled"); appearanceChanged.fire() }
     }
 
-    /// 3.2.12: the Minimal Home and analytics on a background of the owner's own
+    /// 3.5: the Minimal Home and analytics on a background of the owner's own
     /// colours, as in 1.x (its keys: `personal.modern.customBackground`, up to four
     /// «RRGGBB» joined by «|» in `personal.modern.gradientColors`).
     static var customBackground: Bool {

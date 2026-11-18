@@ -107,14 +107,14 @@ final class ClassicHomeViewController: UIViewController {
     private let fade = CAGradientLayer()
     private var timer: Timer?
 
-    /// 3.2.12: after a change to the Minimal style the session clock kept ticking
+    /// 3.5: after a change to the Minimal style the session clock kept ticking
     /// (for nobody) until the app was closed.
     deinit { timer?.invalidate() }
 
     override func viewDidLoad() {
         super.viewDidLoad()
         view.backgroundColor = Theme.background
-        // 3.2.12: Classic has no analytics page: no connection events.
+        // 3.5: Classic has no analytics page: no connection events.
         App.shared.core.setConnectionsStreamed(false)
         let all = ClassicRow(Classic.text(L("ВСЕ ЛОКАЦИИ →"), 10, .semibold, Theme.text.withAlphaComponent(0.75), tracking: 0.5)) { [weak self] in
             (self?.parent as? ClassicRootViewController)?.select(1)

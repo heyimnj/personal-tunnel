@@ -960,7 +960,7 @@ final class SurfaceView: UIView {
         // container, and the provider's line goes with it.
         // Clipped only while it moves: a rounded clip at rest would cost every frame
         // of a scroll for nothing.
-        // 3.2.12: the head's card comes in over most of the swipe, not in its first
+        // 3.5: the head's card comes in over most of the swipe, not in its first
         // 24 points: at an ordinary speed that was two frames, and the colour seemed to jump.
         header.showCard(open ? Self.cardShown(pull, travel: header.railWidth) : 0, clipped: open && pull > 0.5)
         info.slide = open ? -pull : 0
@@ -1041,7 +1041,7 @@ final class ServerListView: UIScrollView {
     var onSelect: ((Int64, String) -> Void)?
     var onPing: ((Int64, String) -> Void)?
     /// What a long press lifts above the dim under the menu: a view, the pressed
-    /// part (the menu is placed by it) and the part kept bright (3.2.12: an open
+    /// part (the menu is placed by it) and the part kept bright (3.5: an open
     /// subscription's whole card on screen, not only its head).
     typealias HoldSource = (view: UIView, rect: CGRect, lift: CGRect)
     /// A long press: the subscription, the server (nil for the head), the pressed

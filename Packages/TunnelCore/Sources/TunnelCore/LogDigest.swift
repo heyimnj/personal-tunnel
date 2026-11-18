@@ -1,6 +1,6 @@
 import Foundation
 
-/// 3.2.12: the copied log, made readable. The owner found it full of noise, short
+/// 3.5: the copied log, made readable. The owner found it full of noise, short
 /// of useful lines and carrying old sessions: the same connection error hundreds
 /// of times, a memory line for every megabyte, the extension's events of days
 /// ago, an Xray log and a crash from long-gone connections.
@@ -89,7 +89,7 @@ extension TunnelEvents {
         lines.filter(isStart).compactMap(date(of:))
     }
 
-    /// 3.2.12: the events worth copying — the last `sessions` starts of the
+    /// 3.5: the events worth copying — the last `sessions` starts of the
     /// extension and what followed, nothing older than `maxAge`; of the memory
     /// lines each session keeps its highest and its last.
     public static func digest(_ lines: [String], now: Date = Date(), sessions: Int = 3, maxAge: TimeInterval = 3 * 86_400) -> [String] {

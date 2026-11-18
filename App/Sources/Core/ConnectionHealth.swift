@@ -2,7 +2,7 @@ import Foundation
 import TunnelCore
 import UIKit
 
-/// Whether traffic really goes through the connected server (3.2.12, for the
+/// Whether traffic really goes through the connected server (3.5, for the
 /// connection button's ring): the system says «connected» as soon as the tunnel
 /// is up, also when the server behind it has hung. While the VPN is on and the
 /// app is in front, one URL test through the server (the one «Проверка

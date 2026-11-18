@@ -268,7 +268,7 @@ final class ServiceLogViewController: UIViewController, UITableViewDataSource, U
         func shared(_ lines: [String]) -> [String] {
             lines.isEmpty ? [] : Redactor.forSharing(lines.joined(separator: "\n"), hosts: hosts).components(separatedBy: "\n")
         }
-        // 3.2.12: each line with its time; a line repeated stands once with its count
+        // 3.5: each line with its time; a line repeated stands once with its count
         // (masked first: lines that differ only by an address are the same then).
         let entries = App.shared.core.logs.map { line in
             LogDigest.Entry(level: levels.indices.contains(Int(line.level)) ? levels[Int(line.level)] : "LOG", time: line.time, text: line.text)
@@ -278,13 +278,13 @@ final class ServiceLogViewController: UIViewController, UITableViewDataSource, U
         let log = LogDigest.collapse(zip(entries, masked).map { LogDigest.Entry(level: $0.level, time: $0.time, text: $1) })
         text += log
         if let paths = App.shared.paths {
-            // 3.2.12: only the last three sessions of the extension, not its events of days ago.
+            // 3.5: only the last three sessions of the extension, not its events of days ago.
             let all = TunnelEvents.read(TunnelEvents.file(paths))
             let events = TunnelEvents.digest(all).map(TunnelText.localize)
             if !events.isEmpty { text += ["", L("Расширение:")] + shared(events) }
             let xray = ServiceLogViewController.tail(paths.xrayLog, lines: 80)
             if !xray.isEmpty { text += ["", "Xray-core:"] + shared(xray) }
-            // 3.2.12: a fall of this session or the one before it, not of a day ago.
+            // 3.5: a fall of this session or the one before it, not of a day ago.
             let since = TunnelEvents.starts(all).suffix(2).first ?? Date().addingTimeInterval(-86_400)
             if let crash = ServiceLogViewController.lastCrash(paths, since: since) { text += ["", L("Последнее падение ядра:")] + shared(crash) }
         }
@@ -348,7 +348,7 @@ final class ServiceLogViewController: UIViewController, UITableViewDataSource, U
         let line = lines[indexPath.row]
         var content = cell.defaultContentConfiguration()
         let level = ServiceLogViewController.levels.indices.contains(Int(line.level)) ? ServiceLogViewController.levels[Int(line.level)] : "LOG"
-        // 3.2.12: the time the line came.
+        // 3.5: the time the line came.
         content.text = line.time.map { level + " · " + $0 } ?? level
         content.textProperties.font = Theme.font(10, .semibold)
         content.textProperties.color = line.level <= 2 ? .systemRed : (line.level == 3 ? .systemOrange : .secondaryLabel)

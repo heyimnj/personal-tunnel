@@ -96,7 +96,9 @@ final class MinimalServersViewController: UIViewController, UIScrollViewDelegate
     private static let searchEdge = UIColor { traits in
         traits.userInterfaceStyle == .dark ? UIColor(white: 1, alpha: 0.10) : UIColor(white: 0, alpha: 0.06)
     }
-    private static let barHeight: CGFloat = 70
+    /// 3.5: the bar of the owner's «вариант A» — a large title on the left, «+»
+    /// beside it, and a row of capsules under them (it was 70: ✕, title, three buttons).
+    private static let barHeight: CGFloat = 136
     /// Where the last touch began, and whether the search was already out then:
     /// a pull closes the sheet from the bar, or from anywhere once the search is out.
     private var touchStart: CGPoint = .zero
@@ -116,10 +118,12 @@ final class MinimalServersViewController: UIViewController, UIScrollViewDelegate
     private var closing = false
     private var expanded = Prefs.expandedSubscriptions
     private var ordered: [Subscription] = []
-    private let subtitle = UILabel(font: Theme.font(12), color: .secondaryLabel)
-    private let pingButton = UIButton(type: .system)
+    private let subtitle = UILabel(font: Theme.font(13), color: .secondaryLabel)
+    /// «Пинг», filling as the test goes (in selection: «Удалить»).
+    private let pingButton = PillButton()
+    /// The order of the list, tapped through (in selection: «Скопировать»).
+    private let sortButton = PillButton()
     private let plusButton = UIButton(type: .system)
-    private var titleCenter: NSLayoutConstraint!
     /// «Выбрать несколько», as in 1.5.0: taps select, the bar offers delete and copy.
     private var selecting = false
     private var selectedSubscriptions = Set<Int64>()
@@ -149,7 +153,10 @@ final class MinimalServersViewController: UIViewController, UIScrollViewDelegate
         buildHeader()
         buildSearch()
         buildEdgeClose()
-        App.shared.store.library.observe(self) { [weak self] _ in self?.reload() }
+        App.shared.store.library.observe(self) { [weak self] _ in
+            self?.reload()
+            self?.showBar()
+        }
         App.shared.latency.changed.observe(self, fireNow: false) { [weak self] keys in self?.refresh(keys) }
         App.shared.latency.progress.observe(self) { [weak self] in self?.show($0) }
         App.shared.refreshing.observe(self, fireNow: false) { [weak self] _ in self?.list.reconfigureHeaders() }
@@ -160,105 +167,169 @@ final class MinimalServersViewController: UIViewController, UIScrollViewDelegate
 
     // MARK: Header
 
-    private func circle(_ symbol: String, _ action: Selector) -> UIView {
-        let button = UIButton(type: .system)
-        button.setImage(UIImage(systemName: symbol, withConfiguration: UIImage.SymbolConfiguration(pointSize: 17, weight: .semibold)), for: .normal)
-        button.tintColor = .label
-        button.addTarget(self, action: action, for: .touchUpInside)
-        let glass = GlassView()
-        glass.contentView.addSubview(button)
-        button.pin(to: glass.contentView)
-        glass.translatesAutoresizingMaskIntoConstraints = false
-        NSLayoutConstraint.activate([glass.widthAnchor.constraint(equalToConstant: 44), glass.heightAnchor.constraint(equalToConstant: 44)])
-        return glass
-    }
-
     private func buildHeader() {
         let bar = UIView()
         // The page's own tone, so the first card does not run into the bar.
         bar.backgroundColor = .systemGroupedBackground
         view.addSubview(bar)
         bar.translatesAutoresizingMaskIntoConstraints = false
-        let close = circle("xmark", #selector(closeTapped))
-        let title = UILabel(L("Серверы"), font: Theme.font(17, .semibold))
-        subtitle.textAlignment = .center
-        let titles = UIStackView(.vertical, spacing: 1, alignment: .center, [title, subtitle])
+        // The sheet closes with a pull down (and the edge swipe): a grabber says so,
+        // where the ✕ was.
+        let grabber = UIView()
+        grabber.backgroundColor = UIColor.label.withAlphaComponent(0.22)
+        grabber.layer.cornerRadius = 2.5
+        grabber.isAccessibilityElement = true
+        grabber.accessibilityLabel = L("Закрыть")
+        grabber.accessibilityTraits = .button
+        grabber.isUserInteractionEnabled = true
+        grabber.addGestureRecognizer(UITapGestureRecognizer(target: self, action: #selector(closeTapped)))
+        let title = UILabel(L("Серверы"), font: Theme.font(28, .bold))
+        title.accessibilityTraits = .header
+        subtitle.lineBreakMode = .byTruncatingTail
 
-        let plus = plusButton
-        plus.addTarget(self, action: #selector(addTapped), for: .touchUpInside)
+        var plusConfig = UIButton.Configuration.filled()
+        plusConfig.image = UIImage(systemName: "plus", withConfiguration: UIImage.SymbolConfiguration(pointSize: 18, weight: .bold))
+        plusConfig.baseBackgroundColor = Theme.accent
+        plusConfig.baseForegroundColor = .white
+        plusConfig.cornerStyle = .capsule
+        plusButton.configuration = plusConfig
+        plusButton.accessibilityLabel = L("Добавить")
+        plusButton.layer.shadowColor = Theme.accent.cgColor
+        plusButton.layer.shadowOpacity = 0.35
+        plusButton.layer.shadowRadius = 8
+        plusButton.layer.shadowOffset = CGSize(width: 0, height: 4)
+        plusButton.addTarget(self, action: #selector(addTapped), for: .touchUpInside)
+
+        pingButton.addTarget(self, action: #selector(pingTapped), for: .touchUpInside)
+        sortButton.addTarget(self, action: #selector(sortTapped), for: .touchUpInside)
         let more = UIButton(type: .system)
         more.setImage(UIImage(systemName: "ellipsis", withConfiguration: UIImage.SymbolConfiguration(pointSize: 17, weight: .bold)), for: .normal)
+        more.tintColor = .label
+        more.accessibilityLabel = L("Ещё")
         more.showsMenuAsPrimaryAction = true
         more.menu = UIMenu(children: [UIDeferredMenuElement.uncached { [weak self] done in done(self?.moreItems() ?? []) }])
-        pingButton.addTarget(self, action: #selector(pingTapped), for: .touchUpInside)
-        let actions = UIStackView(.horizontal, spacing: 0, alignment: .fill, [pingButton, plus, more])
-        actions.distribution = .fillEqually
-        for button in [pingButton, plus, more] { button.tintColor = Theme.accent }
-        let glass = GlassView()
-        glass.contentView.addSubview(actions)
-        actions.pin(to: glass.contentView, insets: UIEdgeInsets(top: 0, left: 4, bottom: 0, right: 4))
+        let moreGlass = GlassView()
+        moreGlass.contentView.addSubview(more)
+        more.pin(to: moreGlass.contentView)
+        sortButton.setContentHuggingPriority(.required, for: .horizontal)
+        pingButton.setContentHuggingPriority(.defaultLow, for: .horizontal)
+        let pills = UIStackView(.horizontal, spacing: 8, alignment: .fill, [pingButton, sortButton, moreGlass])
 
-        for item in [close, titles, glass] as [UIView] {
+        for item in [grabber, title, subtitle, plusButton, pills] as [UIView] {
             item.translatesAutoresizingMaskIntoConstraints = false
             bar.addSubview(item)
         }
         NSLayoutConstraint.activate([
             bar.topAnchor.constraint(equalTo: view.topAnchor), bar.leadingAnchor.constraint(equalTo: view.leadingAnchor),
-            bar.trailingAnchor.constraint(equalTo: view.trailingAnchor), bar.heightAnchor.constraint(equalToConstant: 70),
-            close.leadingAnchor.constraint(equalTo: bar.leadingAnchor, constant: 16), close.centerYAnchor.constraint(equalTo: bar.centerYAnchor, constant: 3),
-            titles.centerXAnchor.constraint(equalTo: bar.centerXAnchor), titles.centerYAnchor.constraint(equalTo: close.centerYAnchor),
-            glass.trailingAnchor.constraint(equalTo: bar.trailingAnchor, constant: -16), glass.centerYAnchor.constraint(equalTo: close.centerYAnchor),
-            glass.heightAnchor.constraint(equalToConstant: 44), glass.widthAnchor.constraint(equalToConstant: 116),
+            bar.trailingAnchor.constraint(equalTo: view.trailingAnchor), bar.heightAnchor.constraint(equalToConstant: Self.barHeight),
+            grabber.topAnchor.constraint(equalTo: bar.topAnchor, constant: 7), grabber.centerXAnchor.constraint(equalTo: bar.centerXAnchor),
+            grabber.widthAnchor.constraint(equalToConstant: 36), grabber.heightAnchor.constraint(equalToConstant: 5),
+            title.topAnchor.constraint(equalTo: bar.topAnchor, constant: 24), title.leadingAnchor.constraint(equalTo: bar.leadingAnchor, constant: 20),
+            title.trailingAnchor.constraint(lessThanOrEqualTo: plusButton.leadingAnchor, constant: -12),
+            subtitle.topAnchor.constraint(equalTo: title.bottomAnchor, constant: 1), subtitle.leadingAnchor.constraint(equalTo: title.leadingAnchor),
+            subtitle.trailingAnchor.constraint(lessThanOrEqualTo: plusButton.leadingAnchor, constant: -12),
+            plusButton.trailingAnchor.constraint(equalTo: bar.trailingAnchor, constant: -16), plusButton.centerYAnchor.constraint(equalTo: title.bottomAnchor, constant: 2),
+            plusButton.widthAnchor.constraint(equalToConstant: 46), plusButton.heightAnchor.constraint(equalToConstant: 46),
+            pills.leadingAnchor.constraint(equalTo: bar.leadingAnchor, constant: 16), pills.trailingAnchor.constraint(equalTo: bar.trailingAnchor, constant: -16),
+            pills.bottomAnchor.constraint(equalTo: bar.bottomAnchor, constant: -10), pills.heightAnchor.constraint(equalToConstant: 42),
+            moreGlass.widthAnchor.constraint(equalToConstant: 42),
         ])
-        list.contentInset.top = 76
-        list.verticalScrollIndicatorInsets.top = 76
+        list.contentInset.top = Self.barHeight + 6
+        list.verticalScrollIndicatorInsets.top = Self.barHeight + 6
         showBar()
     }
 
-    /// The bar's first two buttons: ping and add, or (selecting) delete and copy.
-    private func showBar() {
-        let config = UIImage.SymbolConfiguration(pointSize: 17, weight: .medium)
+    override func accessibilityPerformEscape() -> Bool {
+        closeTapped()
+        return true
+    }
+
+    /// «По порядку» → «По имени» → «По задержке» → «По порядку».
+    private enum Sort { case manual, name, latency }
+
+    private var sort: Sort {
+        Prefs.sortByLatency ? .latency : (Prefs.arrangement.byName ? .name : .manual)
+    }
+
+    private static func title(_ sort: Sort) -> String {
+        switch sort {
+        case .manual: return L("По порядку")
+        case .name: return L("По имени")
+        case .latency: return L("По задержке")
+        }
+    }
+
+    @objc private func sortTapped() {
+        Haptics.selection()
         if selecting {
-            pingButton.setImage(UIImage(systemName: "trash", withConfiguration: config), for: .normal)
+            copySelected()
+            return
+        }
+        var arrangement = Prefs.arrangement
+        switch sort {
+        case .manual:
+            arrangement.byName = true
+            Prefs.sortByLatency = false
+        case .name:
+            arrangement.byName = false
+            Prefs.sortByLatency = true
+        case .latency:
+            arrangement.byName = false
+            Prefs.sortByLatency = false
+        }
+        Prefs.arrangement = arrangement
+        reload()
+        showBar()
+    }
+
+    /// What the bar says: the list (subscriptions and servers), or the selection.
+    private var listSummary: String {
+        let library = App.shared.library
+        let subscriptions = library.subscriptions.filter { !$0.isStandalone }.count
+        let servers = library.subscriptions.reduce(0) { $0 + $1.nodes.count }
+        let parts = [subscriptions > 0 ? Format.plural(subscriptions, L("подписка"), L("подписки"), L("подписок")) : nil,
+                     Format.plural(servers, L("сервер"), L("сервера"), L("серверов"))].compactMap { $0 }
+        return parts.joined(separator: " · ")
+    }
+
+    /// The capsules: ping and the order, or (selecting) delete and copy.
+    private func showBar() {
+        if selecting {
+            pingButton.show(symbol: "trash", title: L("Удалить"), tint: .systemRed, detail: nil, progress: nil)
             pingButton.accessibilityLabel = L("Удалить выбранное")
-            plusButton.setImage(UIImage(systemName: "doc.on.doc", withConfiguration: config), for: .normal)
-            plusButton.accessibilityLabel = L("Скопировать выбранные ссылки")
+            sortButton.show(symbol: "doc.on.doc", title: L("Скопировать"), tint: .label, detail: nil, progress: nil)
+            sortButton.accessibilityLabel = L("Скопировать выбранные ссылки")
             pingButton.isEnabled = !selectionEmpty
-            plusButton.isEnabled = !selectionEmpty
+            sortButton.isEnabled = !selectionEmpty
+            plusButton.isHidden = true
             subtitle.text = Lf("Выбрано: %@", "\(selectedSubscriptions.count + selectedNodes.count)")
-            subtitle.isHidden = false
         } else {
-            plusButton.setImage(UIImage(systemName: "plus", withConfiguration: UIImage.SymbolConfiguration(pointSize: 18, weight: .medium)), for: .normal)
-            plusButton.accessibilityLabel = L("Добавить")
+            plusButton.isHidden = false
             pingButton.isEnabled = true
-            plusButton.isEnabled = true
+            sortButton.isEnabled = true
+            sortButton.show(symbol: "arrow.up.arrow.down", title: Self.title(sort), tint: .label, detail: nil, progress: nil)
+            sortButton.accessibilityLabel = L("Сортировка") + ": " + Self.title(sort)
             show(App.shared.latency.progress.value)
         }
     }
 
     private func show(_ progress: LatencyProgress) {
         guard !selecting else { return }
-        let symbol = progress.running ? "stop.circle.fill" : "waveform.path.ecg"
-        pingButton.setImage(UIImage(systemName: symbol, withConfiguration: UIImage.SymbolConfiguration(pointSize: progress.running ? 22 : 17, weight: .medium)), for: .normal)
-        pingButton.accessibilityLabel = progress.running ? L("Остановить проверку") : L("Проверить пинг")
-        subtitle.text = progress.running ? Lf("Проверено %@ из %@", "\(progress.done)", "\(progress.total)") : nil
-        subtitle.isHidden = !progress.running
+        if progress.running {
+            pingButton.show(symbol: "stop.fill", title: L("Стоп"), tint: Theme.accent, detail: "\(progress.done)/\(progress.total)",
+                            progress: progress.total > 0 ? Double(progress.done) / Double(progress.total) : 0)
+            pingButton.accessibilityLabel = L("Остановить проверку")
+        } else {
+            pingButton.show(symbol: "waveform.path.ecg", title: L("Пинг"), tint: Theme.accent, detail: nil, progress: nil)
+            pingButton.accessibilityLabel = L("Проверить пинг")
+        }
+        subtitle.text = listSummary
     }
 
     private func moreItems() -> [UIMenuElement] {
-        let arrangement = Prefs.arrangement
+        // 3.5: the order is the bar's own capsule now.
         return [
-            UIAction(title: L("Сортировать по имени"), image: UIImage(systemName: "textformat.abc"), state: arrangement.byName ? .on : .off) { [weak self] _ in
-                var next = Prefs.arrangement
-                next.byName.toggle()
-                Prefs.arrangement = next
-                self?.reload()
-            },
-            UIAction(title: L("Сортировать по задержке"), image: UIImage(systemName: "speedometer"), state: Prefs.sortByLatency ? .on : .off) { [weak self] _ in
-                Prefs.sortByLatency.toggle()
-                self?.reload()
-            },
-            UIAction(title: L("Порядок серверов")) { [weak self] _ in
+            UIAction(title: L("Порядок серверов"), image: UIImage(systemName: "list.number")) { [weak self] _ in
                 let order = UINavigationController(rootViewController: ServerOrderViewController())
                 self?.present(order, animated: true)
             },
@@ -1009,4 +1080,77 @@ final class TouchRecorder: UIGestureRecognizer {
 
     override func canPrevent(_: UIGestureRecognizer) -> Bool { false }
     override func canBePrevented(by _: UIGestureRecognizer) -> Bool { false }
+}
+
+/// A capsule of the servers' bar (3.5, the owner's «вариант A»): a symbol and a
+/// word, a count at the end, and a fill that grows with a running test.
+final class PillButton: UIControl {
+    private let glass = GlassView()
+    private let fill = UIView()
+    private let icon = UIImageView()
+    private let label = UILabel(font: Theme.font(15, .medium))
+    private let detail = UILabel(font: UIFont.monospacedDigitSystemFont(ofSize: 13, weight: .semibold), color: .secondaryLabel)
+    private var progress: Double?
+
+    override init(frame: CGRect) {
+        super.init(frame: frame)
+        glass.isUserInteractionEnabled = false
+        addSubview(glass)
+        glass.pin(to: self)
+        fill.isUserInteractionEnabled = false
+        glass.contentView.addSubview(fill)
+        icon.contentMode = .center
+        icon.setContentHuggingPriority(.required, for: .horizontal)
+        detail.setContentHuggingPriority(.required, for: .horizontal)
+        label.setContentCompressionResistancePriority(.defaultHigh, for: .horizontal)
+        let row = UIStackView(.horizontal, spacing: 6, alignment: .center, [icon, label, UIView(), detail])
+        row.isUserInteractionEnabled = false
+        glass.contentView.addSubview(row)
+        row.pin(to: glass.contentView, insets: UIEdgeInsets(top: 0, left: 14, bottom: 0, right: 14))
+        isAccessibilityElement = true
+        accessibilityTraits = .button
+    }
+
+    @available(*, unavailable)
+    required init?(coder _: NSCoder) { fatalError() }
+
+    func show(symbol: String, title: String, tint: UIColor, detail text: String?, progress value: Double?) {
+        icon.image = UIImage(systemName: symbol, withConfiguration: UIImage.SymbolConfiguration(font: Theme.font(15, .semibold)))
+        icon.tintColor = tint
+        label.text = title
+        detail.text = text
+        detail.isHidden = text == nil
+        fill.backgroundColor = tint.withAlphaComponent(0.14)
+        let was = progress
+        progress = value
+        // The fill follows the test; it does not jump back when a new one starts.
+        if let value, let was, value >= was {
+            UIView.animate(withDuration: 0.3, delay: 0, options: [.beginFromCurrentState, .curveEaseOut]) { self.layoutFill() }
+        } else {
+            layoutFill()
+        }
+    }
+
+    override func layoutSubviews() {
+        super.layoutSubviews()
+        layoutFill()
+    }
+
+    private func layoutFill() {
+        let share = CGFloat(max(0, min(1, progress ?? 0)))
+        fill.frame = CGRect(x: 0, y: 0, width: glass.contentView.bounds.width * share, height: glass.contentView.bounds.height)
+    }
+
+    override var isHighlighted: Bool {
+        didSet { UIView.animate(withDuration: 0.15) { self.alpha = self.isHighlighted ? 0.6 : 1 } }
+    }
+
+    override var isEnabled: Bool {
+        didSet { alpha = isEnabled ? 1 : 0.4 }
+    }
+
+    override var accessibilityValue: String? {
+        get { detail.isHidden ? nil : detail.text }
+        set {}
+    }
 }

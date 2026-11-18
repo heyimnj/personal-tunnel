@@ -33,7 +33,7 @@ final class SpeedGraphView: UIView {
     private let down = CAShapeLayer()
     private let up = CAShapeLayer()
     private let grid = CAShapeLayer()
-    /// 3.2.12: a soft wash under the download line.
+    /// 3.5: a soft wash under the download line.
     private let wash = CAGradientLayer()
     private let washShape = CAShapeLayer()
     /// The dashed lines across; off where the graph stands without a card.
@@ -107,7 +107,7 @@ final class SpeedGraphView: UIView {
     }
 }
 
-/// A thin rounded bar split into coloured parts (3.2.12): what a number is made
+/// A thin rounded bar split into coloured parts (3.5): what a number is made
 /// of, at a glance — download against upload, TCP against UDP, the routes, how
 /// full the core's memory is. Parts are laid out by frame; nothing is redrawn.
 final class MeterBar: UIView {
@@ -156,7 +156,7 @@ final class MeterBar: UIView {
     }
 }
 
-/// A ring split between parts (3.2.12): the session's traffic, download against
+/// A ring split between parts (3.5): the session's traffic, download against
 /// upload, with the total in the middle.
 final class RingChart: UIView {
     var parts: [(value: Double, color: UIColor)] = [] { didSet { setNeedsDisplay() } }
@@ -198,7 +198,7 @@ final class RingChart: UIView {
     }
 }
 
-/// A half-circle gauge (3.2.12): the connected server's delay. Its track is
+/// A half-circle gauge (3.5): the connected server's delay. Its track is
 /// tinted green, orange and red where those values lie; the arc fills up to the
 /// value in its own colour and a dot marks the end.
 final class GaugeView: UIView {
@@ -254,7 +254,7 @@ final class GaugeView: UIView {
     }
 }
 
-/// An area line over time (3.2.12): the core's memory in the last two minutes,
+/// An area line over time (3.5): the core's memory in the last two minutes,
 /// scaled to the extension's limit, which shows as a dashed line when it is near.
 final class SparklineView: UIView {
     var values: [Double] = [] { didSet { setNeedsDisplay() } }
@@ -319,7 +319,7 @@ final class SparklineView: UIView {
     }
 }
 
-/// Columns over time, two series stacked (3.2.12): the open TCP and UDP
+/// Columns over time, two series stacked (3.5): the open TCP and UDP
 /// connections in the last minute, a column every two seconds.
 final class ColumnsView: UIView {
     var lower: [Int] = [] { didSet { setNeedsDisplay() } }
@@ -368,7 +368,7 @@ final class ColumnsView: UIView {
     }
 }
 
-/// A grouped card of rows, as the settings draw them (3.2.12, the owner's
+/// A grouped card of rows, as the settings draw them (3.5, the owner's
 /// «вариант A»): a list a glance runs down, with small charts where they help.
 final class AnalyticsGroup: UIView {
     let stack = UIStackView(.vertical, spacing: 0, alignment: .fill, [])
@@ -460,7 +460,7 @@ final class AnalyticsRow: UIView {
     }
 }
 
-/// The second Home page (3.2.12: rebuilt as the owner's «вариант A» — the speed
+/// The second Home page (3.5: rebuilt as the owner's «вариант A» — the speed
 /// large at the top over its graph, then lists with small charts; it was a grid
 /// of cards).
 final class MinimalAnalyticsViewController: UIViewController {
@@ -472,7 +472,7 @@ final class MinimalAnalyticsViewController: UIViewController {
     private let graph = SpeedGraphView()
     private let graphHint = UILabel(L("Данные появятся после подключения"), font: Theme.font(.caption1), color: .secondaryLabel)
     private let sessionRow = AnalyticsRow(L("Сеанс"))
-    // 3.2.12: each measure drawn its own way — a ring, a gauge, a line, columns.
+    // 3.5: each measure drawn its own way — a ring, a gauge, a line, columns.
     private let trafficRing = RingChart()
     private let trafficTotal = UILabel(font: UIFont.monospacedDigitSystemFont(ofSize: Theme.font(.subheadline).pointSize, weight: .semibold))
     private let downTotal = UILabel(font: UIFont.monospacedDigitSystemFont(ofSize: Theme.font(.body).pointSize, weight: .semibold))
@@ -497,7 +497,7 @@ final class MinimalAnalyticsViewController: UIViewController {
     /// The extension's limit, about 50 MiB: the memory meter fills against it.
     private static let memoryLimit: Double = 50 * 1024 * 1024
 
-    /// 3.2.12: a change of style while the page shows: its clock stops with it.
+    /// 3.5: a change of style while the page shows: its clock stops with it.
     deinit { timer?.invalidate() }
 
     var isAtTop: Bool { scroll.contentOffset.y <= -scroll.adjustedContentInset.top + 1 }
@@ -529,7 +529,7 @@ final class MinimalAnalyticsViewController: UIViewController {
 
     override func viewDidLoad() {
         super.viewDidLoad()
-        // 3.2.12: over Home's wallpaper when the owner chose one.
+        // 3.5: over Home's wallpaper when the owner chose one.
         view.backgroundColor = Wallpaper.active ? .clear : Theme.background
         Prefs.appearanceChanged.observe(self) { [weak self] in self?.view.backgroundColor = Wallpaper.active ? .clear : Theme.background }
         scroll.alwaysBounceVertical = true
@@ -741,7 +741,7 @@ final class MinimalAnalyticsViewController: UIViewController {
     /// Only the visible page keeps its timer and redraws the graph and the lists.
     func setVisible(_ value: Bool) {
         visible = value
-        // 3.2.12: the connections are streamed for the whole Home (MinimalHome), not
+        // 3.5: the connections are streamed for the whole Home (MinimalHome), not
         // from the moment this page shows: the first visit after a launch showed an
         // empty page for a second while the stream started again.
         timer?.invalidate()

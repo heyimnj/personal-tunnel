@@ -37,7 +37,7 @@ struct CoreConnection: Equatable {
     let protocolName: String
 }
 
-/// The core's memory and open connections, a sample a second (3.2.12).
+/// The core's memory and open connections, a sample a second (3.5).
 struct CoreSamples: Equatable {
     static let capacity = 120
     private(set) var memory: [Int64] = []
@@ -60,7 +60,7 @@ struct LogLine {
     let id: Int
     let level: Int32
     let text: String
-    /// 3.2.12: when the app received it. The core's own lines carry no clock time;
+    /// 3.5: when the app received it. The core's own lines carry no clock time;
     /// nil: it came with the core's buffer, before the app was listening.
     let date: Date?
 
@@ -83,7 +83,7 @@ final class CoreClient {
     let status = Observable<CoreStatus?>(nil)
     let connections = Observable(CoreConnections())
     let history = Observable(TrafficHistory())
-    /// 3.2.12: the core's memory and the open connections, once a second over the
+    /// 3.5: the core's memory and the open connections, once a second over the
     /// last two minutes (analytics draws them).
     let samples = Observable(CoreSamples())
     /// Fired when lines are appended to `logs`.
@@ -125,7 +125,7 @@ final class CoreClient {
     func start() {
         guard !running else { return }
         running = true
-        // 3.2.12: a new session: the app's own lines of long-gone connections go
+        // 3.5: a new session: the app's own lines of long-gone connections go
         // (the core starts its own log again by itself); the last minutes stay,
         // they tell how this start came about.
         let recent = Date().addingTimeInterval(-600)
@@ -178,12 +178,12 @@ final class CoreClient {
     func clearLogs() {
         logs = []
         logsChanged.fire()
-        // 3.2.12: the core's buffer too, or the next stream brings its lines back.
+        // 3.5: the core's buffer too, or the next stream brings its lines back.
         if let client { work.async { try? client.clearLogs() } }
     }
 
     /// Every new log stream starts with the core's whole buffer (the core starts
-    /// it again when the tunnel starts). 3.2.12: lines already received keep the
+    /// it again when the tunnel starts). 3.5: lines already received keep the
     /// time they first came; the others came before the app was listening. The
     /// app's own lines stay, and everything stands in the order of its time.
     fileprivate func replaceCoreLines(_ entries: [(Int32, String)]) {
@@ -215,7 +215,7 @@ final class CoreClient {
     }
 
     /// Connection events are streamed while the analytics page can be shown
-    /// (3.2.12: the whole Minimal Home, so the page has its data the first time it opens).
+    /// (3.5: the whole Minimal Home, so the page has its data the first time it opens).
     func setConnectionsStreamed(_ enabled: Bool) {
         guard wantsConnections != enabled else { return }
         wantsConnections = enabled
@@ -252,7 +252,7 @@ final class CoreClient {
         let options = LibboxCommandClientOptions()
         options.addCommand(LibboxCommandStatus)
         if wantsConnections { options.addCommand(LibboxCommandConnections) }
-        // 3.2.12: the log is always streamed (it was only while the log screen was
+        // 3.5: the log is always streamed (it was only while the log screen was
         // open): a line gets the time it came, and the screen opens on all of them.
         options.addCommand(LibboxCommandLog)
         options.statusInterval = Int64(NSEC_PER_SEC)
@@ -303,7 +303,7 @@ final class CoreClient {
     }
 
     /// Colours and the level word out, the core's seconds since its start out
-    /// (3.2.12: the line's time is shown instead), masked, translated.
+    /// (3.5: the line's time is shown instead), masked, translated.
     fileprivate static func prepareLine(_ text: String) -> String {
         TunnelText.localize(Redactor.redact(LogDigest.dropUptime(LogText.clean(text))))
     }

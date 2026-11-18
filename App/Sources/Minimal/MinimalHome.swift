@@ -126,13 +126,13 @@ final class MinimalHomeViewController: UIViewController, UIScrollViewDelegate, U
     private var animatingPage = false
     private var hideDots: DispatchWorkItem?
 
-    /// 3.2.12: the owner's own colours behind both pages (`Wallpaper`).
+    /// 3.5: the owner's own colours behind both pages (`Wallpaper`).
     private var wallpaper: UIImageView?
 
     override func viewDidLoad() {
         super.viewDidLoad()
         Wallpaper.apply(to: view, holder: &wallpaper)
-        // 3.2.12: the connection events come while Home is up, so analytics has its
+        // 3.5: the connection events come while Home is up, so analytics has its
         // data the first time it is opened (they are prepared off the main thread
         // and drawn only while the page shows).
         App.shared.core.setConnectionsStreamed(true)
@@ -429,7 +429,7 @@ final class MinimalConnectionView: UIView {
 
     private let button = TapControl()
     private let buttonGlass = ControlGlassView(circle: true, opacityKey: Prefs.buttonOpacityKey)
-    /// 3.2.12: a switch of our own in place of the power symbol, and a ring round
+    /// 3.5: a switch of our own in place of the power symbol, and a ring round
     /// the button in place of the dot under it.
     private let power = SwitchGlyph()
     private let ring = ConnectionRing()
@@ -441,7 +441,7 @@ final class MinimalConnectionView: UIView {
     private let flag = UILabel(font: .systemFont(ofSize: 21))
     private let mark = UIImageView(image: MinimalIcons.home)
     private let name = UILabel(font: Theme.font(17, .medium))
-    /// 3.2.12: no up-and-down chevrons at the end (the owner's choice).
+    /// 3.5: no up-and-down chevrons at the end (the owner's choice).
     private lazy var capsuleRow = UIStackView(.horizontal, spacing: 8, alignment: .center, [flag, mark, name, UIView()])
 
     override init(frame: CGRect) {
@@ -589,7 +589,7 @@ final class MinimalConnectionView: UIView {
     }
 }
 
-/// The connection button's glyph (3.2.12, the owner's own): a standing switch,
+/// The connection button's glyph (3.5, the owner's own): a standing switch,
 /// off below and on above, in the grey of the text under the button (black stood
 /// out of the interface). On, its track takes a soft fill; the knob slides with
 /// a spring.
@@ -677,7 +677,7 @@ final class SwitchGlyph: UIView {
     }
 }
 
-/// The ring round the connection button (3.2.12, in place of the dot under its
+/// The ring round the connection button (3.5, in place of the dot under its
 /// glyph): yellow while the tunnel comes up or goes down, an arc running round;
 /// green when it is up and traffic goes through the server; red when the server
 /// does not answer (`ConnectionHealth`). It closes into a full ring when the

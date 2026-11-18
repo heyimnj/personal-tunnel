@@ -3,7 +3,7 @@ import UniformTypeIdentifiers
 import TunnelCore
 import UIKit
 
-/// Settings root (3.2.12: six groups by what they do; 1.5.0 had four).
+/// Settings root (3.5: six groups by what they do; 1.5.0 had four).
 final class MinimalSettingsViewController: FormViewController {
     init() {
         super.init(title: L("Настройки"))
@@ -15,7 +15,7 @@ final class MinimalSettingsViewController: FormViewController {
     }
 
     override func build() -> [FormSection] {
-        // 3.2.12 (the owner's choice): grouped by what they do; the network page
+        // 3.5 (the owner's choice): grouped by what they do; the network page
         // («Сеть и безопасность») is split into its parts.
         [
             FormSection([
@@ -52,7 +52,7 @@ final class MinimalSettingsViewController: FormViewController {
     }
 }
 
-/// «Внешний вид» (3.2.12, the owner's choice): the colours, the background and
+/// «Внешний вид» (3.5, the owner's choice): the colours, the background and
 /// the font are here, not one page further; the glass has its own page.
 /// «Обои» is gone: its one switch (AMOLED) was in «Цвета и шрифт» as well.
 final class AppearanceViewController: ColorsViewController {
@@ -75,7 +75,7 @@ final class AppearanceViewController: ColorsViewController {
     }
 }
 
-/// The glass and its transparency (3.2.12: its own page, it was on «Внешний вид»).
+/// The glass and its transparency (3.5: its own page, it was on «Внешний вид»).
 final class GlassSettingsViewController: FormViewController {
     init() { super.init(title: L("Стекло и прозрачность")) }
 
@@ -110,7 +110,7 @@ final class LanguageViewController: FormViewController {
     }
 }
 
-/// The network settings, one part per page (3.2.12: they were one long page,
+/// The network settings, one part per page (3.5: they were one long page,
 /// «Сеть и безопасность»; the app lock went to the settings root).
 final class NetworkSettingsViewController: FormViewController {
     enum Part {
@@ -194,7 +194,7 @@ final class NetworkSettingsViewController: FormViewController {
 }
 
 /// «Цвета и шрифт». Classic opens it as a page; Minimal has the same rows on
-/// «Внешний вид» (3.2.12), with its background's colours as well.
+/// «Внешний вид» (3.5), with its background's colours as well.
 class ColorsViewController: FormViewController {
     init() { super.init(title: L("Цвета и шрифт")) }
     override init(title: String) { super.init(title: title) }
@@ -244,7 +244,7 @@ class ColorsViewController: FormViewController {
         return sections
     }
 
-    /// 3.2.12: the Home and analytics background of up to four colours, as 1.x had it.
+    /// 3.5: the Home and analytics background of up to four colours, as 1.x had it.
     private func backgroundSection() -> FormSection {
         var rows: [FormRow] = [
             .toggle(title: L("AMOLED — чёрный фон в тёмной теме"), get: { Prefs.amoled }, set: { Prefs.amoled = $0 }),

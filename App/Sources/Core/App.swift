@@ -12,7 +12,7 @@ final class App {
     let tunnel = TunnelController()
     let core = CoreClient()
     let latency = LatencyService()
-    /// 3.2.12: whether traffic really goes through the connected server.
+    /// 3.5: whether traffic really goes through the connected server.
     lazy var health = ConnectionHealth(tunnel: tunnel)
     /// Subscriptions being refreshed right now.
     let refreshing = Observable<Set<Int64>>([])

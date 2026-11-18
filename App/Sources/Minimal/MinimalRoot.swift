@@ -27,7 +27,7 @@ enum MinimalIcons {
         }.withRenderingMode(.alwaysTemplate)
     }()
 
-    /// The Settings tab glyph (3.2.12, drawn for the owner): a gear over two
+    /// The Settings tab glyph (3.5, drawn for the owner): a gear over two
     /// crossed wrenches, as the bones lie under the skull of a pirate flag —
     /// the open ends at the top, the ring ends at the bottom. A clear ring round
     /// the gear keeps the shapes apart.
