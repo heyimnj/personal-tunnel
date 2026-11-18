@@ -680,8 +680,6 @@ final class MinimalAnalyticsViewController: UIViewController {
         let pair = UIStackView(.horizontal, spacing: 12, alignment: .fill, [routes, memory])
         pair.distribution = .fillEqually
         routes.heightAnchor.constraint(equalTo: routes.widthAnchor).isActive = true
-        // 4:2 — as tall as the square tiles under it.
-        connections.heightAnchor.constraint(equalTo: routes.heightAnchor).isActive = true
 
         let routesNote = Classic.padded(UILabel(L("Показаны только соединения, полученные от ядра во время наблюдения; это не весь трафик сеанса."), font: Theme.font(.caption2), color: .secondaryLabel, lines: 0),
                                         UIEdgeInsets(top: 0, left: 6, bottom: 0, right: 6))
@@ -702,6 +700,9 @@ final class MinimalAnalyticsViewController: UIViewController {
             AnalyticsGroup.caption(L("Соединения")), connections, pair, routesNote,
             links,
         ])
+        // 4:2 — as tall as the square tiles under it. Only now: the two must
+        // already share a view (3.5 (271) tied them earlier and crashed at launch).
+        connections.heightAnchor.constraint(equalTo: routes.heightAnchor).isActive = true
         content.setCustomSpacing(6, after: header)
         content.setCustomSpacing(12, after: session)
         content.setCustomSpacing(12, after: connections)
