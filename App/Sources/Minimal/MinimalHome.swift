@@ -589,14 +589,15 @@ final class MinimalConnectionView: UIView {
     }
 }
 
-/// The connection button's glyph (3.2.12, the owner's own): a switch, off on
-/// the left and on on the right. On, its track takes a soft fill; the knob
-/// slides with a spring.
+/// The connection button's glyph (3.2.12, the owner's own): a standing switch,
+/// off below and on above, in the grey of the text under the button (black stood
+/// out of the interface). On, its track takes a soft fill; the knob slides with
+/// a spring.
 final class SwitchGlyph: UIView {
     private let track = CAShapeLayer()
     private let knob = CAShapeLayer()
     private(set) var isOn = false
-    static let size = CGSize(width: 58, height: 32)
+    static let size = CGSize(width: 32, height: 58)
     private static let line: CGFloat = 3
     private static let knobInset: CGFloat = 6.5
 
@@ -620,7 +621,7 @@ final class SwitchGlyph: UIView {
     }
 
     private func restyle() {
-        let ink = UIColor.label.resolvedColor(with: traitCollection)
+        let ink = UIColor.secondaryLabel.resolvedColor(with: traitCollection)
         CATransaction.begin()
         CATransaction.setDisableActions(true)
         track.strokeColor = ink.cgColor
@@ -633,8 +634,8 @@ final class SwitchGlyph: UIView {
         super.layoutSubviews()
         let rect = bounds.insetBy(dx: Self.line / 2, dy: Self.line / 2)
         track.frame = bounds
-        track.path = UIBezierPath(roundedRect: rect, cornerRadius: rect.height / 2).cgPath
-        let diameter = bounds.height - Self.knobInset * 2
+        track.path = UIBezierPath(roundedRect: rect, cornerRadius: rect.width / 2).cgPath
+        let diameter = bounds.width - Self.knobInset * 2
         knob.bounds = CGRect(x: 0, y: 0, width: diameter, height: diameter)
         knob.path = UIBezierPath(ovalIn: knob.bounds).cgPath
         CATransaction.begin()
@@ -644,9 +645,9 @@ final class SwitchGlyph: UIView {
     }
 
     private func knobCenter(_ on: Bool) -> CGPoint {
-        let radius = (bounds.height - Self.knobInset * 2) / 2
-        let x = on ? bounds.width - Self.knobInset - radius : Self.knobInset + radius
-        return CGPoint(x: x, y: bounds.midY)
+        let radius = (bounds.width - Self.knobInset * 2) / 2
+        let y = on ? Self.knobInset + radius : bounds.height - Self.knobInset - radius
+        return CGPoint(x: bounds.midX, y: y)
     }
 
     func set(on: Bool, animated: Bool) {
