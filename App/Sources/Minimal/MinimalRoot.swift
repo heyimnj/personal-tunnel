@@ -27,8 +27,65 @@ enum MinimalIcons {
         }.withRenderingMode(.alwaysTemplate)
     }()
 
-    static let settings = UIImage(systemName: "rectangle.3.group.fill",
-                                  withConfiguration: UIImage.SymbolConfiguration(pointSize: 26, weight: .regular))!
+    /// The Settings tab glyph (3.2.12, drawn for the owner): a gear over two
+    /// crossed wrenches, as the bones lie under the skull of a pirate flag —
+    /// the open ends at the top, the ring ends at the bottom. A clear ring round
+    /// the gear keeps the shapes apart.
+    static let settings: UIImage = {
+        let size = CGSize(width: 30, height: 30)
+        return UIGraphicsImageRenderer(size: size).image { context in
+            let c = context.cgContext
+            c.setFillColor(UIColor.black.cgColor)
+            let center = CGPoint(x: 15, y: 15)
+            let diagonal = 1 / CGFloat(2).squareRoot()
+            // Ends of the wrenches: (direction from the centre, distance, radius, open).
+            let ends: [(CGFloat, CGFloat, CGFloat, CGFloat, Bool)] = [
+                (-1, -1, 11.3, 3.4, true), (1, -1, 11.3, 3.4, true),
+                (-1, 1, 11.45, 3.25, false), (1, 1, 11.45, 3.25, false),
+            ]
+            for (dx, dy, distance, radius, _) in ends {
+                let point = CGPoint(x: center.x + dx * diagonal * distance, y: center.y + dy * diagonal * distance)
+                c.fillEllipse(in: CGRect(x: point.x - radius, y: point.y - radius, width: radius * 2, height: radius * 2))
+            }
+            // Cut out: the open ends' jaws, the rings' holes, the ring round the gear.
+            c.setBlendMode(.clear)
+            for (dx, dy, distance, radius, open) in ends {
+                let point = CGPoint(x: center.x + dx * diagonal * distance, y: center.y + dy * diagonal * distance)
+                if open {
+                    c.saveGState()
+                    c.translateBy(x: point.x, y: point.y)
+                    c.rotate(by: atan2(dy, dx))
+                    c.fill(CGRect(x: radius - 2.9, y: -1.0, width: 4.9, height: 2.0))
+                    c.restoreGState()
+                } else {
+                    c.fillEllipse(in: CGRect(x: point.x - 1.35, y: point.y - 1.35, width: 2.7, height: 2.7))
+                }
+            }
+            c.fillEllipse(in: CGRect(x: center.x - 8.2, y: center.y - 8.2, width: 16.4, height: 16.4))
+            c.setBlendMode(.normal)
+            // The gear: ten teeth, a hole in the middle.
+            let teeth = 10, inner: CGFloat = 5.6, outer: CGFloat = 7.3
+            let pitch = 2 * CGFloat.pi / CGFloat(teeth)
+            let gear = UIBezierPath()
+            for index in 0 ..< teeth {
+                let angle = CGFloat(index) * pitch - .pi / 2
+                for (fraction, radius) in [(-0.31, inner), (-0.21, outer), (0.21, outer), (0.31, inner)] as [(CGFloat, CGFloat)] {
+                    let point = CGPoint(x: center.x + radius * cos(angle + fraction * pitch), y: center.y + radius * sin(angle + fraction * pitch))
+                    if gear.isEmpty { gear.move(to: point) } else { gear.addLine(to: point) }
+                }
+            }
+            gear.close()
+            gear.append(UIBezierPath(arcCenter: center, radius: 2.2, startAngle: 0, endAngle: 2 * .pi, clockwise: false))
+            gear.usesEvenOddFillRule = true
+            gear.lineWidth = 0.6
+            gear.lineJoinStyle = .round
+            UIColor.black.setFill()
+            UIColor.black.setStroke()
+            gear.fill()
+            // A thin outline rounds the teeth's corners.
+            gear.stroke()
+        }.withRenderingMode(.alwaysTemplate)
+    }()
 }
 
 /// «Минималистичный»: Home (connection + analytics pager) and Settings in the

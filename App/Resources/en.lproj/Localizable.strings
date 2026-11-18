@@ -677,3 +677,9 @@
 "Фон" = "Background";
 "Фон главной и аналитики: белый в светлой теме, чёрный или тёмно-серый в тёмной." = "Home and analytics background: white in the light theme, black or dark grey in the dark one.";
 "Фон главной и аналитики, в обеих темах. Два цвета: сверху и снизу. Три: два сверху и один снизу. Четыре: верхний левый, верхний правый, нижний левый, нижний правый." = "Home and analytics background, in both themes. Two colors: top and bottom. Three: two along the top, one along the bottom. Four: top left, top right, bottom left, bottom right.";
+"СЕЙЧАС" = "NOW";
+"2 мин назад" = "2 min ago";
+"сейчас" = "now";
+"Сеанс" = "Session";
+"Соединения" = "Connections";
+"Маршруты" = "Routes";
