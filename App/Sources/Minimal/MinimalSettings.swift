@@ -61,7 +61,7 @@ final class AppearanceViewController: ColorsViewController {
     override func build() -> [FormSection] {
         [
             FormSection([
-                .picker(title: L("Интерфейс"), options: [("modern", L("Минималистичный")), ("classic", L("Классика"))], get: { Prefs.style.rawValue },
+                .picker(title: L("Интерфейс"), options: [("modern", L("Современный")), ("classic", L("Классика"))], get: { Prefs.style.rawValue },
                         set: { Prefs.style = InterfaceStyle(rawValue: $0) ?? .minimal }),
                 .picker(title: L("Оформление"), options: [("system", L("Системная")), ("light", L("Светлая")), ("dark", L("Тёмная"))], get: { Prefs.theme }, set: { Prefs.theme = $0 }),
             ]),

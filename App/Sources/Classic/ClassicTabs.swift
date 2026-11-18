@@ -475,7 +475,7 @@ final class ClassicSettingsViewController: ClassicPage {
         content.addArrangedSubview(section(L("ВНЕШНИЙ ВИД"), [
             Classic.body(L("Интерфейс"), 12, .regular, .secondaryLabel),
             option(L("Классика"), selected: true, boxed: false) {},
-            option(L("Минималистичный"), selected: false, boxed: false) { Prefs.style = .minimal },
+            option(L("Современный"), selected: false, boxed: false) { Prefs.style = .minimal },
             Classic.body(L("Тема"), 12, .regular, .secondaryLabel),
             option(L("Системная"), selected: Prefs.theme == "system") { Prefs.theme = "system" },
             option(L("Светлая"), selected: Prefs.theme == "light") { Prefs.theme = "light" },

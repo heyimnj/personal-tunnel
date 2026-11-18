@@ -6,7 +6,7 @@ enum InterfaceStyle: String {
     case classic
     case minimal = "modern"
 
-    var title: String { self == .classic ? L("Классика") : L("Минималистичный") }
+    var title: String { self == .classic ? L("Классика") : L("Современный") }
 }
 
 /// Settings kept under the 1.x keys, so an update keeps the user's choices.
