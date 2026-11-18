@@ -943,7 +943,6 @@ final class SurfaceView: UIView {
         header.isHidden = standalone
         plateColor = standalone ? Self.card : Self.blend(Self.card, Self.container, progress, traits: traitCollection)
         plate.backgroundColor = plateColor
-        plateShown = 0
         // The radius changes once, not every frame (a moving radius redraws the shape).
         let radius: CGFloat = progress > 0.001 ? 22 : 24
         if layer.cornerRadius != radius { layer.cornerRadius = radius; plate.layer.cornerRadius = radius }
@@ -980,17 +979,7 @@ final class SurfaceView: UIView {
         let shown = open ? Self.cardShown(pull, travel: header.railWidth) : 0
         header.showCard(shown, clipped: open && pull > 0.5)
         info.slide = open ? -pull : 0
-        // 3.5.2 (the owner): the shade spreads over the whole open card as the head is
-        // swiped, as the hold menu's does (the server cards stay as they are), on the
-        // same curve as the head's card — not over the head alone.
-        if abs(shown - plateShown) > 0.002 || (shown == 0 && plateShown != 0) {
-            plateShown = shown
-            plate.backgroundColor = shown > 0 ? Self.blend(plateColor, .label, 0.08 * shown, traits: traitCollection) : plateColor
-        }
     }
-
-    /// How far the swipe's colour has spread over the plate (0: the plate's own).
-    private var plateShown: CGFloat = 0
 
     /// How much of the open head's card shows at `pull`: eased in over the first
     /// two thirds of the way to the actions.
@@ -1279,10 +1268,10 @@ final class ServerListView: UIScrollView {
         guard let surface = surfaces[id] else { return }
         let shade = surface.pressShade
         if held {
-            // 3.5: the whole card, open or closed; the server rows lie above the
-            // shade, so only the subscription's own background darkens.
-            shade.frame = surface.bounds
-            shade.layer.cornerRadius = surface.layer.cornerRadius
+            // 3.5.2 (the owner): the head alone, in the shape of the closed card
+            // (all corners round) — the whole card's shade ran into the menu.
+            shade.frame = CGRect(x: 0, y: 0, width: surface.bounds.width, height: Self.headerHeight)
+            shade.layer.cornerRadius = 24
             shade.layer.maskedCorners = [.layerMinXMinYCorner, .layerMaxXMinYCorner, .layerMinXMaxYCorner, .layerMaxXMaxYCorner]
         }
         UIView.animate(withDuration: 0.18) { shade.backgroundColor = held ? UIColor.label.withAlphaComponent(0.08) : .clear }
