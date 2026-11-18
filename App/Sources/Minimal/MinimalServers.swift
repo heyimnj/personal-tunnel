@@ -105,9 +105,10 @@ final class MinimalServersViewController: UIViewController, UIScrollViewDelegate
     private let layout = Layout(rawValue: Prefs.serversLayout) ?? .header
     private var barHeight: CGFloat {
         switch layout {
-        case .header: return 136
+        // 3.5 beta 4 (the owner): the head's buttons are larger in «A» and «C».
+        case .header: return 146
         case .bottom: return 136
-        case .search: return 124
+        case .search: return 140
         }
     }
     /// The search's slot in the list: only «A» tucks the search under its bar;
@@ -234,10 +235,6 @@ final class MinimalServersViewController: UIViewController, UIScrollViewDelegate
         config.cornerStyle = .capsule
         plusButton.configuration = config
         plusButton.accessibilityLabel = L("Добавить")
-        plusButton.layer.shadowColor = Theme.accent.cgColor
-        plusButton.layer.shadowOpacity = 0.35
-        plusButton.layer.shadowRadius = 8
-        plusButton.layer.shadowOffset = CGSize(width: 0, height: 4)
         plusButton.addTarget(self, action: #selector(addTapped), for: .touchUpInside)
         plusButton.translatesAutoresizingMaskIntoConstraints = false
         NSLayoutConstraint.activate([plusButton.widthAnchor.constraint(equalToConstant: size), plusButton.heightAnchor.constraint(equalToConstant: size)])
@@ -321,29 +318,29 @@ final class MinimalServersViewController: UIViewController, UIScrollViewDelegate
         let bar = addBar()
         pingDial.addTarget(self, action: #selector(pingTapped), for: .touchUpInside)
         let more = UIButton(type: .system)
-        more.setImage(UIImage(systemName: "ellipsis", withConfiguration: UIImage.SymbolConfiguration(pointSize: 15, weight: .bold)), for: .normal)
+        more.setImage(UIImage(systemName: "ellipsis", withConfiguration: UIImage.SymbolConfiguration(pointSize: 17, weight: .bold)), for: .normal)
         more.tintColor = .secondaryLabel
         more.accessibilityLabel = L("Ещё")
         more.menu = moreMenu()
         more.showsMenuAsPrimaryAction = true
         let accessory = UIStackView(.horizontal, spacing: 0, alignment: .center, [pingDial, more])
-        let holder = UIView(frame: CGRect(x: 0, y: 0, width: 82, height: 48))
+        let holder = UIView(frame: CGRect(x: 0, y: 0, width: 90, height: 54))
         holder.addSubview(accessory)
         accessory.translatesAutoresizingMaskIntoConstraints = false
         NSLayoutConstraint.activate([
-            more.widthAnchor.constraint(equalToConstant: 40), more.heightAnchor.constraint(equalToConstant: 40),
+            more.widthAnchor.constraint(equalToConstant: 44), more.heightAnchor.constraint(equalToConstant: 44),
             accessory.leadingAnchor.constraint(equalTo: holder.leadingAnchor), accessory.trailingAnchor.constraint(equalTo: holder.trailingAnchor, constant: -4),
             accessory.centerYAnchor.constraint(equalTo: holder.centerYAnchor),
-            holder.widthAnchor.constraint(equalToConstant: 82), holder.heightAnchor.constraint(equalToConstant: 48),
+            holder.widthAnchor.constraint(equalToConstant: 90), holder.heightAnchor.constraint(equalToConstant: 54),
         ])
         search.rightView = holder
         search.rightViewMode = .always
-        stylePlus(size: 48)
+        stylePlus(size: 54)
 
         for (index, option) in Self.sorts.enumerated() { segments.insertSegment(withTitle: Self.title(option), at: index, animated: false) }
         segments.apportionsSegmentWidthsByContent = true
-        segments.setTitleTextAttributes([.font: Theme.font(13, .medium)], for: .normal)
-        segments.setTitleTextAttributes([.font: Theme.font(13, .semibold)], for: .selected)
+        segments.setTitleTextAttributes([.font: Theme.font(15, .medium)], for: .normal)
+        segments.setTitleTextAttributes([.font: Theme.font(15, .semibold)], for: .selected)
         segments.addTarget(self, action: #selector(segmentChanged), for: .valueChanged)
         let more2 = UIButton(type: .system)
         more2.setImage(UIImage(systemName: "ellipsis", withConfiguration: UIImage.SymbolConfiguration(pointSize: 17, weight: .bold)), for: .normal)
@@ -354,7 +351,7 @@ final class MinimalServersViewController: UIViewController, UIScrollViewDelegate
         let moreCapsule = SolidCapsule()
         moreCapsule.contentView.addSubview(more2)
         more2.pin(to: moreCapsule.contentView)
-        moreCapsule.widthAnchor.constraint(equalToConstant: 36).isActive = true
+        moreCapsule.widthAnchor.constraint(equalToConstant: 44).isActive = true
         pingButton.setContentHuggingPriority(.defaultLow, for: .horizontal)
         for item in [pingButton, sortButton, moreCapsule] as [UIView] { selectionPills.addArrangedSubview(item) }
         selectionPills.isHidden = true
@@ -364,10 +361,10 @@ final class MinimalServersViewController: UIViewController, UIScrollViewDelegate
             bar.addSubview(item)
         }
         NSLayoutConstraint.activate([
-            search.topAnchor.constraint(equalTo: bar.topAnchor, constant: 20), search.heightAnchor.constraint(equalToConstant: 48),
+            search.topAnchor.constraint(equalTo: bar.topAnchor, constant: 22), search.heightAnchor.constraint(equalToConstant: 54),
             search.leadingAnchor.constraint(equalTo: bar.leadingAnchor, constant: 16), search.trailingAnchor.constraint(equalTo: plusButton.leadingAnchor, constant: -10),
             plusButton.trailingAnchor.constraint(equalTo: bar.trailingAnchor, constant: -16), plusButton.centerYAnchor.constraint(equalTo: search.centerYAnchor),
-            segments.topAnchor.constraint(equalTo: search.bottomAnchor, constant: 10), segments.heightAnchor.constraint(equalToConstant: 36),
+            segments.topAnchor.constraint(equalTo: search.bottomAnchor, constant: 10), segments.heightAnchor.constraint(equalToConstant: 44),
             segments.leadingAnchor.constraint(equalTo: bar.leadingAnchor, constant: 16), segments.trailingAnchor.constraint(equalTo: bar.trailingAnchor, constant: -16),
             selectionPills.topAnchor.constraint(equalTo: segments.topAnchor), selectionPills.bottomAnchor.constraint(equalTo: segments.bottomAnchor),
             selectionPills.leadingAnchor.constraint(equalTo: segments.leadingAnchor), selectionPills.trailingAnchor.constraint(equalTo: segments.trailingAnchor),
@@ -422,16 +419,12 @@ final class MinimalServersViewController: UIViewController, UIScrollViewDelegate
         plusConfig.cornerStyle = .capsule
         plusButton.configuration = plusConfig
         plusButton.accessibilityLabel = L("Добавить")
-        plusButton.layer.shadowColor = Theme.accent.cgColor
-        plusButton.layer.shadowOpacity = 0.35
-        plusButton.layer.shadowRadius = 8
-        plusButton.layer.shadowOffset = CGSize(width: 0, height: 4)
         plusButton.addTarget(self, action: #selector(addTapped), for: .touchUpInside)
 
         pingButton.addTarget(self, action: #selector(pingTapped), for: .touchUpInside)
         sortButton.addTarget(self, action: #selector(sortTapped), for: .touchUpInside)
         let more = UIButton(type: .system)
-        more.setImage(UIImage(systemName: "ellipsis", withConfiguration: UIImage.SymbolConfiguration(pointSize: 17, weight: .bold)), for: .normal)
+        more.setImage(UIImage(systemName: "ellipsis", withConfiguration: UIImage.SymbolConfiguration(pointSize: 19, weight: .bold)), for: .normal)
         more.tintColor = .label
         more.accessibilityLabel = L("Ещё")
         more.showsMenuAsPrimaryAction = true
@@ -457,10 +450,10 @@ final class MinimalServersViewController: UIViewController, UIScrollViewDelegate
             subtitle.topAnchor.constraint(equalTo: title.bottomAnchor, constant: 1), subtitle.leadingAnchor.constraint(equalTo: title.leadingAnchor),
             subtitle.trailingAnchor.constraint(lessThanOrEqualTo: plusButton.leadingAnchor, constant: -12),
             plusButton.trailingAnchor.constraint(equalTo: bar.trailingAnchor, constant: -16), plusButton.centerYAnchor.constraint(equalTo: title.centerYAnchor),
-            plusButton.widthAnchor.constraint(equalToConstant: 46), plusButton.heightAnchor.constraint(equalToConstant: 46),
+            plusButton.widthAnchor.constraint(equalToConstant: 52), plusButton.heightAnchor.constraint(equalToConstant: 52),
             pills.leadingAnchor.constraint(equalTo: bar.leadingAnchor, constant: 16), pills.trailingAnchor.constraint(equalTo: bar.trailingAnchor, constant: -16),
-            pills.bottomAnchor.constraint(equalTo: bar.bottomAnchor, constant: -10), pills.heightAnchor.constraint(equalToConstant: 42),
-            moreGlass.widthAnchor.constraint(equalToConstant: 42),
+            pills.bottomAnchor.constraint(equalTo: bar.bottomAnchor, constant: -10), pills.heightAnchor.constraint(equalToConstant: 50),
+            moreGlass.widthAnchor.constraint(equalToConstant: 50),
         ])
         list.contentInset.top = barHeight + 6
         list.verticalScrollIndicatorInsets.top = barHeight + 6
@@ -631,9 +624,24 @@ final class MinimalServersViewController: UIViewController, UIScrollViewDelegate
         search.layer.borderColor = Self.searchEdge.resolvedColor(with: traitCollection).cgColor
     }
 
+    /// 3.5 beta 4: the sheet is on screen (or on its way): Home's server capsule
+    /// turns its chevron down while it is.
+    static let shown = Observable(false)
+
     override func viewWillAppear(_ animated: Bool) {
         super.viewWillAppear(animated)
         presentationController?.delegate = self
+        Self.shown.set(true)
+    }
+
+    override func viewWillDisappear(_ animated: Bool) {
+        super.viewWillDisappear(animated)
+        if isBeingDismissed || presentingViewController == nil { Self.shown.set(false) }
+    }
+
+    /// A pull that went back: the sheet stays.
+    func presentationControllerDidAttemptToDismiss(_: UIPresentationController) {
+        Self.shown.set(true)
     }
 
     override func viewDidLayoutSubviews() {
@@ -677,7 +685,7 @@ final class MinimalServersViewController: UIViewController, UIScrollViewDelegate
             // In the head: the cards' colour, as the mock-ups have it.
             search.backgroundColor = SurfaceView.card
             search.layer.borderWidth = 0
-            search.layer.cornerRadius = layout == .bottom ? 22 : 24
+            search.layer.cornerRadius = layout == .bottom ? 22 : 27
         }
         list.leading = searchSlot
         list.delegate = self
@@ -1377,8 +1385,8 @@ final class PillButton: UIControl {
     private let glass = SolidCapsule()
     private let fill = UIView()
     private let icon = UIImageView()
-    private let label = UILabel(font: Theme.font(15, .medium))
-    private let detail = UILabel(font: UIFont.monospacedDigitSystemFont(ofSize: 13, weight: .semibold), color: .secondaryLabel)
+    private let label = UILabel(font: Theme.font(17, .medium))
+    private let detail = UILabel(font: UIFont.monospacedDigitSystemFont(ofSize: 15, weight: .semibold), color: .secondaryLabel)
     private var progress: Double?
 
     override init(frame: CGRect) {
@@ -1395,7 +1403,7 @@ final class PillButton: UIControl {
         let row = UIStackView(.horizontal, spacing: 6, alignment: .center, [icon, label, UIView(), detail])
         row.isUserInteractionEnabled = false
         glass.contentView.addSubview(row)
-        row.pin(to: glass.contentView, insets: UIEdgeInsets(top: 0, left: 14, bottom: 0, right: 14))
+        row.pin(to: glass.contentView, insets: UIEdgeInsets(top: 0, left: 16, bottom: 0, right: 16))
         isAccessibilityElement = true
         accessibilityTraits = .button
     }
@@ -1404,7 +1412,7 @@ final class PillButton: UIControl {
     required init?(coder _: NSCoder) { fatalError() }
 
     func show(symbol: String, title: String, tint: UIColor, detail text: String?, progress value: Double?) {
-        icon.image = UIImage(systemName: symbol, withConfiguration: UIImage.SymbolConfiguration(font: Theme.font(15, .semibold)))
+        icon.image = UIImage(systemName: symbol, withConfiguration: UIImage.SymbolConfiguration(font: Theme.font(17, .semibold)))
         icon.tintColor = tint
         label.text = title
         detail.text = text
@@ -1518,7 +1526,7 @@ final class BarItem: UIButton {
 final class PingDial: UIControl {
     private let icon = UIImageView()
     private let ring = CAShapeLayer()
-    private static let side: CGFloat = 34
+    private static let side: CGFloat = 38
 
     override init(frame: CGRect) {
         super.init(frame: frame)
@@ -1553,7 +1561,7 @@ final class PingDial: UIControl {
     }
 
     func show(running: Bool, progress: Double) {
-        icon.image = UIImage(systemName: running ? "stop.fill" : "waveform.path.ecg", withConfiguration: UIImage.SymbolConfiguration(pointSize: running ? 12 : 15, weight: .semibold))
+        icon.image = UIImage(systemName: running ? "stop.fill" : "waveform.path.ecg", withConfiguration: UIImage.SymbolConfiguration(pointSize: running ? 13 : 17, weight: .semibold))
         ring.strokeEnd = running ? CGFloat(max(0, min(1, progress))) : 0
         accessibilityLabel = running ? L("Остановить проверку") : L("Проверить пинг")
     }

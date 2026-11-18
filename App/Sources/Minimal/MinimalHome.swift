@@ -432,7 +432,6 @@ final class MinimalConnectionView: UIView {
     /// 3.5: a switch of our own in place of the power symbol, and a ring round
     /// the button in place of the dot under it.
     private let power = SwitchGlyph()
-    private let ring = ConnectionRing()
     private let spinner = UIActivityIndicatorView(style: .medium)
     private let status = UILabel(font: Theme.font(.headline), color: .secondaryLabel)
     private lazy var statusRow = UIStackView(.horizontal, spacing: 8, alignment: .center, [spinner, status])
@@ -452,7 +451,7 @@ final class MinimalConnectionView: UIView {
         super.init(frame: frame)
         button.ripple = true
         button.addSubview(buttonGlass)
-        for view in [ring, power] as [UIView] {
+        for view in [power] as [UIView] {
             view.isUserInteractionEnabled = false
             button.addSubview(view)
         }
@@ -492,6 +491,8 @@ final class MinimalConnectionView: UIView {
         App.shared.health.state.observe(self, fireNow: false) { [weak self] _ in self?.showRing(animated: true) }
         App.shared.store.library.observe(self) { [weak self] _ in self?.showServer() }
         App.shared.latency.changed.observe(self, fireNow: false) { [weak self] _ in self?.showDelay() }
+        // 3.5 beta 4 (the owner): the chevron points down while the servers are open.
+        MinimalServersViewController.shown.observe(self) { [weak self] open in self?.pointOpener(down: open) }
         Prefs.appearanceChanged.observe(self) { [weak self] in
             self?.restyle()
             self?.showServer()
@@ -529,7 +530,6 @@ final class MinimalConnectionView: UIView {
         buttonGlass.frame = button.bounds
         let glyph = SwitchGlyph.size
         power.frame = CGRect(x: (side - glyph.width) / 2, y: (side - glyph.height) / 2, width: glyph.width, height: glyph.height)
-        ring.frame = button.bounds
         statusRow.frame = CGRect(x: bounds.midX - statusSize.width / 2, y: top + side + 20, width: statusSize.width, height: statusSize.height)
         // bounds and center, never frame: the press scales the capsule, and a frame
         // set under a transform moved it (the jump on tap).
@@ -557,7 +557,7 @@ final class MinimalConnectionView: UIView {
     }
 
     private func showRing(animated: Bool) {
-        let look: ConnectionRing.Look
+        let look: SwitchGlyph.Look
         switch App.shared.tunnel.state.value {
         case .disconnected: look = .off
         case .connecting, .disconnecting, .reasserting: look = .working
@@ -576,7 +576,7 @@ final class MinimalConnectionView: UIView {
                 setNeedsLayout()
             }
         }
-        ring.show(look, animated: animated)
+        power.show(look, animated: animated)
     }
 
     private func showServer() {
@@ -602,6 +602,16 @@ final class MinimalConnectionView: UIView {
         showDelay()
     }
 
+    private func pointOpener(down: Bool) {
+        let turn = down ? CGAffineTransform(rotationAngle: .pi) : .identity
+        guard opener.transform != turn else { return }
+        guard window != nil, !UIAccessibility.isReduceMotionEnabled else { opener.transform = turn; return }
+        UIView.animate(withDuration: 0.45, delay: 0, usingSpringWithDamping: 0.8, initialSpringVelocity: 0, options: [.beginFromCurrentState, .allowUserInteraction]) {
+            // A hair off the half turn, so it turns the same way (clockwise) each time.
+            self.opener.transform = down ? CGAffineTransform(rotationAngle: .pi - 0.0001) : .identity
+        }
+    }
+
     /// The chosen server's last delay; nothing until it has one.
     private func showDelay() {
         let library = App.shared.library
@@ -616,27 +626,40 @@ final class MinimalConnectionView: UIView {
     }
 }
 
-/// The connection button's glyph. 3.5 beta 2 (the owner: the standing switch
-/// of beta 1 stood out too much — «что-то более 2D-шное, невзрачное, простое»):
-/// a flat power mark of two thin lines, an open circle and a stroke through its
-/// gap. Off it is the grey of the status text; on it takes the text colour and
-/// the circle draws itself closed a little further round the stroke.
+/// The connection button's glyph: a flat power mark of two thin lines (3.5 beta 2,
+/// the owner: the standing switch of beta 1 stood out too much), an open circle
+/// and a stroke through its gap, in the grey of the status text.
+///
+/// 3.5 beta 4 (the owner): the state rides on the mark itself, not on a ring
+/// round the button — the same way as the ring did: yellow while the tunnel comes
+/// up or goes down (a stretch of colour runs round the circle), green when it is
+/// up and traffic goes through the server (the colour closes round the circle),
+/// red and breathing when the server does not answer; it fades back to grey
+/// when the tunnel ends.
 final class SwitchGlyph: UIView {
+    enum Look: Equatable { case off, working, ok, failing }
+
     private let arc = CAShapeLayer()
     private let stem = CAShapeLayer()
+    /// The state's colour over the circle.
+    private let glow = CAShapeLayer()
     private(set) var isOn = false
-    static let size = CGSize(width: 40, height: 40)
+    private(set) var look: Look = .off
+    static let size = CGSize(width: 44, height: 44)
     private static let line: CGFloat = 2.5
 
     override init(frame: CGRect) {
         super.init(frame: frame)
         isUserInteractionEnabled = false
-        for item in [arc, stem] {
+        for item in [arc, glow, stem] {
             item.fillColor = nil
             item.lineWidth = Self.line
             item.lineCap = .round
             layer.addSublayer(item)
         }
+        glow.strokeStart = 0
+        glow.strokeEnd = 0
+        glow.opacity = 0
         restyle()
     }
 
@@ -650,101 +673,6 @@ final class SwitchGlyph: UIView {
         restyle()
     }
 
-    private func restyle() {
-        let ink = (isOn ? UIColor.label : UIColor.secondaryLabel).resolvedColor(with: traitCollection)
-        CATransaction.begin()
-        CATransaction.setDisableActions(true)
-        arc.strokeColor = ink.cgColor
-        stem.strokeColor = ink.cgColor
-        CATransaction.commit()
-    }
-
-    override func layoutSubviews() {
-        super.layoutSubviews()
-        let center = CGPoint(x: bounds.midX, y: bounds.midY + 1)
-        let radius = min(bounds.width, bounds.height) / 2 - Self.line
-        // The open circle: from just right of the top, clockwise to just left of it.
-        let gap: CGFloat = .pi / 5
-        arc.frame = bounds
-        stem.frame = bounds
-        arc.path = UIBezierPath(arcCenter: center, radius: radius, startAngle: -.pi / 2 + gap, endAngle: .pi * 1.5 - gap, clockwise: true).cgPath
-        let stroke = UIBezierPath()
-        stroke.move(to: CGPoint(x: center.x, y: center.y - radius - 1))
-        stroke.addLine(to: CGPoint(x: center.x, y: center.y - radius * 0.15))
-        stem.path = stroke.cgPath
-        CATransaction.begin()
-        CATransaction.setDisableActions(true)
-        apply(isOn)
-        CATransaction.commit()
-    }
-
-    /// Off, the circle is a little more open at the top.
-    private func apply(_ on: Bool) {
-        arc.strokeStart = on ? 0 : 0.04
-        arc.strokeEnd = on ? 1 : 0.96
-    }
-
-    func set(on: Bool, animated: Bool) {
-        guard on != isOn else { return }
-        isOn = on
-        CATransaction.begin()
-        CATransaction.setDisableActions(!animated || UIAccessibility.isReduceMotionEnabled)
-        CATransaction.setAnimationDuration(0.3)
-        CATransaction.setAnimationTimingFunction(CAMediaTimingFunction(name: .easeOut))
-        apply(on)
-        restyle()
-        CATransaction.commit()
-        // restyle() turns animations off for the colour; the colour fades on its own.
-        if animated, !UIAccessibility.isReduceMotionEnabled {
-            for item in [arc, stem] {
-                let fade = CABasicAnimation(keyPath: "strokeColor")
-                fade.fromValue = (on ? UIColor.secondaryLabel : UIColor.label).resolvedColor(with: traitCollection).cgColor
-                fade.duration = 0.3
-                item.add(fade, forKey: "ink")
-            }
-        }
-    }
-}
-
-/// The ring round the connection button (3.5, in place of the dot under its
-/// glyph): yellow while the tunnel comes up or goes down, an arc running round;
-/// green when it is up and traffic goes through the server; red when the server
-/// does not answer (`ConnectionHealth`). It closes into a full ring when the
-/// connection is made and opens away when it ends. Thin, to be seen, not to shout.
-final class ConnectionRing: UIView {
-    enum Look: Equatable { case off, working, ok, failing }
-
-    private let spin = CALayer()
-    private let ring = CAShapeLayer()
-    private(set) var look: Look = .off
-    static let width: CGFloat = 2.5
-
-    override init(frame: CGRect) {
-        super.init(frame: frame)
-        isUserInteractionEnabled = false
-        layer.addSublayer(spin)
-        spin.addSublayer(ring)
-        ring.fillColor = nil
-        ring.lineWidth = Self.width
-        ring.lineCap = .round
-        ring.strokeStart = 0
-        ring.strokeEnd = 0
-        ring.opacity = 0
-    }
-
-    @available(*, unavailable)
-    required init?(coder _: NSCoder) { fatalError() }
-
-    override func layoutSubviews() {
-        super.layoutSubviews()
-        spin.frame = bounds
-        ring.frame = bounds
-        let inset = Self.width / 2 + 1
-        // From the top, clockwise.
-        ring.path = UIBezierPath(arcCenter: CGPoint(x: bounds.midX, y: bounds.midY), radius: bounds.width / 2 - inset,
-                                 startAngle: -.pi / 2, endAngle: .pi * 1.5, clockwise: true).cgPath
-    }
-
     private static func color(_ look: Look) -> UIColor {
         switch look {
         case .off, .working: return .systemYellow
@@ -753,100 +681,142 @@ final class ConnectionRing: UIView {
         }
     }
 
+    private var ink: UIColor { UIColor.secondaryLabel.resolvedColor(with: traitCollection) }
+
+    private func restyle() {
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        arc.strokeColor = ink.cgColor
+        stem.strokeColor = (look == .off ? ink : Self.color(look)).cgColor
+        glow.strokeColor = Self.color(look).cgColor
+        CATransaction.commit()
+    }
+
+    override func layoutSubviews() {
+        super.layoutSubviews()
+        let center = CGPoint(x: bounds.midX, y: bounds.midY + 1)
+        let radius = min(bounds.width, bounds.height) / 2 - Self.line - 1
+        // The open circle: from just right of the top, clockwise to just left of it.
+        let gap: CGFloat = .pi / 5
+        let circle = UIBezierPath(arcCenter: center, radius: radius, startAngle: -.pi / 2 + gap, endAngle: .pi * 1.5 - gap, clockwise: true).cgPath
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        for item in [arc, glow, stem] { item.frame = bounds }
+        arc.path = circle
+        glow.path = circle
+        let stroke = UIBezierPath()
+        stroke.move(to: CGPoint(x: center.x, y: center.y - radius - 1))
+        stroke.addLine(to: CGPoint(x: center.x, y: center.y - radius * 0.15))
+        stem.path = stroke.cgPath
+        CATransaction.commit()
+    }
+
+    /// The switch itself: kept for VoiceOver and the callers; the look shows the state.
+    func set(on: Bool, animated _: Bool) {
+        isOn = on
+    }
+
     func show(_ next: Look, animated: Bool) {
         guard next != look else { return }
         let previous = look
         look = next
         let still = !animated || UIAccessibility.isReduceMotionEnabled
-        let present = ring.presentation()
-        func animate(_ key: String, to value: Any, duration: CFTimeInterval, timing: CAMediaTimingFunctionName = .easeInEaseOut) {
-            let from = present?.value(forKeyPath: key) ?? ring.value(forKeyPath: key)
-            ring.setValue(value, forKeyPath: key)
+        func animate(_ target: CALayer, _ key: String, to value: Any, duration: CFTimeInterval, timing: CAMediaTimingFunctionName = .easeInEaseOut) {
+            let from = target.presentation()?.value(forKeyPath: key) ?? target.value(forKeyPath: key)
+            target.setValue(value, forKeyPath: key)
             guard !still else { return }
             let animation = CABasicAnimation(keyPath: key)
             animation.fromValue = from
             animation.toValue = value
             animation.duration = duration
             animation.timingFunction = CAMediaTimingFunction(name: timing)
-            ring.add(animation, forKey: key)
+            target.add(animation, forKey: key)
         }
         CATransaction.begin()
         CATransaction.setDisableActions(true)
-        animate("strokeColor", to: Self.color(next).cgColor, duration: 0.45)
+        animate(glow, "strokeColor", to: Self.color(next).cgColor, duration: 0.45)
+        animate(stem, "strokeColor", to: (next == .off ? ink : Self.color(next)).cgColor, duration: 0.45)
         switch next {
         case .working:
-            // A quarter of the ring runs round.
-            animate("opacity", to: Float(0.9), duration: 0.25)
-            animate("strokeStart", to: CGFloat(0), duration: 0.35)
-            animate("strokeEnd", to: CGFloat(0.26), duration: 0.35)
-            startSpinning()
+            animate(glow, "opacity", to: Float(1), duration: 0.25)
+            glow.removeAnimation(forKey: "pulse")
+            startRunning()
         case .ok, .failing:
-            animate("opacity", to: Float(0.85), duration: 0.25)
-            // The running arc closes into the whole ring.
-            animate("strokeStart", to: CGFloat(0), duration: 0.6, timing: .easeOut)
-            animate("strokeEnd", to: CGFloat(1), duration: 0.6, timing: .easeOut)
-            if previous == .working { stopSpinning(settle: !still) } else { stopSpinning(settle: false) }
-            if next == .failing, !still { pulse() } else { ring.removeAnimation(forKey: "pulse") }
+            stopRunning()
+            animate(glow, "opacity", to: Float(1), duration: 0.25)
+            // The running stretch closes round the circle.
+            animate(glow, "strokeStart", to: CGFloat(0), duration: previous == .working ? 0.6 : 0.3, timing: .easeOut)
+            animate(glow, "strokeEnd", to: CGFloat(1), duration: previous == .working ? 0.6 : 0.3, timing: .easeOut)
+            if next == .failing, !still { pulse() } else { glow.removeAnimation(forKey: "pulse") }
         case .off:
-            // The ring opens away from the top and fades.
-            stopSpinning(settle: false)
-            ring.removeAnimation(forKey: "pulse")
-            animate("strokeStart", to: CGFloat(1), duration: 0.5)
-            animate("opacity", to: Float(0), duration: 0.5)
+            // The colour leaves the circle from its start and fades.
+            stopRunning()
+            glow.removeAnimation(forKey: "pulse")
+            animate(glow, "strokeStart", to: CGFloat(1), duration: 0.5)
+            animate(glow, "opacity", to: Float(0), duration: 0.5)
             DispatchQueue.main.asyncAfter(deadline: .now() + (still ? 0 : 0.55)) { [weak self] in
                 guard let self, self.look == .off else { return }
                 CATransaction.begin()
                 CATransaction.setDisableActions(true)
-                self.ring.strokeStart = 0
-                self.ring.strokeEnd = 0
+                self.glow.strokeStart = 0
+                self.glow.strokeEnd = 0
                 CATransaction.commit()
             }
         }
         CATransaction.commit()
     }
 
-    private func startSpinning() {
-        guard spin.animation(forKey: "spin") == nil, !UIAccessibility.isReduceMotionEnabled else { return }
-        let turn = CABasicAnimation(keyPath: "transform.rotation.z")
-        turn.fromValue = (spin.presentation()?.value(forKeyPath: "transform.rotation.z") as? CGFloat) ?? 0
-        turn.byValue = CGFloat.pi * 2
-        turn.duration = 1.1
-        turn.repeatCount = .infinity
-        turn.isRemovedOnCompletion = false
-        spin.add(turn, forKey: "spin")
+    /// A quarter of the circle runs round it, from the stroke's right to its left.
+    private func startRunning() {
+        guard glow.animation(forKey: "run") == nil else { return }
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        glow.strokeStart = 0
+        glow.strokeEnd = 0.28
+        CATransaction.commit()
+        guard !UIAccessibility.isReduceMotionEnabled else { return }
+        let head = CAKeyframeAnimation(keyPath: "strokeEnd")
+        head.values = [0, 0.28, 1, 1]
+        head.keyTimes = [0, 0.2, 0.8, 1]
+        let tail = CAKeyframeAnimation(keyPath: "strokeStart")
+        tail.values = [0, 0, 0.72, 1]
+        tail.keyTimes = [0, 0.2, 0.8, 1]
+        let run = CAAnimationGroup()
+        run.animations = [head, tail]
+        run.duration = 1.2
+        run.repeatCount = .infinity
+        run.isRemovedOnCompletion = false
+        glow.add(run, forKey: "run")
     }
 
-    /// Stops the run; `settle`: the ring turns on to the top before it closes.
-    private func stopSpinning(settle: Bool) {
-        guard spin.animation(forKey: "spin") != nil else { return }
-        let angle = (spin.presentation()?.value(forKeyPath: "transform.rotation.z") as? CGFloat) ?? 0
-        spin.removeAnimation(forKey: "spin")
-        guard settle else { return }
-        var target = CGFloat.pi * 2
-        while target < angle { target += .pi * 2 }
-        let finish = CABasicAnimation(keyPath: "transform.rotation.z")
-        finish.fromValue = angle
-        finish.toValue = target
-        finish.duration = 0.6
-        finish.timingFunction = CAMediaTimingFunction(name: .easeOut)
-        spin.add(finish, forKey: "settle")
+    /// Stops the run where the stretch shows, so the closing starts from there.
+    private func stopRunning() {
+        guard glow.animation(forKey: "run") != nil else { return }
+        let start = (glow.presentation()?.strokeStart) ?? 0
+        let end = (glow.presentation()?.strokeEnd) ?? 0.28
+        glow.removeAnimation(forKey: "run")
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        glow.strokeStart = start
+        glow.strokeEnd = end
+        CATransaction.commit()
     }
 
     /// Red breathes softly, so a hung server is noticed.
     private func pulse() {
         let breathe = CABasicAnimation(keyPath: "opacity")
-        breathe.fromValue = 0.85
+        breathe.fromValue = 1
         breathe.toValue = 0.35
         breathe.duration = 1.1
         breathe.autoreverses = true
         breathe.repeatCount = .infinity
         breathe.beginTime = CACurrentMediaTime() + 0.6
-        ring.add(breathe, forKey: "pulse")
+        glow.add(breathe, forKey: "pulse")
     }
 
     /// The run is lost when the app leaves the screen; it starts again on return.
     override func didMoveToWindow() {
         super.didMoveToWindow()
-        if window != nil, look == .working { startSpinning() }
+        if window != nil, look == .working { startRunning() }
     }
 }

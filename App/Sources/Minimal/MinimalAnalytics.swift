@@ -389,16 +389,9 @@ final class AnalyticsGroup: UIView {
     @available(*, unavailable)
     required init?(coder _: NSCoder) { fatalError() }
 
+    /// 3.5 beta 4 (the owner): no lines between the parts.
     func add(_ views: [UIView]) {
-        for view in views {
-            if !stack.arrangedSubviews.isEmpty {
-                let line = UIView()
-                line.backgroundColor = UIColor.separator.withAlphaComponent(0.5)
-                line.heightAnchor.constraint(equalToConstant: 0.5).isActive = true
-                stack.addArrangedSubview(line)
-            }
-            stack.addArrangedSubview(view)
-        }
+        for view in views { stack.addArrangedSubview(view) }
     }
 
     /// The caption above a group: small capitals in the secondary colour.
@@ -620,17 +613,11 @@ final class MinimalAnalyticsViewController: UIViewController {
             Classic.padded(UIStackView(.vertical, spacing: spacing, alignment: .fill, views), UIEdgeInsets(top: 11, left: 0, bottom: 11, right: 0))
         }
         func small(_ text: String) -> UILabel { UILabel(text, font: Theme.font(.footnote, .medium), color: .secondaryLabel) }
-        func legend(_ symbol: String, _ caption: String, _ color: UIColor, _ amount: UILabel) -> UIView {
-            let icon = UIImageView(image: UIImage(systemName: symbol, withConfiguration: UIImage.SymbolConfiguration(font: Theme.font(.caption1, .bold))))
-            icon.tintColor = color
-            let top = UIStackView(.horizontal, spacing: 4, alignment: .center, [icon, UILabel(caption, font: Theme.font(.caption1), color: .secondaryLabel)])
-            return UIStackView(.vertical, spacing: 2, alignment: .leading, [top, amount])
-        }
 
         // The session's traffic: a ring, the total inside.
         trafficRing.translatesAutoresizingMaskIntoConstraints = false
         trafficRing.lineWidth = 8
-        NSLayoutConstraint.activate([trafficRing.widthAnchor.constraint(equalToConstant: 68), trafficRing.heightAnchor.constraint(equalToConstant: 68)])
+        NSLayoutConstraint.activate([trafficRing.widthAnchor.constraint(equalToConstant: 76), trafficRing.heightAnchor.constraint(equalToConstant: 76)])
         trafficTotal.textAlignment = .center
         trafficTotal.adjustsFontSizeToFitWidth = true
         trafficTotal.minimumScaleFactor = 0.6
@@ -638,24 +625,54 @@ final class MinimalAnalyticsViewController: UIViewController {
         trafficTotal.translatesAutoresizingMaskIntoConstraints = false
         NSLayoutConstraint.activate([
             trafficTotal.centerXAnchor.constraint(equalTo: trafficRing.centerXAnchor), trafficTotal.centerYAnchor.constraint(equalTo: trafficRing.centerYAnchor),
-            trafficTotal.widthAnchor.constraint(equalToConstant: 48),
+            trafficTotal.widthAnchor.constraint(equalToConstant: 54),
         ])
-        let trafficLegend = UIStackView(.vertical, spacing: 8, alignment: .leading, [
-            legend("arrow.down", L("Загрузка"), SpeedGraphView.downColor, downTotal), legend("arrow.up", L("Отдача"), SpeedGraphView.upColor, upTotal),
+        // 3.5 beta 4 (the owner): the traffic and the delay are two square tiles side by side.
+        trafficRing.lineWidth = 9
+        // In the tile: «↓ 1.6 MB   ↑ 988 KB» on one line under the ring.
+        func amount(_ symbol: String, _ color: UIColor, _ label: UILabel) -> UIView {
+            let icon = UIImageView(image: UIImage(systemName: symbol, withConfiguration: UIImage.SymbolConfiguration(font: Theme.font(.caption1, .bold))))
+            icon.tintColor = color
+            icon.setContentHuggingPriority(.required, for: .horizontal)
+            label.font = UIFont.monospacedDigitSystemFont(ofSize: Theme.font(.footnote).pointSize, weight: .semibold)
+            label.adjustsFontSizeToFitWidth = true
+            label.minimumScaleFactor = 0.7
+            return UIStackView(.horizontal, spacing: 3, alignment: .center, [icon, label])
+        }
+        let tileLegend = UIStackView(.horizontal, spacing: 10, alignment: .center, [
+            amount("arrow.down", SpeedGraphView.downColor, downTotal), amount("arrow.up", SpeedGraphView.upColor, upTotal),
         ])
-        let traffic = block([small(L("Трафик за сеанс")), UIStackView(.horizontal, spacing: 18, alignment: .center, [trafficRing, trafficLegend, UIView()])])
+        let traffic = AnalyticsCard(insets: UIEdgeInsets(top: 14, left: 14, bottom: 14, right: 14))
+        traffic.stack.alignment = .center
+        traffic.stack.distribution = .equalSpacing
+        let trafficTitle = small(L("Трафик за сеанс"))
+        for item in [trafficTitle, trafficRing, tileLegend] as [UIView] { traffic.stack.addArrangedSubview(item) }
+        trafficTitle.widthAnchor.constraint(equalTo: traffic.stack.widthAnchor).isActive = true
 
         // The delay: a half-circle gauge.
         delayGauge.translatesAutoresizingMaskIntoConstraints = false
         delayGauge.lineWidth = 8
-        NSLayoutConstraint.activate([delayGauge.widthAnchor.constraint(equalToConstant: 100), delayGauge.heightAnchor.constraint(equalToConstant: 54)])
+        NSLayoutConstraint.activate([delayGauge.widthAnchor.constraint(equalToConstant: 110), delayGauge.heightAnchor.constraint(equalToConstant: 58)])
         delayValue.adjustsFontSizeToFitWidth = true
         delayValue.minimumScaleFactor = 0.6
-        let delayText = UIStackView(.vertical, spacing: 2, alignment: .leading, [delayValue, delayCaption])
-        let delay = block([small(L("Задержка")), UIStackView(.horizontal, spacing: 16, alignment: .center, [delayText, UIView(), delayGauge])])
+        delayValue.textAlignment = .center
+        delayCaption.textAlignment = .center
+        delayCaption.font = Theme.font(.caption1)
+        let delay = AnalyticsCard(insets: UIEdgeInsets(top: 14, left: 14, bottom: 14, right: 14))
+        delay.stack.alignment = .center
+        delay.stack.distribution = .equalSpacing
+        let delayTitle = small(L("Задержка"))
+        let reading = UIStackView(.vertical, spacing: 4, alignment: .center, [delayGauge, delayValue, delayCaption])
+        for item in [delayTitle, reading, UIView()] as [UIView] { delay.stack.addArrangedSubview(item) }
+        for item in [delayTitle, reading] { item.widthAnchor.constraint(equalTo: delay.stack.widthAnchor).isActive = true }
+        delayCaption.widthAnchor.constraint(equalTo: reading.widthAnchor).isActive = true
+        let tiles = UIStackView(.horizontal, spacing: 12, alignment: .fill, [traffic, delay])
+        tiles.distribution = .fillEqually
+        // Square: as tall as each tile is wide.
+        traffic.heightAnchor.constraint(equalTo: traffic.widthAnchor).isActive = true
 
         let session = AnalyticsGroup()
-        session.add([sessionRow, traffic, delay])
+        session.add([sessionRow])
 
         // The core's memory: its line over two minutes.
         memoryLine.color = .systemPurple
@@ -676,34 +693,30 @@ final class MinimalAnalyticsViewController: UIViewController {
         connections.add([block([columns, UILabel(L("Открытые соединения за минуту"), font: Theme.font(.caption2), color: .secondaryLabel)], spacing: 8), tcpRow, udpRow])
 
         routes.add([Classic.padded(routesMeter, UIEdgeInsets(top: 14, left: 0, bottom: 4, right: 0)), Classic.padded(routesEmpty, UIEdgeInsets(top: 10, left: 0, bottom: 12, right: 0))])
-        if routes.stack.arrangedSubviews.count > 1 { routes.stack.arrangedSubviews[1].isHidden = true }
         let routesNote = Classic.padded(UILabel(L("Показаны только соединения, полученные от ядра во время наблюдения; это не весь трафик сеанса."), font: Theme.font(.caption2), color: .secondaryLabel, lines: 0),
                                         UIEdgeInsets(top: 0, left: 6, bottom: 0, right: 6))
 
-        let links = AnalyticsCard(insets: UIEdgeInsets(top: 0, left: 14, bottom: 0, right: 14))
+        let links = AnalyticsCard(insets: UIEdgeInsets(top: 0, left: 18, bottom: 0, right: 18))
         links.stack.alignment = .fill
         links.stack.spacing = 0
         links.stack.addArrangedSubview(link("stethoscope", L("Проверка соединения")) { [weak self] in
             self?.navigationController?.pushViewController(DiagnosticsViewController(), animated: true)
         })
-        let divider = UIView()
-        divider.backgroundColor = .separator
-        divider.heightAnchor.constraint(equalToConstant: 0.5).isActive = true
-        links.stack.addArrangedSubview(Classic.padded(divider, UIEdgeInsets(top: 0, left: 28, bottom: 0, right: 0)))
         links.stack.addArrangedSubview(link("doc.text.magnifyingglass", L("Журнал службы")) { [weak self] in
             self?.navigationController?.pushViewController(ServiceLogViewController(), animated: true)
         })
 
         let content = UIStackView(.vertical, spacing: 8, alignment: .fill, [
             header, hero,
-            AnalyticsGroup.caption(L("Сеанс")), session,
+            AnalyticsGroup.caption(L("Сеанс")), session, tiles,
             AnalyticsGroup.caption(L("Ядро")), core,
             AnalyticsGroup.caption(L("Соединения")), connections,
             AnalyticsGroup.caption(L("Маршруты")), routes, routesNote,
             links,
         ])
         content.setCustomSpacing(6, after: header)
-        for view in [hero, session, core, connections, routesNote] { content.setCustomSpacing(18, after: view) }
+        content.setCustomSpacing(12, after: session)
+        for view in [hero, tiles, core, connections, routesNote] { content.setCustomSpacing(18, after: view) }
         scroll.addSubview(content)
         content.translatesAutoresizingMaskIntoConstraints = false
         NSLayoutConstraint.activate([
@@ -735,16 +748,16 @@ final class MinimalAnalyticsViewController: UIViewController {
     private func link(_ symbol: String, _ title: String, action: @escaping () -> Void) -> UIView {
         let control = TapControl()
         // 1.5.0 destination row: a body-style label with its icon, 18 pt padding.
-        let icon = UIImageView(image: UIImage(systemName: symbol, withConfiguration: UIImage.SymbolConfiguration(font: Theme.font(.subheadline))))
+        let icon = UIImageView(image: UIImage(systemName: symbol, withConfiguration: UIImage.SymbolConfiguration(font: Theme.font(.body))))
         icon.tintColor = .label
         icon.setContentHuggingPriority(.required, for: .horizontal)
         let chevron = UIImageView(image: UIImage(systemName: "chevron.right", withConfiguration: UIImage.SymbolConfiguration(font: Theme.font(.caption1, .semibold))))
         chevron.tintColor = .secondaryLabel
         chevron.setContentHuggingPriority(.required, for: .horizontal)
-        let row = UIStackView(.horizontal, spacing: 12, alignment: .center, [icon, UILabel(title, font: Theme.font(.subheadline)), UIView(), chevron])
+        let row = UIStackView(.horizontal, spacing: 12, alignment: .center, [icon, UILabel(title, font: Theme.font(.body)), UIView(), chevron])
         row.isUserInteractionEnabled = false
         control.addSubview(row)
-        row.pin(to: control, insets: UIEdgeInsets(top: 13, left: 0, bottom: 13, right: 0))
+        row.pin(to: control, insets: UIEdgeInsets(top: 18, left: 0, bottom: 18, right: 0))
         control.pressScale = 1
         control.onTap = action
         return control
@@ -825,7 +838,7 @@ final class MinimalAnalyticsViewController: UIViewController {
         }
         routeNames = names
         // Rows after the meter and the «no data» line go; the new ones come in order.
-        let keep = Array(routes.stack.arrangedSubviews.prefix(3))
+        let keep = Array(routes.stack.arrangedSubviews.prefix(2))
         for view in routes.stack.arrangedSubviews where !keep.contains(view) { view.removeFromSuperview() }
         routeRows = top.enumerated().map { index, route in
             let row = AnalyticsRow(route.key, dot: Self.routeColors[index % Self.routeColors.count])
@@ -833,8 +846,6 @@ final class MinimalAnalyticsViewController: UIViewController {
             return row
         }
         routes.add(routeRows)
-        // The first route row follows the meter without a line.
-        if routes.stack.arrangedSubviews.count > 3 { routes.stack.arrangedSubviews[3].isHidden = true }
         routesEmpty.superview?.isHidden = !names.isEmpty
     }
 

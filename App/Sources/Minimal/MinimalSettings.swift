@@ -152,11 +152,9 @@ final class NetworkSettingsViewController: FormViewController {
         }
     }
 
-    override func build() -> [FormSection] {
-        let changed = { App.shared.networkSettingsChanged() }
-        switch part {
-        case .ping: return [
-            FormSection([
+    private func pingSections() -> [FormSection] {
+        [
+            FormSection(L("Пинг"), [
                 .picker(title: L("Режим пинга"), options: [("primary", L("Основной")), ("classic", L("Классика")), ("alternative", L("Альтернативный"))], get: { Prefs.pingMode }, set: { Prefs.pingMode = $0 }),
                 .note(modeNote),
             ] + (Prefs.autoPingAvailable ? [
@@ -166,33 +164,12 @@ final class NetworkSettingsViewController: FormViewController {
                 .note(L("Тест только показывает задержку и не меняет выбранный сервер. Его можно остановить в любой момент.")),
             ]),
         ]
-        case .updates: return [
-            FormSection([
-                .toggle(title: L("Автообновление подписок"), get: { Prefs.autoUpdateSubscriptions }, set: { Prefs.autoUpdateSubscriptions = $0 }),
-                .picker(title: L("Время обновления"), options: Prefs.subscriptionUpdateOptions,
-                        get: { String(Prefs.subscriptionUpdateHour) }, set: { Prefs.subscriptionUpdateHour = Int($0) ?? SubscriptionSchedule.everyDay }),
-                .note(L("Подписки обновляются сами раз в 24 часа или каждый день в выбранное время — при первом открытии приложения после него (и пока оно открыто). Выключено — только вручную.")),
-            ]),
-        ]
-        case .connection: return [
-            FormSection([
-                .link(symbol: "arrow.triangle.branch", title: L("Маршрутизация и DNS")) { [weak self] in
-                    self?.navigationController?.pushViewController(NetworkSettingsViewController(.routing), animated: true)
-                },
-                .link(symbol: "waveform.path.ecg", title: L("Пинг")) { [weak self] in
-                    self?.navigationController?.pushViewController(NetworkSettingsViewController(.ping), animated: true)
-                },
-            ]),
-            FormSection([
-                .toggle(title: L("Автоподключение в неизвестных Wi-Fi"), get: { Prefs.autoConnect }, set: { Prefs.autoConnect = $0; App.shared.tunnel.applySettings() }),
-                .link(symbol: nil, title: L("Мои сети")) { [weak self] in self?.navigationController?.pushViewController(TrustedNetworksViewController(), animated: true) },
-                .note(L("VPN включается сам при подключении к Wi-Fi не из «Моих сетей». В своих сетях и по сотовой связи сам не включается. Выключили VPN кнопкой в неизвестной сети — в ней он не включится сам, пока вы снова не включите его.")),
-                .toggle(title: L("Kill switch"), get: { Prefs.killSwitch }, set: { Prefs.killSwitch = $0; App.shared.tunnel.applySettings() }),
-                .note(L("Пока VPN включён, но не подключён (переподключение, сбой), приложения не выходят в интернет напрямую. Исключения iOS: push-уведомления Apple и службы оператора (звонки, SMS) iOS может пускать мимо VPN. При большом трафике (видео) тратит больше батареи: каждый пакет обрабатывает ядро туннеля. Действует со следующего подключения.")),
-            ]),
-        ]
-        case .routing: return [
-            FormSection(L("Маршрутизация"), [
+    }
+
+    private func routingSections() -> [FormSection] {
+        let changed = { App.shared.networkSettingsChanged() }
+        return [
+            FormSection(L("Маршрутизация и DNS"), [
                 .link(symbol: nil, title: L("Блокировка рекламы")) { [weak self] in self?.navigationController?.pushViewController(AdBlockViewController(), animated: true) },
                 .toggle(title: L("Обход российских сайтов"), get: { Prefs.bypassRussia }, set: { Prefs.bypassRussia = $0; changed() }),
                 .note(L("Российские сайты открываются мимо VPN, с вашим настоящим IP. Сайт, который подгружает что-то с российского адреса, может увидеть настоящий IP рядом с IP VPN.")),
@@ -205,6 +182,31 @@ final class NetworkSettingsViewController: FormViewController {
                         get: { Prefs.directResolvers }, set: { Prefs.directResolvers = $0; changed() }),
             ]),
         ]
+    }
+
+    override func build() -> [FormSection] {
+        switch part {
+        case .ping: return pingSections()
+        case .routing: return routingSections()
+        case .updates: return [
+            FormSection([
+                .toggle(title: L("Автообновление подписок"), get: { Prefs.autoUpdateSubscriptions }, set: { Prefs.autoUpdateSubscriptions = $0 }),
+                .picker(title: L("Время обновления"), options: Prefs.subscriptionUpdateOptions,
+                        get: { String(Prefs.subscriptionUpdateHour) }, set: { Prefs.subscriptionUpdateHour = Int($0) ?? SubscriptionSchedule.everyDay }),
+                .note(L("Подписки обновляются сами раз в 24 часа или каждый день в выбранное время — при первом открытии приложения после него (и пока оно открыто). Выключено — только вручную.")),
+            ]),
+        ]
+        // 3.5 beta 4 (the owner): «Маршрутизация и DNS» and «Пинг» are sections of
+        // this page, not pages of their own.
+        case .connection: return [
+            FormSection([
+                .toggle(title: L("Автоподключение в неизвестных Wi-Fi"), get: { Prefs.autoConnect }, set: { Prefs.autoConnect = $0; App.shared.tunnel.applySettings() }),
+                .link(symbol: nil, title: L("Мои сети")) { [weak self] in self?.navigationController?.pushViewController(TrustedNetworksViewController(), animated: true) },
+                .note(L("VPN включается сам при подключении к Wi-Fi не из «Моих сетей». В своих сетях и по сотовой связи сам не включается. Выключили VPN кнопкой в неизвестной сети — в ней он не включится сам, пока вы снова не включите его.")),
+                .toggle(title: L("Kill switch"), get: { Prefs.killSwitch }, set: { Prefs.killSwitch = $0; App.shared.tunnel.applySettings() }),
+                .note(L("Пока VPN включён, но не подключён (переподключение, сбой), приложения не выходят в интернет напрямую. Исключения iOS: push-уведомления Apple и службы оператора (звонки, SMS) iOS может пускать мимо VPN. При большом трафике (видео) тратит больше батареи: каждый пакет обрабатывает ядро туннеля. Действует со следующего подключения.")),
+            ]),
+        ] + routingSections() + pingSections()
         }
     }
 }

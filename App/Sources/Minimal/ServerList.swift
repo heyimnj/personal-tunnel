@@ -151,6 +151,12 @@ final class PlateButton: UIControl {
 /// (it clips them), as in the reference the owner gave.
 private final class ActionPlate: UIView {
     private(set) var buttons: [PlateButton] = []
+    /// The card's colour. 3.5 beta 4 (the owner): the plate takes it gradually over
+    /// the swipe, as the open head's card does (`SurfaceView.cardShown`), not at once.
+    var tint: UIColor = .secondarySystemGroupedBackground {
+        didSet { shownTint = -1 }
+    }
+    private var shownTint: CGFloat = -1
 
     override init(frame: CGRect) {
         super.init(frame: frame)
@@ -219,16 +225,22 @@ private final class ActionPlate: UIView {
         // The first points come in as the drop grows, not as a hard-edged speck.
         let fade = max(0, min(1, frame.width / 14))
         if alpha != fade { alpha = fade }
+        // Its colour comes in over two thirds of the way out, with the same easing
+        // as the open head's card.
+        let colour = SurfaceView.cardShown(frame.width, travel: fullWidth)
+        if abs(colour - shownTint) > 0.004 {
+            shownTint = colour
+            backgroundColor = tint.withAlphaComponent(colour)
+        }
         var right = frame.width - 4
         for button in buttons.reversed() {
             // The symbols keep their place on the card while the drop is shorter.
             let slot = CGRect(x: right - PlateButton.width, y: -(full - height) / 2, width: PlateButton.width, height: full)
             if button.frame != slot { button.frame = slot }
-            // 3.5 beta 2: a symbol takes its full colour as soon as a third of its
-            // slot is out (it waited for most of the slot and looked grey while the
-            // plate came out — the owner: «свайп-меню не окрашивается»).
+            // A symbol shows once most of its slot is uncovered (3.5 beta 4: back as
+            // it was — beta 2 lit it earlier and a cut sliver of it showed).
             let shown = max(0, min(1, (slot.maxX - max(0, slot.minX)) / PlateButton.width))
-            let alpha = max(0, min(1, (shown - 0.12) / 0.22))
+            let alpha = max(0, min(1, (shown - 0.45) / 0.45))
             if button.alpha != alpha { button.alpha = alpha }
             right -= PlateButton.width
         }
@@ -279,7 +291,7 @@ class SwipeRow: UIView, UIGestureRecognizerDelegate {
     var tileRadius: CGFloat = 14
     /// The card's colour, which the plate takes.
     var tileColor: UIColor = .secondarySystemGroupedBackground {
-        didSet { plate.backgroundColor = tileColor }
+        didSet { plate.tint = tileColor }
     }
     var onOpen: ((SwipeRow) -> Void)?
     /// Every placement (the swipe offset), on every frame: the list moves the
@@ -367,7 +379,7 @@ class SwipeRow: UIView, UIGestureRecognizerDelegate {
         addSubview(front)
         // Above the card: it lets every touch outside the plate through.
         addSubview(rail)
-        plate.backgroundColor = tileColor
+        plate.tint = tileColor
         plate.isHidden = true
         rail.addSubview(plate)
         clip.clipsToBounds = true
