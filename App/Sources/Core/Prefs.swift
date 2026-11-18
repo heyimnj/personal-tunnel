@@ -78,6 +78,20 @@ enum Prefs {
     static let serverOpacityKey = "personal.serverOpacity"
     static let cardOpacityKey = "personal.cardOpacity"
 
+    /// 3.5 beta 2: how solid the Modern cards are (the analytics' lists and
+    /// graph): 0.05…1, 0.23 as 1.5.0 drew them.
+    static let defaultCardFill = 0.23
+    static var cardFill: Double {
+        get { min(1, max(0.05, double("personal.modern.cardFill", defaultCardFill))) }
+        set { defaults.set(newValue, forKey: "personal.modern.cardFill"); appearanceChanged.fire() }
+    }
+
+    /// The cards' own colour, «RRGGBB»; nil: the system's grouped surface.
+    static var cardHex: String? {
+        get { defaults.string(forKey: "personal.modern.cardHex") }
+        set { defaults.set(newValue, forKey: "personal.modern.cardHex"); appearanceChanged.fire() }
+    }
+
     static func accentKey(_ style: InterfaceStyle) -> String {
         style == .classic ? "personal.classicAccentHex" : "personal.modernAccentHex"
     }
@@ -176,6 +190,13 @@ enum Prefs {
     static var sortByLatency: Bool {
         get { bool("personal.modernSortByLatency", false) }
         set { defaults.set(newValue, forKey: "personal.modernSortByLatency") }
+    }
+
+    /// 3.5 beta 2 (Modern): servers the owner chose most recently first
+    /// (`Arrangement.recent`), under the pinned and the connected one.
+    static var sortByRecent: Bool {
+        get { bool("personal.modernSortByRecent", false) }
+        set { defaults.set(newValue, forKey: "personal.modernSortByRecent") }
     }
 
     static var arrangement: Arrangement {

@@ -8,10 +8,11 @@ final class AnalyticsCard: UIView {
     init(insets: UIEdgeInsets = UIEdgeInsets(top: 18, left: 18, bottom: 18, right: 18)) {
         super.init(frame: .zero)
         backgroundColor = Theme.card
-        layer.cornerRadius = 28
+        layer.cornerRadius = 20
         layer.cornerCurve = .continuous
         addSubview(stack)
         stack.pin(to: self, insets: insets)
+        Prefs.appearanceChanged.observe(self) { [weak self] in self?.backgroundColor = Theme.card }
     }
 
     @available(*, unavailable)
@@ -378,10 +379,11 @@ final class AnalyticsGroup: UIView {
     init() {
         super.init(frame: .zero)
         backgroundColor = Theme.card
-        layer.cornerRadius = 22
+        layer.cornerRadius = 20
         layer.cornerCurve = .continuous
         addSubview(stack)
-        stack.pin(to: self, insets: UIEdgeInsets(top: 2, left: 16, bottom: 2, right: 16))
+        stack.pin(to: self, insets: UIEdgeInsets(top: 2, left: 14, bottom: 2, right: 14))
+        Prefs.appearanceChanged.observe(self) { [weak self] in self?.backgroundColor = Theme.card }
     }
 
     @available(*, unavailable)
@@ -401,7 +403,7 @@ final class AnalyticsGroup: UIView {
 
     /// The caption above a group: small capitals in the secondary colour.
     static func caption(_ text: String) -> UIView {
-        let label = UILabel(text.uppercased(), font: Theme.font(.footnote), color: .secondaryLabel)
+        let label = UILabel(text.uppercased(), font: Theme.font(.caption1), color: .secondaryLabel)
         return Classic.padded(label, UIEdgeInsets(top: 0, left: 6, bottom: 0, right: 6))
     }
 }
@@ -409,8 +411,8 @@ final class AnalyticsGroup: UIView {
 /// One row: a title and its value, a meter under them when it has one, and a
 /// chevron when it opens something.
 final class AnalyticsRow: UIView {
-    let title = UILabel(font: Theme.font(.body))
-    let value = UILabel(font: UIFont.monospacedDigitSystemFont(ofSize: Theme.font(.body).pointSize, weight: .regular), color: .secondaryLabel)
+    let title = UILabel(font: Theme.font(.subheadline))
+    let value = UILabel(font: UIFont.monospacedDigitSystemFont(ofSize: Theme.font(.subheadline).pointSize, weight: .regular), color: .secondaryLabel)
     let meter: MeterBar?
     private let press = TapControl()
 
@@ -426,9 +428,9 @@ final class AnalyticsRow: UIView {
         if let dot {
             let mark = UIView()
             mark.backgroundColor = dot
-            mark.layer.cornerRadius = 5
+            mark.layer.cornerRadius = 4
             mark.translatesAutoresizingMaskIntoConstraints = false
-            NSLayoutConstraint.activate([mark.widthAnchor.constraint(equalToConstant: 10), mark.heightAnchor.constraint(equalToConstant: 10)])
+            NSLayoutConstraint.activate([mark.widthAnchor.constraint(equalToConstant: 8), mark.heightAnchor.constraint(equalToConstant: 8)])
             line.append(mark)
         }
         line += [title, UIView(), value]
@@ -439,8 +441,8 @@ final class AnalyticsRow: UIView {
             line.append(chevron)
         }
         let top = UIStackView(.horizontal, spacing: 10, alignment: .center, line)
-        top.heightAnchor.constraint(greaterThanOrEqualToConstant: 24).isActive = true
-        let column = UIStackView(.vertical, spacing: 9, alignment: .fill, [top] + (self.meter.map { [$0] } ?? []))
+        top.heightAnchor.constraint(greaterThanOrEqualToConstant: 20).isActive = true
+        let column = UIStackView(.vertical, spacing: 8, alignment: .fill, [top] + (self.meter.map { [$0] } ?? []))
         column.isUserInteractionEnabled = false
         press.pressScale = 1
         press.onTap = onTap
@@ -450,7 +452,7 @@ final class AnalyticsRow: UIView {
         addSubview(press)
         press.pin(to: self)
         press.addSubview(column)
-        column.pin(to: press, insets: UIEdgeInsets(top: 13, left: 0, bottom: 13, right: 0))
+        column.pin(to: press, insets: UIEdgeInsets(top: 10, left: 0, bottom: 10, right: 0))
     }
 
     @available(*, unavailable)
@@ -467,23 +469,25 @@ final class AnalyticsRow: UIView {
 /// of cards).
 final class MinimalAnalyticsViewController: UIViewController {
     private let scroll = HandoffScrollView()
-    private let downSpeed = UILabel(font: UIFont.monospacedDigitSystemFont(ofSize: 40, weight: .semibold))
-    private let downUnit = UILabel(font: Theme.font(17, .medium), color: .secondaryLabel)
-    private let upSpeed = UILabel(font: UIFont.monospacedDigitSystemFont(ofSize: 40, weight: .semibold))
-    private let upUnit = UILabel(font: Theme.font(17, .medium), color: .secondaryLabel)
+    // 3.5 beta 2 (the owner: the page was larger than the rest of the app): smaller
+    // figures, charts and rows throughout.
+    private let downSpeed = UILabel(font: UIFont.monospacedDigitSystemFont(ofSize: 28, weight: .semibold))
+    private let downUnit = UILabel(font: Theme.font(13, .medium), color: .secondaryLabel)
+    private let upSpeed = UILabel(font: UIFont.monospacedDigitSystemFont(ofSize: 28, weight: .semibold))
+    private let upUnit = UILabel(font: Theme.font(13, .medium), color: .secondaryLabel)
     private let graph = SpeedGraphView()
     private let graphHint = UILabel(L("Данные появятся после подключения"), font: Theme.font(.caption1), color: .secondaryLabel)
     private let sessionRow = AnalyticsRow(L("Сеанс"))
     // 3.5: each measure drawn its own way — a ring, a gauge, a line, columns.
     private let trafficRing = RingChart()
-    private let trafficTotal = UILabel(font: UIFont.monospacedDigitSystemFont(ofSize: Theme.font(.subheadline).pointSize, weight: .semibold))
-    private let downTotal = UILabel(font: UIFont.monospacedDigitSystemFont(ofSize: Theme.font(.body).pointSize, weight: .semibold))
-    private let upTotal = UILabel(font: UIFont.monospacedDigitSystemFont(ofSize: Theme.font(.body).pointSize, weight: .semibold))
+    private let trafficTotal = UILabel(font: UIFont.monospacedDigitSystemFont(ofSize: Theme.font(.footnote).pointSize, weight: .semibold))
+    private let downTotal = UILabel(font: UIFont.monospacedDigitSystemFont(ofSize: Theme.font(.subheadline).pointSize, weight: .semibold))
+    private let upTotal = UILabel(font: UIFont.monospacedDigitSystemFont(ofSize: Theme.font(.subheadline).pointSize, weight: .semibold))
     private let delayGauge = GaugeView()
-    private let delayValue = UILabel(font: UIFont.monospacedDigitSystemFont(ofSize: 28, weight: .semibold))
+    private let delayValue = UILabel(font: UIFont.monospacedDigitSystemFont(ofSize: 22, weight: .semibold))
     private let delayCaption = UILabel(font: Theme.font(.footnote), color: .secondaryLabel, lines: 2)
     private let memoryLine = SparklineView()
-    private let memoryValue = UILabel(font: UIFont.monospacedDigitSystemFont(ofSize: Theme.font(.body).pointSize, weight: .regular), color: .secondaryLabel)
+    private let memoryValue = UILabel(font: UIFont.monospacedDigitSystemFont(ofSize: Theme.font(.footnote).pointSize, weight: .regular), color: .secondaryLabel)
     private let columns = ColumnsView()
     private var tcpRow: AnalyticsRow!
     private var udpRow: AnalyticsRow!
@@ -558,7 +562,7 @@ final class MinimalAnalyticsViewController: UIViewController {
             header.addSubview(item)
         }
         NSLayoutConstraint.activate([
-            header.heightAnchor.constraint(equalToConstant: 56),
+            header.heightAnchor.constraint(equalToConstant: 48),
             title.centerXAnchor.constraint(equalTo: header.centerXAnchor), title.centerYAnchor.constraint(equalTo: header.centerYAnchor),
             more.trailingAnchor.constraint(equalTo: header.trailingAnchor), more.centerYAnchor.constraint(equalTo: header.centerYAnchor),
             more.widthAnchor.constraint(equalToConstant: 44), more.heightAnchor.constraint(equalToConstant: 44),
@@ -570,28 +574,29 @@ final class MinimalAnalyticsViewController: UIViewController {
         func speed(_ number: UILabel, _ unit: UILabel, _ symbol: String, _ caption: String, _ color: UIColor) -> UIView {
             number.adjustsFontSizeToFitWidth = true
             number.minimumScaleFactor = 0.6
-            let figure = UIStackView(.horizontal, spacing: 6, alignment: .firstBaseline, [number, unit])
-            let icon = UIImageView(image: UIImage(systemName: symbol, withConfiguration: UIImage.SymbolConfiguration(font: Theme.font(.subheadline, .semibold))))
+            let figure = UIStackView(.horizontal, spacing: 4, alignment: .firstBaseline, [number, unit])
+            let icon = UIImageView(image: UIImage(systemName: symbol, withConfiguration: UIImage.SymbolConfiguration(font: Theme.font(.footnote, .semibold))))
             icon.tintColor = color
-            let label = UIStackView(.horizontal, spacing: 4, alignment: .center, [icon, UILabel(caption, font: Theme.font(.subheadline, .medium), color: color)])
+            let label = UIStackView(.horizontal, spacing: 4, alignment: .center, [icon, UILabel(caption, font: Theme.font(.footnote, .medium), color: color)])
             return UIStackView(.vertical, spacing: 2, alignment: .leading, [figure, label])
         }
-        let now = UILabel(L("СЕЙЧАС"), font: Theme.font(.caption1, .semibold), color: .secondaryLabel)
-        let speeds = UIStackView(.horizontal, spacing: 32, alignment: .top, [
+        let now = UILabel(L("СЕЙЧАС"), font: Theme.font(.caption2, .semibold), color: .secondaryLabel)
+        let speeds = UIStackView(.horizontal, spacing: 28, alignment: .top, [
             speed(downSpeed, downUnit, "arrow.down", L("Загрузка"), SpeedGraphView.downColor),
             speed(upSpeed, upUnit, "arrow.up", L("Отдача"), SpeedGraphView.upColor), UIView(),
         ])
-        // The graph runs from edge to edge of the screen, without a card.
+        // 3.5 beta 2 (the owner): the graph sits in a card of its own, as the
+        // groups below do (it ran from edge to edge of the screen, on the page itself).
         let graphHolder = UIView()
         graph.translatesAutoresizingMaskIntoConstraints = false
         graphHolder.addSubview(graph)
         NSLayoutConstraint.activate([
-            graphHolder.heightAnchor.constraint(equalToConstant: 150),
+            graphHolder.heightAnchor.constraint(equalToConstant: 96),
             graph.topAnchor.constraint(equalTo: graphHolder.topAnchor), graph.bottomAnchor.constraint(equalTo: graphHolder.bottomAnchor),
-            graph.leadingAnchor.constraint(equalTo: graphHolder.leadingAnchor, constant: -20),
-            graph.trailingAnchor.constraint(equalTo: graphHolder.trailingAnchor, constant: 20),
+            graph.leadingAnchor.constraint(equalTo: graphHolder.leadingAnchor),
+            graph.trailingAnchor.constraint(equalTo: graphHolder.trailingAnchor),
         ])
-        graph.showsGrid = false
+        graph.showsGrid = true
         graphHint.textAlignment = .center
         graphHint.numberOfLines = 0
         graphHolder.addSubview(graphHint)
@@ -604,24 +609,28 @@ final class MinimalAnalyticsViewController: UIViewController {
             UILabel(L("2 мин назад"), font: Theme.font(.caption2), color: .secondaryLabel), UIView(),
             UILabel(L("сейчас"), font: Theme.font(.caption2), color: .secondaryLabel),
         ])
-        let hero = UIStackView(.vertical, spacing: 8, alignment: .fill, [Classic.padded(now, UIEdgeInsets(top: 0, left: 2, bottom: 0, right: 0)), speeds, graphHolder, axis])
-        hero.setCustomSpacing(18, after: speeds)
-        hero.setCustomSpacing(6, after: graphHolder)
+        let heroStack = UIStackView(.vertical, spacing: 6, alignment: .fill, [now, speeds, graphHolder, axis])
+        heroStack.setCustomSpacing(12, after: speeds)
+        heroStack.setCustomSpacing(4, after: graphHolder)
+        let hero = AnalyticsCard(insets: UIEdgeInsets(top: 14, left: 14, bottom: 12, right: 14))
+        hero.stack.alignment = .fill
+        hero.stack.addArrangedSubview(heroStack)
 
         func block(_ views: [UIView], spacing: CGFloat = 10) -> UIView {
-            Classic.padded(UIStackView(.vertical, spacing: spacing, alignment: .fill, views), UIEdgeInsets(top: 14, left: 0, bottom: 14, right: 0))
+            Classic.padded(UIStackView(.vertical, spacing: spacing, alignment: .fill, views), UIEdgeInsets(top: 11, left: 0, bottom: 11, right: 0))
         }
-        func small(_ text: String) -> UILabel { UILabel(text, font: Theme.font(.subheadline, .medium), color: .secondaryLabel) }
+        func small(_ text: String) -> UILabel { UILabel(text, font: Theme.font(.footnote, .medium), color: .secondaryLabel) }
         func legend(_ symbol: String, _ caption: String, _ color: UIColor, _ amount: UILabel) -> UIView {
-            let icon = UIImageView(image: UIImage(systemName: symbol, withConfiguration: UIImage.SymbolConfiguration(font: Theme.font(.footnote, .bold))))
+            let icon = UIImageView(image: UIImage(systemName: symbol, withConfiguration: UIImage.SymbolConfiguration(font: Theme.font(.caption1, .bold))))
             icon.tintColor = color
-            let top = UIStackView(.horizontal, spacing: 4, alignment: .center, [icon, UILabel(caption, font: Theme.font(.footnote), color: .secondaryLabel)])
+            let top = UIStackView(.horizontal, spacing: 4, alignment: .center, [icon, UILabel(caption, font: Theme.font(.caption1), color: .secondaryLabel)])
             return UIStackView(.vertical, spacing: 2, alignment: .leading, [top, amount])
         }
 
         // The session's traffic: a ring, the total inside.
         trafficRing.translatesAutoresizingMaskIntoConstraints = false
-        NSLayoutConstraint.activate([trafficRing.widthAnchor.constraint(equalToConstant: 92), trafficRing.heightAnchor.constraint(equalToConstant: 92)])
+        trafficRing.lineWidth = 8
+        NSLayoutConstraint.activate([trafficRing.widthAnchor.constraint(equalToConstant: 68), trafficRing.heightAnchor.constraint(equalToConstant: 68)])
         trafficTotal.textAlignment = .center
         trafficTotal.adjustsFontSizeToFitWidth = true
         trafficTotal.minimumScaleFactor = 0.6
@@ -629,16 +638,17 @@ final class MinimalAnalyticsViewController: UIViewController {
         trafficTotal.translatesAutoresizingMaskIntoConstraints = false
         NSLayoutConstraint.activate([
             trafficTotal.centerXAnchor.constraint(equalTo: trafficRing.centerXAnchor), trafficTotal.centerYAnchor.constraint(equalTo: trafficRing.centerYAnchor),
-            trafficTotal.widthAnchor.constraint(equalToConstant: 64),
+            trafficTotal.widthAnchor.constraint(equalToConstant: 48),
         ])
-        let trafficLegend = UIStackView(.vertical, spacing: 12, alignment: .leading, [
+        let trafficLegend = UIStackView(.vertical, spacing: 8, alignment: .leading, [
             legend("arrow.down", L("Загрузка"), SpeedGraphView.downColor, downTotal), legend("arrow.up", L("Отдача"), SpeedGraphView.upColor, upTotal),
         ])
-        let traffic = block([small(L("Трафик за сеанс")), UIStackView(.horizontal, spacing: 22, alignment: .center, [trafficRing, trafficLegend, UIView()])])
+        let traffic = block([small(L("Трафик за сеанс")), UIStackView(.horizontal, spacing: 18, alignment: .center, [trafficRing, trafficLegend, UIView()])])
 
         // The delay: a half-circle gauge.
         delayGauge.translatesAutoresizingMaskIntoConstraints = false
-        NSLayoutConstraint.activate([delayGauge.widthAnchor.constraint(equalToConstant: 132), delayGauge.heightAnchor.constraint(equalToConstant: 70)])
+        delayGauge.lineWidth = 8
+        NSLayoutConstraint.activate([delayGauge.widthAnchor.constraint(equalToConstant: 100), delayGauge.heightAnchor.constraint(equalToConstant: 54)])
         delayValue.adjustsFontSizeToFitWidth = true
         delayValue.minimumScaleFactor = 0.6
         let delayText = UIStackView(.vertical, spacing: 2, alignment: .leading, [delayValue, delayCaption])
@@ -650,7 +660,7 @@ final class MinimalAnalyticsViewController: UIViewController {
         // The core's memory: its line over two minutes.
         memoryLine.color = .systemPurple
         memoryLine.ceiling = Self.memoryLimit
-        memoryLine.heightAnchor.constraint(equalToConstant: 64).isActive = true
+        memoryLine.heightAnchor.constraint(equalToConstant: 48).isActive = true
         memoryValue.textAlignment = .right
         let core = AnalyticsGroup()
         core.add([block([UIStackView(.horizontal, spacing: 8, alignment: .center, [small(L("Память ядра")), UIView(), memoryValue]), memoryLine,
@@ -659,7 +669,7 @@ final class MinimalAnalyticsViewController: UIViewController {
         // Connections: columns over the last minute, TCP under UDP.
         columns.lowerColor = Self.tcpColor
         columns.upperColor = Self.udpColor
-        columns.heightAnchor.constraint(equalToConstant: 64).isActive = true
+        columns.heightAnchor.constraint(equalToConstant: 48).isActive = true
         let connections = AnalyticsGroup()
         tcpRow = AnalyticsRow("TCP", dot: Self.tcpColor) { [weak self] in self?.present(ConnectionsViewController.wrapped(udp: false), animated: true) }
         udpRow = AnalyticsRow("UDP", dot: Self.udpColor) { [weak self] in self?.present(ConnectionsViewController.wrapped(udp: true), animated: true) }
@@ -670,7 +680,7 @@ final class MinimalAnalyticsViewController: UIViewController {
         let routesNote = Classic.padded(UILabel(L("Показаны только соединения, полученные от ядра во время наблюдения; это не весь трафик сеанса."), font: Theme.font(.caption2), color: .secondaryLabel, lines: 0),
                                         UIEdgeInsets(top: 0, left: 6, bottom: 0, right: 6))
 
-        let links = AnalyticsCard(insets: UIEdgeInsets(top: 0, left: 18, bottom: 0, right: 18))
+        let links = AnalyticsCard(insets: UIEdgeInsets(top: 0, left: 14, bottom: 0, right: 14))
         links.stack.alignment = .fill
         links.stack.spacing = 0
         links.stack.addArrangedSubview(link("stethoscope", L("Проверка соединения")) { [weak self] in
@@ -679,7 +689,7 @@ final class MinimalAnalyticsViewController: UIViewController {
         let divider = UIView()
         divider.backgroundColor = .separator
         divider.heightAnchor.constraint(equalToConstant: 0.5).isActive = true
-        links.stack.addArrangedSubview(Classic.padded(divider, UIEdgeInsets(top: 0, left: 30, bottom: 0, right: 0)))
+        links.stack.addArrangedSubview(Classic.padded(divider, UIEdgeInsets(top: 0, left: 28, bottom: 0, right: 0)))
         links.stack.addArrangedSubview(link("doc.text.magnifyingglass", L("Журнал службы")) { [weak self] in
             self?.navigationController?.pushViewController(ServiceLogViewController(), animated: true)
         })
@@ -692,15 +702,15 @@ final class MinimalAnalyticsViewController: UIViewController {
             AnalyticsGroup.caption(L("Маршруты")), routes, routesNote,
             links,
         ])
-        content.setCustomSpacing(10, after: header)
-        for view in [hero, session, core, connections, routesNote] { content.setCustomSpacing(26, after: view) }
+        content.setCustomSpacing(6, after: header)
+        for view in [hero, session, core, connections, routesNote] { content.setCustomSpacing(18, after: view) }
         scroll.addSubview(content)
         content.translatesAutoresizingMaskIntoConstraints = false
         NSLayoutConstraint.activate([
             content.topAnchor.constraint(equalTo: scroll.contentLayoutGuide.topAnchor, constant: 4),
             content.bottomAnchor.constraint(equalTo: scroll.contentLayoutGuide.bottomAnchor, constant: -24),
-            content.leadingAnchor.constraint(equalTo: scroll.frameLayoutGuide.leadingAnchor, constant: 20),
-            content.trailingAnchor.constraint(equalTo: scroll.frameLayoutGuide.trailingAnchor, constant: -20),
+            content.leadingAnchor.constraint(equalTo: scroll.frameLayoutGuide.leadingAnchor, constant: 16),
+            content.trailingAnchor.constraint(equalTo: scroll.frameLayoutGuide.trailingAnchor, constant: -16),
         ])
 
         let client = App.shared.core
@@ -725,16 +735,16 @@ final class MinimalAnalyticsViewController: UIViewController {
     private func link(_ symbol: String, _ title: String, action: @escaping () -> Void) -> UIView {
         let control = TapControl()
         // 1.5.0 destination row: a body-style label with its icon, 18 pt padding.
-        let icon = UIImageView(image: UIImage(systemName: symbol, withConfiguration: UIImage.SymbolConfiguration(font: Theme.font(.body))))
+        let icon = UIImageView(image: UIImage(systemName: symbol, withConfiguration: UIImage.SymbolConfiguration(font: Theme.font(.subheadline))))
         icon.tintColor = .label
         icon.setContentHuggingPriority(.required, for: .horizontal)
         let chevron = UIImageView(image: UIImage(systemName: "chevron.right", withConfiguration: UIImage.SymbolConfiguration(font: Theme.font(.caption1, .semibold))))
         chevron.tintColor = .secondaryLabel
         chevron.setContentHuggingPriority(.required, for: .horizontal)
-        let row = UIStackView(.horizontal, spacing: 12, alignment: .center, [icon, UILabel(title, font: Theme.font(.body)), UIView(), chevron])
+        let row = UIStackView(.horizontal, spacing: 12, alignment: .center, [icon, UILabel(title, font: Theme.font(.subheadline)), UIView(), chevron])
         row.isUserInteractionEnabled = false
         control.addSubview(row)
-        row.pin(to: control, insets: UIEdgeInsets(top: 18, left: 0, bottom: 18, right: 0))
+        row.pin(to: control, insets: UIEdgeInsets(top: 13, left: 0, bottom: 13, right: 0))
         control.pressScale = 1
         control.onTap = action
         return control

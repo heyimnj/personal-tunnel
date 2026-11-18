@@ -441,8 +441,12 @@ final class MinimalConnectionView: UIView {
     private let flag = UILabel(font: .systemFont(ofSize: 21))
     private let mark = UIImageView(image: MinimalIcons.home)
     private let name = UILabel(font: Theme.font(17, .medium))
-    /// 3.5: no up-and-down chevrons at the end (the owner's choice).
-    private lazy var capsuleRow = UIStackView(.horizontal, spacing: 8, alignment: .center, [flag, mark, name, UIView()])
+    /// 3.5 beta 2 (the owner: the capsule wanted something at its end, not the
+    /// old up-and-down chevrons): the server's delay, and a small chevron up — the
+    /// servers come up from below.
+    private let delay = UILabel(font: UIFont.monospacedDigitSystemFont(ofSize: 15, weight: .regular), color: .secondaryLabel)
+    private let opener = UIImageView(image: UIImage(systemName: "chevron.up", withConfiguration: UIImage.SymbolConfiguration(pointSize: 13, weight: .semibold)))
+    private lazy var capsuleRow = UIStackView(.horizontal, spacing: 8, alignment: .center, [flag, mark, name, UIView(), delay, opener])
 
     override init(frame: CGRect) {
         super.init(frame: frame)
@@ -471,6 +475,13 @@ final class MinimalConnectionView: UIView {
             NSLayoutConstraint.activate([view.widthAnchor.constraint(equalToConstant: 26), view.heightAnchor.constraint(equalToConstant: 26)])
         }
         name.lineBreakMode = .byTruncatingTail
+        name.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+        delay.setContentHuggingPriority(.required, for: .horizontal)
+        delay.setContentCompressionResistancePriority(.required, for: .horizontal)
+        opener.tintColor = .tertiaryLabel
+        opener.contentMode = .center
+        opener.setContentHuggingPriority(.required, for: .horizontal)
+        capsuleRow.setCustomSpacing(10, after: delay)
         capsuleRow.isUserInteractionEnabled = false
         capsule.addSubview(capsuleRow)
         capsule.onTap = { [weak self] in Haptics.tap(); self?.onChooseServer?() }
@@ -480,6 +491,7 @@ final class MinimalConnectionView: UIView {
         App.shared.tunnel.state.observe(self) { [weak self] in self?.show($0) }
         App.shared.health.state.observe(self, fireNow: false) { [weak self] _ in self?.showRing(animated: true) }
         App.shared.store.library.observe(self) { [weak self] _ in self?.showServer() }
+        App.shared.latency.changed.observe(self, fireNow: false) { [weak self] _ in self?.showDelay() }
         Prefs.appearanceChanged.observe(self) { [weak self] in
             self?.restyle()
             self?.showServer()
@@ -575,6 +587,7 @@ final class MinimalConnectionView: UIView {
             mark.isHidden = false
             mark.image = UIImage(systemName: "plus.circle.fill")
             mark.tintColor = Theme.accent
+            showDelay()
             return
         }
         let label = App.shared.store.label(of: node, in: subscription)
@@ -586,27 +599,44 @@ final class MinimalConnectionView: UIView {
         mark.isHidden = emoji != nil
         mark.image = MinimalIcons.home
         mark.tintColor = .label
+        showDelay()
+    }
+
+    /// The chosen server's last delay; nothing until it has one.
+    private func showDelay() {
+        let library = App.shared.library
+        var text: String?
+        if !Prefs.autoSelect, let subscription = library.activeSubscription, let node = library.activeNode,
+           case let .delay(value)? = App.shared.latency.entry(subscription.id, node.id)?.result {
+            text = "\(value) ms"
+        }
+        guard delay.text != text else { return }
+        delay.text = text
+        delay.isHidden = text == nil
     }
 }
 
-/// The connection button's glyph (3.5, the owner's own): a standing switch,
-/// off below and on above, in the grey of the text under the button (black stood
-/// out of the interface). On, its track takes a soft fill; the knob slides with
-/// a spring.
+/// The connection button's glyph. 3.5 beta 2 (the owner: the standing switch
+/// of beta 1 stood out too much — «что-то более 2D-шное, невзрачное, простое»):
+/// a flat power mark of two thin lines, an open circle and a stroke through its
+/// gap. Off it is the grey of the status text; on it takes the text colour and
+/// the circle draws itself closed a little further round the stroke.
 final class SwitchGlyph: UIView {
-    private let track = CAShapeLayer()
-    private let knob = CAShapeLayer()
+    private let arc = CAShapeLayer()
+    private let stem = CAShapeLayer()
     private(set) var isOn = false
-    static let size = CGSize(width: 32, height: 58)
-    private static let line: CGFloat = 3
-    private static let knobInset: CGFloat = 6.5
+    static let size = CGSize(width: 40, height: 40)
+    private static let line: CGFloat = 2.5
 
     override init(frame: CGRect) {
         super.init(frame: frame)
         isUserInteractionEnabled = false
-        for item in [track, knob] { layer.addSublayer(item) }
-        track.lineWidth = Self.line
-        knob.lineWidth = 0
+        for item in [arc, stem] {
+            item.fillColor = nil
+            item.lineWidth = Self.line
+            item.lineCap = .round
+            layer.addSublayer(item)
+        }
         restyle()
     }
 
@@ -621,59 +651,58 @@ final class SwitchGlyph: UIView {
     }
 
     private func restyle() {
-        let ink = UIColor.secondaryLabel.resolvedColor(with: traitCollection)
+        let ink = (isOn ? UIColor.label : UIColor.secondaryLabel).resolvedColor(with: traitCollection)
         CATransaction.begin()
         CATransaction.setDisableActions(true)
-        track.strokeColor = ink.cgColor
-        track.fillColor = isOn ? ink.withAlphaComponent(0.2).cgColor : UIColor.clear.cgColor
-        knob.fillColor = ink.cgColor
+        arc.strokeColor = ink.cgColor
+        stem.strokeColor = ink.cgColor
         CATransaction.commit()
     }
 
     override func layoutSubviews() {
         super.layoutSubviews()
-        let rect = bounds.insetBy(dx: Self.line / 2, dy: Self.line / 2)
-        track.frame = bounds
-        track.path = UIBezierPath(roundedRect: rect, cornerRadius: rect.width / 2).cgPath
-        let diameter = bounds.width - Self.knobInset * 2
-        knob.bounds = CGRect(x: 0, y: 0, width: diameter, height: diameter)
-        knob.path = UIBezierPath(ovalIn: knob.bounds).cgPath
+        let center = CGPoint(x: bounds.midX, y: bounds.midY + 1)
+        let radius = min(bounds.width, bounds.height) / 2 - Self.line
+        // The open circle: from just right of the top, clockwise to just left of it.
+        let gap: CGFloat = .pi / 5
+        arc.frame = bounds
+        stem.frame = bounds
+        arc.path = UIBezierPath(arcCenter: center, radius: radius, startAngle: -.pi / 2 + gap, endAngle: .pi * 1.5 - gap, clockwise: true).cgPath
+        let stroke = UIBezierPath()
+        stroke.move(to: CGPoint(x: center.x, y: center.y - radius - 1))
+        stroke.addLine(to: CGPoint(x: center.x, y: center.y - radius * 0.15))
+        stem.path = stroke.cgPath
         CATransaction.begin()
         CATransaction.setDisableActions(true)
-        knob.position = knobCenter(isOn)
+        apply(isOn)
         CATransaction.commit()
     }
 
-    private func knobCenter(_ on: Bool) -> CGPoint {
-        let radius = (bounds.width - Self.knobInset * 2) / 2
-        let y = on ? Self.knobInset + radius : bounds.height - Self.knobInset - radius
-        return CGPoint(x: bounds.midX, y: y)
+    /// Off, the circle is a little more open at the top.
+    private func apply(_ on: Bool) {
+        arc.strokeStart = on ? 0 : 0.04
+        arc.strokeEnd = on ? 1 : 0.96
     }
 
     func set(on: Bool, animated: Bool) {
         guard on != isOn else { return }
         isOn = on
-        let from = knob.presentation()?.position ?? knob.position
-        let to = knobCenter(on)
         CATransaction.begin()
-        CATransaction.setDisableActions(true)
-        knob.position = to
-        CATransaction.commit()
-        if animated, !UIAccessibility.isReduceMotionEnabled {
-            let slide = CASpringAnimation(keyPath: "position")
-            slide.fromValue = from
-            slide.toValue = to
-            slide.damping = 16
-            slide.stiffness = 260
-            slide.mass = 1
-            slide.duration = slide.settlingDuration
-            knob.add(slide, forKey: "slide")
-            let fade = CABasicAnimation(keyPath: "fillColor")
-            fade.fromValue = track.presentation()?.fillColor ?? track.fillColor
-            fade.duration = 0.22
-            track.add(fade, forKey: "fillColor")
-        }
+        CATransaction.setDisableActions(!animated || UIAccessibility.isReduceMotionEnabled)
+        CATransaction.setAnimationDuration(0.3)
+        CATransaction.setAnimationTimingFunction(CAMediaTimingFunction(name: .easeOut))
+        apply(on)
         restyle()
+        CATransaction.commit()
+        // restyle() turns animations off for the colour; the colour fades on its own.
+        if animated, !UIAccessibility.isReduceMotionEnabled {
+            for item in [arc, stem] {
+                let fade = CABasicAnimation(keyPath: "strokeColor")
+                fade.fromValue = (on ? UIColor.secondaryLabel : UIColor.label).resolvedColor(with: traitCollection).cgColor
+                fade.duration = 0.3
+                item.add(fade, forKey: "ink")
+            }
+        }
     }
 }
 

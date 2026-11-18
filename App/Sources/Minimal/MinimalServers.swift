@@ -208,7 +208,7 @@ final class MinimalServersViewController: UIViewController, UIScrollViewDelegate
         more.accessibilityLabel = L("Ещё")
         more.showsMenuAsPrimaryAction = true
         more.menu = UIMenu(children: [UIDeferredMenuElement.uncached { [weak self] done in done(self?.moreItems() ?? []) }])
-        let moreGlass = GlassView()
+        let moreGlass = SolidCapsule()
         moreGlass.contentView.addSubview(more)
         more.pin(to: moreGlass.contentView)
         sortButton.setContentHuggingPriority(.required, for: .horizontal)
@@ -228,7 +228,7 @@ final class MinimalServersViewController: UIViewController, UIScrollViewDelegate
             title.trailingAnchor.constraint(lessThanOrEqualTo: plusButton.leadingAnchor, constant: -12),
             subtitle.topAnchor.constraint(equalTo: title.bottomAnchor, constant: 1), subtitle.leadingAnchor.constraint(equalTo: title.leadingAnchor),
             subtitle.trailingAnchor.constraint(lessThanOrEqualTo: plusButton.leadingAnchor, constant: -12),
-            plusButton.trailingAnchor.constraint(equalTo: bar.trailingAnchor, constant: -16), plusButton.centerYAnchor.constraint(equalTo: title.bottomAnchor, constant: 2),
+            plusButton.trailingAnchor.constraint(equalTo: bar.trailingAnchor, constant: -16), plusButton.centerYAnchor.constraint(equalTo: title.centerYAnchor),
             plusButton.widthAnchor.constraint(equalToConstant: 46), plusButton.heightAnchor.constraint(equalToConstant: 46),
             pills.leadingAnchor.constraint(equalTo: bar.leadingAnchor, constant: 16), pills.trailingAnchor.constraint(equalTo: bar.trailingAnchor, constant: -16),
             pills.bottomAnchor.constraint(equalTo: bar.bottomAnchor, constant: -10), pills.heightAnchor.constraint(equalToConstant: 42),
@@ -244,11 +244,12 @@ final class MinimalServersViewController: UIViewController, UIScrollViewDelegate
         return true
     }
 
-    /// «По порядку» → «По имени» → «По задержке» → «По порядку».
-    private enum Sort { case manual, name, latency }
+    /// «По порядку» → «По имени» → «По задержке» → «Недавние» → «По порядку».
+    private enum Sort { case manual, name, latency, recent }
 
     private var sort: Sort {
-        Prefs.sortByLatency ? .latency : (Prefs.arrangement.byName ? .name : .manual)
+        if Prefs.sortByRecent { return .recent }
+        return Prefs.sortByLatency ? .latency : (Prefs.arrangement.byName ? .name : .manual)
     }
 
     private static func title(_ sort: Sort) -> String {
@@ -256,6 +257,7 @@ final class MinimalServersViewController: UIViewController, UIScrollViewDelegate
         case .manual: return L("По порядку")
         case .name: return L("По имени")
         case .latency: return L("По задержке")
+        case .recent: return L("Недавние")
         }
     }
 
@@ -270,12 +272,19 @@ final class MinimalServersViewController: UIViewController, UIScrollViewDelegate
         case .manual:
             arrangement.byName = true
             Prefs.sortByLatency = false
+            Prefs.sortByRecent = false
         case .name:
             arrangement.byName = false
             Prefs.sortByLatency = true
+            Prefs.sortByRecent = false
         case .latency:
             arrangement.byName = false
             Prefs.sortByLatency = false
+            Prefs.sortByRecent = true
+        case .recent:
+            arrangement.byName = false
+            Prefs.sortByLatency = false
+            Prefs.sortByRecent = false
         }
         Prefs.arrangement = arrangement
         reload()
@@ -330,8 +339,8 @@ final class MinimalServersViewController: UIViewController, UIScrollViewDelegate
         // 3.5: the order is the bar's own capsule now.
         return [
             UIAction(title: L("Порядок серверов"), image: UIImage(systemName: "list.number")) { [weak self] _ in
-                let order = UINavigationController(rootViewController: ServerOrderViewController())
-                self?.present(order, animated: true)
+                // 3.5 beta 2: the Modern page of its own (cards, as in this sheet).
+                self?.present(ModernServerOrderViewController.wrapped(), animated: true)
             },
         ] + (selecting ? selectionItems() : [currentServerPin()]) + [
             UIAction(title: L("Обновить подписки")) { _ in App.shared.refreshAll() },
@@ -734,7 +743,10 @@ final class MinimalServersViewController: UIViewController, UIScrollViewDelegate
         }
         list.onSelect = { [weak self] id, tag in
             guard let self else { return }
-            if self.selecting { self.toggleSelected(node: tag, in: id) } else { App.shared.select(node: tag, in: id) }
+            if self.selecting { self.toggleSelected(node: tag, in: id); return }
+            App.shared.select(node: tag, in: id)
+            // «Недавние»: the chosen server goes up at once, with the VPN off as well.
+            if Prefs.sortByRecent { self.reload() }
         }
         list.onPing = { [weak self] id, tag in
             if self?.selecting == true { self?.toggleSelected(node: tag, in: id); return }
@@ -807,7 +819,19 @@ final class MinimalServersViewController: UIViewController, UIScrollViewDelegate
         // 3.3 beta 3: the server the VPN is connected to rises under the pinned ones.
         let lifted = App.shared.liftedServer
         var nodes = Prefs.arrangement.sorted(subscription.nodes, key: { Arrangement.server(subscription.id, $0.id) }, name: { labels[$0.id]?.text ?? $0.name }, lifted: lifted)
-        if Prefs.sortByLatency {
+        if Prefs.sortByRecent {
+            // The latest chosen first; servers never chosen keep their order after them.
+            let pinned = Set(Prefs.arrangement.pinned)
+            let used = Dictionary(Prefs.arrangement.recent.enumerated().map { ($1, $0) }, uniquingKeysWith: min)
+            nodes = nodes.enumerated().sorted { left, right in
+                let lk = Arrangement.server(subscription.id, left.element.id), rk = Arrangement.server(subscription.id, right.element.id)
+                let lp = pinned.contains(lk), rp = pinned.contains(rk)
+                if lp != rp { return lp }
+                if let lifted, (lk == lifted) != (rk == lifted) { return lk == lifted }
+                let l = used[lk] ?? Int.max, r = used[rk] ?? Int.max
+                return l != r ? l < r : left.offset < right.offset
+            }.map(\.element)
+        } else if Prefs.sortByLatency {
             let latency = App.shared.latency
             let pinned = Set(Prefs.arrangement.pinned)
             nodes = nodes.enumerated().sorted { left, right in
@@ -1085,7 +1109,9 @@ final class TouchRecorder: UIGestureRecognizer {
 /// A capsule of the servers' bar (3.5, the owner's «вариант A»): a symbol and a
 /// word, a count at the end, and a fill that grows with a running test.
 final class PillButton: UIControl {
-    private let glass = GlassView()
+    /// 3.5 beta 2: a solid capsule of the cards' own colour (the owner: the bar's
+    /// capsules were glass, the subscriptions and servers below them are not).
+    private let glass = SolidCapsule()
     private let fill = UIView()
     private let icon = UIImageView()
     private let label = UILabel(font: Theme.font(15, .medium))
@@ -1152,5 +1178,31 @@ final class PillButton: UIControl {
     override var accessibilityValue: String? {
         get { detail.isHidden ? nil : detail.text }
         set {}
+    }
+}
+
+/// A capsule (or circle) of the servers' card colour, as the subscriptions and
+/// servers under it are drawn: no glass, no blur (3.5 beta 2).
+final class SolidCapsule: UIView {
+    /// Put content here; it is clipped to the capsule.
+    let contentView = UIView()
+
+    override init(frame: CGRect) {
+        super.init(frame: frame)
+        backgroundColor = SurfaceView.card
+        layer.cornerCurve = .continuous
+        contentView.clipsToBounds = true
+        contentView.layer.cornerCurve = .continuous
+        addSubview(contentView)
+        contentView.pin(to: self)
+    }
+
+    @available(*, unavailable)
+    required init?(coder _: NSCoder) { fatalError() }
+
+    override func layoutSubviews() {
+        super.layoutSubviews()
+        layer.cornerRadius = bounds.height / 2
+        contentView.layer.cornerRadius = bounds.height / 2
     }
 }

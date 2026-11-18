@@ -700,3 +700,8 @@
 "подписка" = "subscription";
 "подписки" = "subscriptions";
 "подписок" = "subscriptions";
+"Фон карточек" = "Card background";
+"Карточки аналитики: график скорости, сеанс, ядро, соединения, маршруты." = "Analytics cards: the speed graph, session, core, connections, routes.";
+"Плотность фона" = "Background density";
+"Цвет фона" = "Background colour";
+"Сбросить фон карточек" = "Reset card background";

@@ -224,9 +224,11 @@ private final class ActionPlate: UIView {
             // The symbols keep their place on the card while the drop is shorter.
             let slot = CGRect(x: right - PlateButton.width, y: -(full - height) / 2, width: PlateButton.width, height: full)
             if button.frame != slot { button.frame = slot }
-            // A symbol shows once most of its slot is uncovered.
+            // 3.5 beta 2: a symbol takes its full colour as soon as a third of its
+            // slot is out (it waited for most of the slot and looked grey while the
+            // plate came out — the owner: «свайп-меню не окрашивается»).
             let shown = max(0, min(1, (slot.maxX - max(0, slot.minX)) / PlateButton.width))
-            let alpha = max(0, min(1, (shown - 0.45) / 0.45))
+            let alpha = max(0, min(1, (shown - 0.12) / 0.22))
             if button.alpha != alpha { button.alpha = alpha }
             right -= PlateButton.width
         }

@@ -74,6 +74,7 @@ final class SubscriptionEditorViewController: UITableViewController {
             Prefs.arrangement = next
             // The order just set is what the list should show.
             Prefs.sortByLatency = false
+            Prefs.sortByRecent = false
         }
         onSaved?()
         Haptics.result(true)

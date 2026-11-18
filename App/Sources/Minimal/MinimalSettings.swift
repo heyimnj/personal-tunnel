@@ -29,10 +29,9 @@ final class MinimalSettingsViewController: FormViewController {
                 .link(symbol: "folder", title: L("Управление подписками")) { [weak self] in self?.push(SubscriptionsViewController()) },
                 .link(symbol: "arrow.clockwise", title: L("Обновление подписок")) { [weak self] in self?.push(NetworkSettingsViewController(.updates)) },
             ]),
+            // 3.5 beta 2 (the owner): «Маршрутизация и DNS» and «Пинг» are inside «Подключение».
             FormSection([
                 .link(symbol: "wifi", title: L("Подключение")) { [weak self] in self?.push(NetworkSettingsViewController(.connection)) },
-                .link(symbol: "arrow.triangle.branch", title: L("Маршрутизация и DNS")) { [weak self] in self?.push(NetworkSettingsViewController(.routing)) },
-                .link(symbol: "waveform.path.ecg", title: L("Пинг")) { [weak self] in self?.push(NetworkSettingsViewController(.ping)) },
             ]),
             FormSection([
                 .symbol("lock", .toggle(title: L("Блокировка приложения"), get: { Prefs.appLock }, set: { Prefs.appLock = $0 })),
@@ -88,7 +87,15 @@ final class GlassSettingsViewController: FormViewController {
                 slider(L("Весь интерфейс"), Prefs.glassOpacityKey),
                 slider(L("Кнопка подключения"), Prefs.buttonOpacityKey),
                 slider(L("Выбранный сервер"), Prefs.serverOpacityKey),
-                slider(L("Карточки и панели"), Prefs.cardOpacityKey),
+            ]),
+            // 3.5 beta 2 (the owner): the cards of analytics — how solid, and their colour.
+            FormSection(L("Фон карточек"), footer: L("Карточки аналитики: график скорости, сеанс, ядро, соединения, маршруты."), [
+                .slider(title: L("Плотность фона"), get: { Prefs.cardFill }, set: { Prefs.cardFill = $0 }),
+                .color(title: L("Цвет фона"), get: { UIColor(hex: Prefs.cardHex) ?? UIColor.secondarySystemBackground }, set: { Prefs.cardHex = $0.hexString }),
+                .button(title: L("Сбросить фон карточек"), destructive: false) {
+                    Prefs.cardHex = nil
+                    Prefs.cardFill = Prefs.defaultCardFill
+                },
             ]),
         ]
     }
@@ -163,6 +170,14 @@ final class NetworkSettingsViewController: FormViewController {
             ]),
         ]
         case .connection: return [
+            FormSection([
+                .link(symbol: "arrow.triangle.branch", title: L("Маршрутизация и DNS")) { [weak self] in
+                    self?.navigationController?.pushViewController(NetworkSettingsViewController(.routing), animated: true)
+                },
+                .link(symbol: "waveform.path.ecg", title: L("Пинг")) { [weak self] in
+                    self?.navigationController?.pushViewController(NetworkSettingsViewController(.ping), animated: true)
+                },
+            ]),
             FormSection([
                 .toggle(title: L("Автоподключение в неизвестных Wi-Fi"), get: { Prefs.autoConnect }, set: { Prefs.autoConnect = $0; App.shared.tunnel.applySettings() }),
                 .link(symbol: nil, title: L("Мои сети")) { [weak self] in self?.navigationController?.pushViewController(TrustedNetworksViewController(), animated: true) },

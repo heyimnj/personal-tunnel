@@ -50,8 +50,11 @@ enum Theme {
 
     /// Analytics cards of the Minimal interface, as 1.5.0 drew them (`ModernGlass`
     /// "analytics"): a faint grouped surface, solid when transparency is reduced.
+    /// 3.5 beta 2: its colour and how solid it is are the owner's to choose
+    /// («Стекло и прозрачность» → «Фон карточек»).
     static var card: UIColor {
-        UIAccessibility.isReduceTransparencyEnabled ? .secondarySystemBackground : UIColor.secondarySystemBackground.withAlphaComponent(0.23)
+        let base = UIColor(hex: Prefs.cardHex) ?? .secondarySystemBackground
+        return UIAccessibility.isReduceTransparencyEnabled ? base : base.withAlphaComponent(CGFloat(Prefs.cardFill))
     }
 
     // MARK: Fonts
