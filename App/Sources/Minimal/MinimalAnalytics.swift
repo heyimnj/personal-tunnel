@@ -348,6 +348,57 @@ final class RouteRingsView: UIView {
     }
 }
 
+/// Columns over time, two series stacked (3.5): the open TCP and UDP
+/// connections in the last minute, a column every two seconds.
+final class ColumnsView: UIView {
+    var lower: [Int] = [] { didSet { setNeedsDisplay() } }
+    var upper: [Int] = [] { didSet { setNeedsDisplay() } }
+    var lowerColor: UIColor = .systemIndigo
+    var upperColor: UIColor = .systemOrange
+    var columns = 30
+
+    override init(frame: CGRect) {
+        super.init(frame: frame)
+        backgroundColor = .clear
+        contentMode = .redraw
+        isOpaque = false
+    }
+
+    @available(*, unavailable)
+    required init?(coder _: NSCoder) { fatalError() }
+
+    override func draw(_: CGRect) {
+        guard let context = UIGraphicsGetCurrentContext() else { return }
+        let count = min(lower.count, upper.count)
+        let gap: CGFloat = 3
+        let width = (bounds.width - gap * CGFloat(columns - 1)) / CGFloat(columns)
+        var highest = 4
+        for (a, b) in zip(lower, upper) { highest = max(highest, a + b) }
+        let peak = CGFloat(highest)
+        // Empty places first: the columns come in from the right.
+        for slot in 0 ..< columns {
+            let x = CGFloat(slot) * (width + gap)
+            let index = count - columns + slot
+            context.setFillColor(UIColor.label.withAlphaComponent(0.05).cgColor)
+            context.addPath(UIBezierPath(roundedRect: CGRect(x: x, y: 0, width: width, height: bounds.height), cornerRadius: min(3, width / 2)).cgPath)
+            context.fillPath()
+            guard index >= 0 else { continue }
+            let below = CGFloat(lower[index]) / peak * bounds.height
+            let above = CGFloat(upper[index]) / peak * bounds.height
+            let column = CGRect(x: x, y: bounds.height - below - above, width: width, height: below + above)
+            guard column.height > 0.5 else { continue }
+            context.saveGState()
+            context.addPath(UIBezierPath(roundedRect: column, cornerRadius: min(3, width / 2)).cgPath)
+            context.clip()
+            context.setFillColor(upperColor.cgColor)
+            context.fill(CGRect(x: x, y: column.minY, width: width, height: above))
+            context.setFillColor(lowerColor.cgColor)
+            context.fill(CGRect(x: x, y: bounds.height - below, width: width, height: below))
+            context.restoreGState()
+        }
+    }
+}
+
 /// A grouped card of rows, as the settings draw them (3.5, the owner's
 /// «вариант A»): a list a glance runs down, with small charts where they help.
 final class AnalyticsGroup: UIView {
@@ -434,8 +485,8 @@ final class AnalyticsRow: UIView {
 
 /// The second Home page (3.5: the owner's «вариант A» — the speed large at the
 /// top over its graph, then tiles). 3.5 (release, the owner: the page was too
-/// busy): the session's two square tiles; 3.5.2: routes (4:2), TCP and UDP as two
-/// square plates side by side, the core's memory (4:2).
+/// busy): the session's two square tiles; 3.5.2: routes (4:2), connections as in
+/// beta 4 (columns and two rows), the core's memory (4:2).
 final class MinimalAnalyticsViewController: UIViewController {
     private let scroll = HandoffScrollView()
     // 3.5 beta 2 (the owner: the page was larger than the rest of the app): smaller
@@ -459,10 +510,10 @@ final class MinimalAnalyticsViewController: UIViewController {
     private let memoryLine = SparklineView()
     private let memoryValue = UILabel(font: UIFont.monospacedDigitSystemFont(ofSize: 20, weight: .semibold))
     private let memoryDetail = UILabel(font: UIFont.monospacedDigitSystemFont(ofSize: Theme.font(.caption2).pointSize, weight: .regular), color: .secondaryLabel)
-    private let tcpCount = UILabel(font: UIFont.monospacedDigitSystemFont(ofSize: 30, weight: .semibold))
-    private let udpCount = UILabel(font: UIFont.monospacedDigitSystemFont(ofSize: 30, weight: .semibold))
-    private let tcpPeak = UILabel(font: Theme.font(.caption2), color: .secondaryLabel)
-    private let udpPeak = UILabel(font: Theme.font(.caption2), color: .secondaryLabel)
+    private let columns = ColumnsView()
+    private let columnsPeak = UILabel(font: UIFont.monospacedDigitSystemFont(ofSize: Theme.font(.caption2).pointSize, weight: .medium), color: .secondaryLabel)
+    private var tcpRow: AnalyticsRow!
+    private var udpRow: AnalyticsRow!
     private let routeRings = RouteRingsView()
     private let routeLegend = UIStackView(.vertical, spacing: 3, alignment: .fill, [])
     private let routesEmpty = UILabel(L("Данные соединений пока недоступны"), font: Theme.font(.footnote), color: .secondaryLabel, lines: 0)
@@ -630,17 +681,21 @@ final class MinimalAnalyticsViewController: UIViewController {
         let session = AnalyticsGroup()
         session.add([sessionRow])
 
-        // 3.5.2 (the owner): routes (4:2), then TCP and UDP as two plates of their
-        // own side by side (2:2 each, the cards' own colour), then the core's memory (4:2).
-        let tcpPlate = connectionPlate("TCP", Self.tcpColor, tcpCount, tcpPeak) { [weak self] in
-            self?.present(ConnectionsViewController.wrapped(udp: false), animated: true)
-        }
-        let udpPlate = connectionPlate("UDP", Self.udpColor, udpCount, udpPeak) { [weak self] in
-            self?.present(ConnectionsViewController.wrapped(udp: true), animated: true)
-        }
-        let connections = UIStackView(.horizontal, spacing: 12, alignment: .fill, [tcpPlate, udpPlate])
-        connections.distribution = .fillEqually
-        tcpPlate.heightAnchor.constraint(equalTo: tcpPlate.widthAnchor).isActive = true
+        // Connections (3.5.2, the owner: back as in beta 4): columns of the open
+        // TCP and UDP connections over the last minute, then a row for each that
+        // opens its list. The highest column's count stands on the right.
+        columns.lowerColor = Self.tcpColor
+        columns.upperColor = Self.udpColor
+        columns.heightAnchor.constraint(equalToConstant: 48).isActive = true
+        columnsPeak.textAlignment = .right
+        columnsPeak.setContentHuggingPriority(.required, for: .horizontal)
+        let columnsCaption = UIStackView(.horizontal, spacing: 8, alignment: .center, [
+            UILabel(L("Открытые соединения за минуту"), font: Theme.font(.caption2), color: .secondaryLabel), UIView(), columnsPeak,
+        ])
+        let connections = AnalyticsGroup()
+        tcpRow = AnalyticsRow("TCP", dot: Self.tcpColor) { [weak self] in self?.present(ConnectionsViewController.wrapped(udp: false), animated: true) }
+        udpRow = AnalyticsRow("UDP", dot: Self.udpColor) { [weak self] in self?.present(ConnectionsViewController.wrapped(udp: true), animated: true) }
+        connections.add([Classic.padded(UIStackView(.vertical, spacing: 8, alignment: .fill, [columns, columnsCaption]), UIEdgeInsets(top: 11, left: 0, bottom: 11, right: 0)), tcpRow, udpRow])
 
         // Routes (4:2): the rings on the left, the largest routes beside them.
         let routes = AnalyticsCard(insets: UIEdgeInsets(top: 14, left: 14, bottom: 14, right: 14))
@@ -780,30 +835,6 @@ final class MinimalAnalyticsViewController: UIViewController {
         return hero
     }
 
-    /// A connections plate (2:2): its dot and name, the count now, the highest
-    /// count in the last minute; a tap opens the list.
-    private func connectionPlate(_ name: String, _ color: UIColor, _ count: UILabel, _ peak: UILabel, action: @escaping () -> Void) -> UIView {
-        let dot = UIView()
-        dot.backgroundColor = color
-        dot.layer.cornerRadius = 4
-        dot.translatesAutoresizingMaskIntoConstraints = false
-        NSLayoutConstraint.activate([dot.widthAnchor.constraint(equalToConstant: 8), dot.heightAnchor.constraint(equalToConstant: 8)])
-        let chevron = UIImageView(image: UIImage(systemName: "chevron.right", withConfiguration: UIImage.SymbolConfiguration(font: Theme.font(.caption1, .semibold))))
-        chevron.tintColor = .tertiaryLabel
-        chevron.setContentHuggingPriority(.required, for: .horizontal)
-        let head = UIStackView(.horizontal, spacing: 7, alignment: .center, [dot, UILabel(name, font: Theme.font(.subheadline, .semibold)), UIView(), chevron])
-        count.text = "—"
-        count.adjustsFontSizeToFitWidth = true
-        count.minimumScaleFactor = 0.6
-        peak.adjustsFontSizeToFitWidth = true
-        peak.minimumScaleFactor = 0.7
-        let card = AnalyticsCard(insets: UIEdgeInsets(top: 14, left: 14, bottom: 14, right: 14))
-        card.stack.alignment = .fill
-        card.stack.spacing = 2
-        for item in [head, UIView(), count, peak] as [UIView] { card.stack.addArrangedSubview(item) }
-        return pressable(card, label: name, action: action)
-    }
-
     /// Wraps a tile so the whole of it is one button.
     private func pressable(_ content: UIView, label: String, action: @escaping () -> Void) -> TapControl {
         let control = TapControl()
@@ -900,8 +931,8 @@ final class MinimalAnalyticsViewController: UIViewController {
 
     private func show(_ connections: CoreConnections) {
         let tcpText = "\(connections.tcp)", udpText = "\(connections.udp)"
-        if tcpCount.text != tcpText { tcpCount.text = tcpText }
-        if udpCount.text != udpText { udpCount.text = udpText }
+        if tcpRow.value.text != tcpText { tcpRow.value.text = tcpText }
+        if udpRow.value.text != udpText { udpRow.value.text = udpText }
         let top = Array(connections.routes.sorted { $0.value > $1.value }.prefix(Self.routesShown))
         routeRings.parts = top.enumerated().map { index, route in
             (value: Double(route.value), color: Self.routeColors[index % Self.routeColors.count])
@@ -936,14 +967,22 @@ final class MinimalAnalyticsViewController: UIViewController {
         routesEmpty.isHidden = !names.isEmpty
     }
 
-    /// The memory line and the most connections open at once in the last minute.
+    /// The memory line and the connection columns (a column per two seconds).
     private func show(_ samples: CoreSamples) {
         memoryLine.values = samples.memory.map { Double($0) }
-        let tcp = samples.tcp.suffix(60).max() ?? 0
-        let udp = samples.udp.suffix(60).max() ?? 0
-        let tcpText = Lf("Макс. за минуту: %@", "\(tcp)"), udpText = Lf("Макс. за минуту: %@", "\(udp)")
-        if tcpPeak.text != tcpText { tcpPeak.text = tcpText }
-        if udpPeak.text != udpText { udpPeak.text = udpText }
+        // A column per two seconds, the latest last.
+        let count = min(samples.tcp.count, samples.udp.count)
+        var indices: [Int] = []
+        var index = count - 1
+        while index >= 0, indices.count < columns.columns {
+            indices.insert(index, at: 0)
+            index -= 2
+        }
+        columns.lower = indices.map { samples.tcp[$0] }
+        columns.upper = indices.map { samples.udp[$0] }
+        let peak = zip(columns.lower, columns.upper).map { $0 + $1 }.max() ?? 0
+        let text = peak > 0 ? Lf("пик %@", "\(peak)") : ""
+        if columnsPeak.text != text { columnsPeak.text = text }
     }
 
     /// 3.5: the delay tile tests the connected server again.
