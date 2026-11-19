@@ -555,7 +555,7 @@ enum AddServerFlow {
 /// A sheet from the bottom with a title and a card of options; it is as tall as
 /// its content and closes with a swipe down. A chosen option runs once the sheet
 /// has gone, so whatever it presents comes from the screen underneath.
-final class AddSheetViewController: UIViewController {
+final class AddSheetViewController: UIViewController, UIViewControllerTransitioningDelegate, UIGestureRecognizerDelegate {
     struct Option {
         var symbol: String
         var title: String
@@ -577,7 +577,31 @@ final class AddSheetViewController: UIViewController {
         heading = title
         self.options = options
         super.init(nibName: nil, bundle: nil)
-        modalPresentationStyle = .pageSheet
+        // 3.5.15 (the owner): iOS 26 floats a sheet of partial height, inset from
+        // the screen's edges — the list showed under its bottom. There it is our own
+        // sheet, attached to the bottom edge; below iOS 26 the system's, which is.
+        if #available(iOS 26, *) {
+            modalPresentationStyle = .custom
+            transitioningDelegate = self
+        } else {
+            modalPresentationStyle = .pageSheet
+        }
+    }
+
+    private var attached: Bool { modalPresentationStyle == .custom }
+
+    func presentationController(forPresented presented: UIViewController, presenting: UIViewController?, source _: UIViewController) -> UIPresentationController? {
+        BottomSheetPresentation(presentedViewController: presented, presenting: presenting) { [weak self] width in
+            self?.fittedHeight(width) ?? 0
+        }
+    }
+
+    /// The sheet's height above the bottom safe area: the title and the card.
+    private func fittedHeight(_ width: CGFloat) -> CGFloat {
+        let fitted = content.systemLayoutSizeFitting(CGSize(width: width - 32, height: UIView.layoutFittingCompressedSize.height),
+                                                     withHorizontalFittingPriority: .required, verticalFittingPriority: .fittingSizeLevel)
+        // Below the card: room for the home indicator.
+        return 26 + fitted.height + 16
     }
 
     @available(*, unavailable)
@@ -629,19 +653,61 @@ final class AddSheetViewController: UIViewController {
             content.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 16),
             content.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -16),
         ])
-        if let sheet = sheetPresentationController {
+        if attached {
+            view.layer.cornerRadius = 30
+            view.layer.cornerCurve = .continuous
+            view.layer.maskedCorners = [.layerMinXMinYCorner, .layerMaxXMinYCorner]
+            view.clipsToBounds = true
+            let grabber = UIView()
+            grabber.backgroundColor = UIColor.label.withAlphaComponent(0.18)
+            grabber.layer.cornerRadius = 2.5
+            grabber.isUserInteractionEnabled = false
+            view.addSubview(grabber)
+            grabber.translatesAutoresizingMaskIntoConstraints = false
+            NSLayoutConstraint.activate([
+                grabber.topAnchor.constraint(equalTo: view.topAnchor, constant: 5), grabber.centerXAnchor.constraint(equalTo: view.centerXAnchor),
+                grabber.widthAnchor.constraint(equalToConstant: 36), grabber.heightAnchor.constraint(equalToConstant: 5),
+            ])
+            let pan = UIPanGestureRecognizer(target: self, action: #selector(panned(_:)))
+            pan.delegate = self
+            view.addGestureRecognizer(pan)
+        } else if let sheet = sheetPresentationController {
             sheet.prefersGrabberVisible = true
             sheet.preferredCornerRadius = 30
             sheet.detents = [.custom(identifier: .init("content")) { [weak self] context in
                 guard let self else { return context.maximumDetentValue }
                 let width = self.view.bounds.width > 0 ? self.view.bounds.width : UIScreen.main.bounds.width
-                let fitted = self.content.systemLayoutSizeFitting(CGSize(width: width - 32, height: UIView.layoutFittingCompressedSize.height),
-                                                                 withHorizontalFittingPriority: .required, verticalFittingPriority: .fittingSizeLevel)
-                // Below the card: room for the home indicator (the detent excludes the bottom safe area).
-                return min(context.maximumDetentValue, 26 + fitted.height + 16)
+                // The detent excludes the bottom safe area.
+                return min(context.maximumDetentValue, self.fittedHeight(width))
             }]
         }
     }
+
+    /// Our sheet closes with a swipe down, as the system's does.
+    @objc private func panned(_ pan: UIPanGestureRecognizer) {
+        let down = max(0, pan.translation(in: view).y)
+        switch pan.state {
+        case .changed:
+            view.transform = CGAffineTransform(translationX: 0, y: down)
+        case .ended, .cancelled:
+            let speed = pan.velocity(in: view).y
+            if pan.state == .ended, down > 80 || speed > 700 {
+                // From where the finger left it: the offset becomes the frame.
+                let frame = view.frame
+                view.transform = .identity
+                view.frame = frame
+                dismiss(animated: true)
+            } else {
+                UIView.animate(withDuration: 0.4, delay: 0, usingSpringWithDamping: 0.9, initialSpringVelocity: 0, options: [.allowUserInteraction]) {
+                    self.view.transform = .identity
+                }
+            }
+        default:
+            break
+        }
+    }
+
+    func gestureRecognizer(_: UIGestureRecognizer, shouldRecognizeSimultaneouslyWith _: UIGestureRecognizer) -> Bool { true }
 
     private func row(_ option: Option) -> UIView {
         let control = TapControl()
@@ -665,6 +731,51 @@ final class AddSheetViewController: UIViewController {
         }
         return control
     }
+}
+
+/// A sheet attached to the bottom edge, as tall as `height` (for the width) above
+/// the bottom safe area; the rest of the screen dims, a touch on it closes the sheet.
+final class BottomSheetPresentation: UIPresentationController {
+    private let dim = UIControl()
+    private let height: (CGFloat) -> CGFloat
+
+    init(presentedViewController: UIViewController, presenting: UIViewController?, height: @escaping (CGFloat) -> CGFloat) {
+        self.height = height
+        super.init(presentedViewController: presentedViewController, presenting: presenting)
+    }
+
+    override var frameOfPresentedViewInContainerView: CGRect {
+        guard let container = containerView else { return .zero }
+        let bounds = container.bounds
+        let wanted = height(bounds.width) + container.safeAreaInsets.bottom
+        let tall = min(bounds.height - container.safeAreaInsets.top, max(0, wanted))
+        return CGRect(x: 0, y: bounds.height - tall, width: bounds.width, height: tall)
+    }
+
+    override func presentationTransitionWillBegin() {
+        guard let container = containerView else { return }
+        dim.backgroundColor = UIColor.black.withAlphaComponent(0.2)
+        dim.alpha = 0
+        dim.frame = container.bounds
+        dim.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+        dim.addTarget(self, action: #selector(dimTapped), for: .touchUpInside)
+        container.insertSubview(dim, at: 0)
+        guard let coordinator = presentedViewController.transitionCoordinator else { dim.alpha = 1; return }
+        coordinator.animate(alongsideTransition: { _ in self.dim.alpha = 1 })
+    }
+
+    override func dismissalTransitionWillBegin() {
+        guard let coordinator = presentedViewController.transitionCoordinator else { dim.alpha = 0; return }
+        coordinator.animate(alongsideTransition: { _ in self.dim.alpha = 0 })
+    }
+
+    override func containerViewWillLayoutSubviews() {
+        super.containerViewWillLayoutSubviews()
+        guard presentedViewController.view.transform == .identity else { return }
+        presentedView?.frame = frameOfPresentedViewInContainerView
+    }
+
+    @objc private func dimTapped() { presentedViewController.dismiss(animated: true) }
 }
 
 /// A scroll indicator that can be taken and dragged, as long lists have it in
