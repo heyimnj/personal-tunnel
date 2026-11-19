@@ -332,6 +332,8 @@ final class MinimalHomeViewController: UIViewController, UIScrollViewDelegate, U
     }
 
     private func settled() {
+        // The page stands: analytics may draw again (before it is told it shows).
+        moveEnded()
         applyAnalyticsInsets()
         applyVisibility()
         scheduleHideDots()
@@ -497,12 +499,16 @@ final class MinimalHomeViewController: UIViewController, UIScrollViewDelegate, U
     }
 
     private func moveEnded() {
-        meter?.invalidate()
+        guard let link = meter else { return }
+        link.invalidate()
         meter = nil
         analytics.moving = false
         let ms = { (seconds: CFTimeInterval) in String(format: "%.0f", seconds * 1000) }
-        App.shared.core.note(Lf("Переход страницы: кадров %@, пропущено %@, самый долгий %@ мс; раскладок аналитики %@, её обновлений %@ (%@ мс).",
-                                "\(frames)", "\(dropped)", ms(longest), "\(analytics.layoutPasses)", "\(analytics.updates)", ms(analytics.updateTime)))
+        let text = Lf("Переход страницы: кадров %@, пропущено %@, самый долгий %@ мс; раскладок аналитики %@, её обновлений %@ (%@ мс).",
+                      "\(frames)", "\(dropped)", ms(longest), "\(analytics.layoutPasses)", "\(analytics.updates)", ms(analytics.updateTime))
+        // Written a moment later: preparing a log line takes the main thread a
+        // little, and the list may still be gliding.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { App.shared.core.note(text) }
     }
 
     /// During a page change only the dots follow; the analytics streams and timer

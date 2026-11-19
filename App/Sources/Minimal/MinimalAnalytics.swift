@@ -201,7 +201,7 @@ final class RingChart: UIView {
 /// value in its own colour and a dot marks the end.
 final class GaugeView: UIView {
     /// The value and the scale's end; nil: no value (only the track).
-    var value: Double? { didSet { setNeedsDisplay() } }
+    var value: Double? { didSet { if value != oldValue { setNeedsDisplay() } } }
     var maximum: Double = 600
     /// Where the colours change, ascending, with the colour below each.
     var zones: [(upTo: Double, color: UIColor)] = [(150, .systemGreen), (400, .systemOrange), (.infinity, .systemRed)]
@@ -255,7 +255,7 @@ final class GaugeView: UIView {
 /// An area line over time (3.5): the core's memory in the last two minutes,
 /// scaled to the extension's limit, which shows as a dashed line when it is near.
 final class SparklineView: UIView {
-    var values: [Double] = [] { didSet { setNeedsDisplay() } }
+    var values: [Double] = [] { didSet { if values != oldValue { setNeedsDisplay() } } }
     var capacity = 120
     var color: UIColor = .systemPurple { didSet { setNeedsDisplay() } }
     /// The top of the scale; the line of the limit is drawn when values reach half of it.
@@ -320,7 +320,12 @@ final class SparklineView: UIView {
 /// Routes as rings, one inside the other (3.5): each route its own track, its
 /// arc as long as its share of the traffic seen; the largest outside.
 final class RouteRingsView: UIView {
-    var parts: [(value: Double, color: UIColor)] = [] { didSet { setNeedsDisplay() } }
+    var parts: [(value: Double, color: UIColor)] = [] {
+        didSet {
+            guard parts.map(\.value) != oldValue.map(\.value) || parts.map(\.color) != oldValue.map(\.color) else { return }
+            setNeedsDisplay()
+        }
+    }
 
     override init(frame: CGRect) {
         super.init(frame: frame)
@@ -363,8 +368,8 @@ final class RouteRingsView: UIView {
 /// Columns over time, two series stacked (3.5): the open TCP and UDP
 /// connections in the last minute, a column every two seconds.
 final class ColumnsView: UIView {
-    var lower: [Int] = [] { didSet { setNeedsDisplay() } }
-    var upper: [Int] = [] { didSet { setNeedsDisplay() } }
+    var lower: [Int] = [] { didSet { if lower != oldValue { setNeedsDisplay() } } }
+    var upper: [Int] = [] { didSet { if upper != oldValue { setNeedsDisplay() } } }
     var lowerColor: UIColor = .systemIndigo
     var upperColor: UIColor = .systemOrange
     var columns = 30
@@ -798,41 +803,35 @@ final class MinimalAnalyticsViewController: UIViewController {
         ])
 
         let client = App.shared.core
-        // 3.5.10 (the owner: page changes stuttered since 3.5): the page is
-        // updated only while it is on screen and standing still; the status came
-        // every second even under Home and in the middle of a page change, and
-        // relaid the whole page each time. A missed update is caught up at once
-        // when the page shows or stops (`refresh`).
-        client.status.observe(self) { [weak self] status in
-            guard let self, self.live else { return }
-            self.measured { self.show(status) }
-        }
-        client.history.observe(self) { [weak self] history in
-            guard let self, self.live else { return }
-            self.measured { self.showGraph(history) }
-        }
-        client.samples.observe(self) { [weak self] samples in
-            guard let self, self.live else { return }
-            self.measured { self.show(samples) }
-        }
-        client.connections.observe(self) { [weak self] connections in
-            guard let self, self.live else { return }
-            self.measured { self.show(connections) }
-        }
+        // 3.5.11 (the owner: since 3.5 the page changes and the way up stutter; 3.2.11
+        // did not): what comes from the core only marks the page as behind; it is
+        // drawn once a second, all at once, and never while anything moves (see
+        // `flush`). 3.2.11 changed a few labels a second; 3.5 redraws charts and
+        // lays out a much larger page, twice a second (the status and the
+        // connections come apart) — at 120 Hz that cost a frame in any motion.
+        client.status.observe(self, fireNow: false) { [weak self] _ in self?.behind = true }
+        client.history.observe(self, fireNow: false) { [weak self] _ in self?.behind = true }
+        client.samples.observe(self, fireNow: false) { [weak self] _ in self?.behind = true }
+        client.connections.observe(self, fireNow: false) { [weak self] _ in self?.behind = true }
         App.shared.latency.changed.observe(self) { [weak self] _ in self?.showDelay() }
-        App.shared.tunnel.connectedSince.observe(self) { [weak self] _ in self?.tick() }
+        App.shared.tunnel.connectedSince.observe(self) { [weak self] _ in self?.behind = true }
         showDelay()
         show(client.status.value)
     }
 
-    /// On screen and not in a page change.
-    private var live: Bool { visible && !moving }
-    /// Home's page is moving (set by Home): nothing on this page changes meanwhile.
-    var moving = false {
-        didSet {
-            guard moving != oldValue, !moving, visible else { return }
-            refresh()
-        }
+    /// Something came from the core since the page was last drawn.
+    private var behind = true
+    /// Home's page is moving (set by Home).
+    var moving = false
+    /// The list itself moves, or a finger is on it.
+    private var listMoving: Bool { scroll.isTracking || scroll.isDragging || scroll.isDecelerating || scroll.isSpringingToTop }
+
+    /// Draws what came, if the page is on screen and nothing moves; otherwise the
+    /// next second's turn does. `force`: the session clock is due too.
+    private func flush(force: Bool = false) {
+        guard visible, !moving, !listMoving, behind || force else { return }
+        behind = false
+        measured { refresh() }
     }
 
     /// Everything as it is now, at once.
@@ -954,19 +953,10 @@ final class MinimalAnalyticsViewController: UIViewController {
         timer?.invalidate()
         timer = nil
         if value {
-            // The first redraw in two steps: the graph and the session now, the
-            // lists (views built) on the next turn of the run loop.
-            show(App.shared.core.status.value)
-            showGraph(App.shared.core.history.value)
-            show(App.shared.core.samples.value)
-            DispatchQueue.main.async { [weak self] in
-                guard let self, self.visible else { return }
-                self.show(App.shared.core.connections.value)
-            }
-            tick()
+            // Drawn now (Home calls this once the page stands still), then once a second.
+            flush(force: true)
             timer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in
-                guard let self, !self.moving else { return }
-                self.tick()
+                self?.flush(force: true)
             }
         }
     }
@@ -993,19 +983,21 @@ final class MinimalAnalyticsViewController: UIViewController {
     private func show(_ status: CoreStatus?) {
         let down = Self.split(Format.speed(max(1, status?.downlink ?? 0)))
         let up = Self.split(Format.speed(max(1, status?.uplink ?? 0)))
-        downSpeed.text = status == nil ? "—" : ((status?.downlink ?? 0) > 0 ? down.0 : "0")
-        downUnit.text = down.1
-        upSpeed.text = status == nil ? "—" : ((status?.uplink ?? 0) > 0 ? up.0 : "0")
-        upUnit.text = up.1
+        // 3.5.11: a label is touched only when its text changes (each change lays
+        // the page out again).
+        downSpeed.showText(status == nil ? "—" : ((status?.downlink ?? 0) > 0 ? down.0 : "0"))
+        downUnit.showText(down.1)
+        upSpeed.showText(status == nil ? "—" : ((status?.uplink ?? 0) > 0 ? up.0 : "0"))
+        upUnit.showText(up.1)
         let downBytes: Int64 = status?.downlinkTotal ?? 0
         let upBytes: Int64 = status?.uplinkTotal ?? 0
-        downTotal.text = status == nil ? "—" : Format.bytes(downBytes)
-        upTotal.text = status == nil ? "—" : Format.bytes(upBytes)
-        trafficTotal.text = status == nil ? "—" : Format.bytes(downBytes + upBytes)
+        downTotal.showText(status == nil ? "—" : Format.bytes(downBytes))
+        upTotal.showText(status == nil ? "—" : Format.bytes(upBytes))
+        trafficTotal.showText(status == nil ? "—" : Format.bytes(downBytes + upBytes))
         trafficRing.parts = [(value: Double(downBytes), color: SpeedGraphView.downColor), (value: Double(upBytes), color: SpeedGraphView.upColor)]
-        memoryValue.text = status.map { Format.bytes($0.memory) } ?? "—"
-        memoryDetail.text = status.map { "\($0.goroutines) goroutines" } ?? L("Ядро не запущено")
-        graphHint.isHidden = status != nil
+        memoryValue.showText(status.map { Format.bytes($0.memory) } ?? "—")
+        memoryDetail.showText(status.map { "\($0.goroutines) goroutines" } ?? L("Ядро не запущено"))
+        if graphHint.isHidden != (status != nil) { graphHint.isHidden = status != nil }
     }
 
     /// Names in the routes legend, in order; its lines are rebuilt only when they change.
@@ -1268,5 +1260,12 @@ private final class ConnectionCell: UITableViewCell {
         destination.text = item.destination
         outbound.text = item.chain.isEmpty ? (item.outbound.isEmpty ? "—" : item.outbound) : item.chain.joined(separator: " → ")
         traffic.text = "↑ " + Format.bytes(item.uploadTotal) + "   ↓ " + Format.bytes(item.downloadTotal)
+    }
+}
+
+extension UILabel {
+    /// 3.5.11: sets the text only when it differs (a new text lays the page out again).
+    func showText(_ text: String?) {
+        if self.text != text { self.text = text }
     }
 }

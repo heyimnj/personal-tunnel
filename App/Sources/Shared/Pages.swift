@@ -235,7 +235,12 @@ final class ServiceLogViewController: UIViewController, UITableViewDataSource, U
         stack.setCustomSpacing(6, after: caption)
         caption.isLayoutMarginsRelativeArrangement = true
         caption.layoutMargins = UIEdgeInsets(top: 0, left: 14, bottom: 0, right: 14)
-        App.shared.core.logsChanged.observe(self) { [weak self] in self?.refilter() }
+        // 3.5.11: only while on screen (the log streams all the time since 3.5, and a
+        // log page left open under another tab redrew itself for every line).
+        App.shared.core.logsChanged.observe(self) { [weak self] in
+            guard let self, self.viewIfLoaded?.window != nil else { return }
+            self.refilter()
+        }
     }
 
     override func viewWillAppear(_ animated: Bool) {
