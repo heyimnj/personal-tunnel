@@ -19,6 +19,8 @@ final class SpringDriver {
         static let snappy = Feel(response: 0.36, damping: 0.84)
         /// Page changes: long, calm, no bounce.
         static let page = Feel(response: 0.46, damping: 0.94)
+        /// A tap on the tab: quick and without a bounce (3.5.7).
+        static let quick = Feel(response: 0.3, damping: 1)
     }
 
     private(set) var value: CGFloat = 0

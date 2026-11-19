@@ -547,7 +547,7 @@ final class MinimalAnalyticsViewController: UIViewController {
 
     /// Whether the list may take a drag now (Home: only while this page stands
     /// on screen; a swipe during the page's move is the pager's).
-    var acceptsDrag: (() -> Bool)? {
+    var acceptsDrag: ((_ upward: Bool) -> Bool)? {
         get { scroll.acceptsDrag }
         set { scroll.acceptsDrag = newValue }
     }
@@ -572,7 +572,23 @@ final class MinimalAnalyticsViewController: UIViewController {
             if atTop { scroll.contentOffset = CGPoint(x: 0, y: -insets.top) }
         }
     }
-    func scrollToTop() { scroll.setContentOffset(CGPoint(x: 0, y: -scroll.adjustedContentInset.top), animated: true) }
+    /// 3.5.7: the tab's tap brings the list to its top on a quick per-frame
+    /// spring (was the system's animated offset: slow, and a second tap restarted
+    /// it from rest, so the list jerked). A finger on the list stops it.
+    func scrollToTop() {
+        let top = -scroll.adjustedContentInset.top
+        // A fling still running ends here; the spring takes over from where it shows.
+        scroll.setContentOffset(scroll.contentOffset, animated: false)
+        topSpring.run(from: scroll.contentOffset.y, to: top, feel: .quick)
+    }
+
+    /// The list is on its way to the top after a tap on the tab.
+    var isScrollingToTop: Bool { topSpring.isRunning }
+
+    private lazy var topSpring = SpringDriver { [weak self] y in
+        guard let self else { return }
+        self.scroll.contentOffset = CGPoint(x: 0, y: y)
+    }
 
     override func viewDidLoad() {
         super.viewDidLoad()
@@ -584,7 +600,10 @@ final class MinimalAnalyticsViewController: UIViewController {
         // the pager UIKit hands this page its status-bar inset late, which first
         // left the title under the status bar and then pushed it too low.
         scroll.contentInsetAdjustmentBehavior = .never
-        scroll.showsVerticalScrollIndicator = true
+        scroll.onDragBegan = { [weak self] in self?.topSpring.stop() }
+        // 3.5.7 (the owner): no scroll bar — at the page change it jumped in length
+        // as the list met its top and the page's insets settled.
+        scroll.showsVerticalScrollIndicator = false
         view.addSubview(scroll)
         scroll.pin(to: view)
 

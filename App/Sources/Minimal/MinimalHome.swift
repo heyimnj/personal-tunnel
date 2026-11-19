@@ -11,7 +11,10 @@ final class HandoffScrollView: UIScrollView {
     /// 3.5: whether the list may take a drag now. While the page is still moving
     /// (or heading back to the connection page) a swipe belongs to the pager: the
     /// list used to take it, scrolled to its end, and the page swipe was lost.
-    var acceptsDrag: (() -> Bool)?
+    /// 3.5.7: told which way the finger goes (`upward`: into the list).
+    var acceptsDrag: ((_ upward: Bool) -> Bool)?
+    /// A drag of the list began (a spring moving the list stops).
+    var onDragBegan: (() -> Void)?
     private var anchor: CGFloat?
     /// How far past its top the list stood when the pull began (a drag that
     /// caught it in the bounce after a flick); the pull starts from there.
@@ -37,6 +40,7 @@ final class HandoffScrollView: UIScrollView {
     /// a drag to the pager, which started from its own resting place a moment
     /// later: the screen jumped about 30 pt up and then slid down under the finger.
     @objc private func tracked(_ pan: UIPanGestureRecognizer) {
+        if pan.state == .began { onDragBegan?() }
         guard onPull != nil else { return }
         let top = -adjustedContentInset.top
         let translation = pan.translation(in: self).y
@@ -86,7 +90,11 @@ final class HandoffScrollView: UIScrollView {
 
     override func gestureRecognizerShouldBegin(_ gestureRecognizer: UIGestureRecognizer) -> Bool {
         if gestureRecognizer === panGestureRecognizer {
-            if let acceptsDrag, !acceptsDrag() { return false }
+            if let acceptsDrag {
+                let velocity = panGestureRecognizer.velocity(in: self).y
+                let motion = velocity != 0 ? velocity : panGestureRecognizer.translation(in: self).y
+                if !acceptsDrag(motion < 0) { return false }
+            }
             let top = -adjustedContentInset.top
             let velocity = panGestureRecognizer.velocity(in: self)
             let downward = velocity.y > 0 && abs(velocity.y) > abs(velocity.x)
@@ -163,7 +171,7 @@ final class MinimalHomeViewController: UIViewController, UIScrollViewDelegate, U
         analyticsNavigation.didMove(toParent: self)
         analytics.onPull = { [weak self] pull in self?.pullPage(pull) }
         analytics.onPullEnd = { [weak self] velocity in self?.releasePage(velocity) }
-        analytics.acceptsDrag = { [weak self] in self?.analyticsTakesDrag ?? true }
+        analytics.acceptsDrag = { [weak self] upward in self?.analyticsTakesDrag(upward: upward) ?? true }
         connection.onChooseServer = { [weak self] in
             self?.present(MinimalServersViewController.wrapped(), animated: true)
         }
@@ -213,11 +221,18 @@ final class MinimalHomeViewController: UIViewController, UIScrollViewDelegate, U
     /// The analytics list takes a drag only once its page is (nearly) in place
     /// and staying: a swipe while the page still moves, or while it heads back to
     /// the connection page, goes to the pager, which catches the page mid-way.
-    private var analyticsTakesDrag: Bool {
+    ///
+    /// 3.5.7 (the owner: after a quick swipe up from Home the page stopped dead
+    /// at the top of analytics and the list did not move until the finger was
+    /// lifted — the pager, already at its end, took the next swipe up): while the
+    /// page still rises to analytics, a swipe up is the list's and scrolls on with
+    /// its own momentum, as before 3.5; the page finishes its way meanwhile.
+    private func analyticsTakesDrag(upward: Bool) -> Bool {
         let height = pager.bounds.height
         guard height > 0 else { return true }
         if pullingPage || pager.isDragging { return false }
-        return page == 1 && pager.contentOffset.y >= height * 0.92
+        guard page == 1 else { return false }
+        return upward || pager.contentOffset.y >= height * 0.92
     }
 
     private var pageMoving: Bool { animatingPage || pullingPage || pager.isDragging || pager.isDecelerating }
@@ -335,7 +350,7 @@ final class MinimalHomeViewController: UIViewController, UIScrollViewDelegate, U
 
     /// `velocity`: the page offset's speed in points per second (from the finger),
     /// carried into the spring.
-    private func go(to next: Int, animated: Bool, velocity: CGFloat = 0) {
+    private func go(to next: Int, animated: Bool, velocity: CGFloat = 0, feel: SpringDriver.Feel = .page) {
         guard pager.bounds.height > 0 else { return }
         // 3.5: leaving analytics, a fling of its list stops where it is (it ran on
         // to the end of the page under the moving page).
@@ -345,8 +360,11 @@ final class MinimalHomeViewController: UIViewController, UIScrollViewDelegate, U
             animatingPage = true
             showDots()
             // A flick may be faster than the page can take without looking thrown.
-            let speed = max(-6000, min(6000, velocity))
-            pageSpring.run(from: pager.contentOffset.y, to: target, velocity: speed, feel: .page) { [weak self] in
+            // 3.5.7: a page already moving keeps its speed into the new spring (a
+            // second tap on the tab restarted it from rest).
+            let carried = velocity == 0 && pageSpring.isRunning ? pageSpring.velocity : velocity
+            let speed = max(-6000, min(6000, carried))
+            pageSpring.run(from: pager.contentOffset.y, to: target, velocity: speed, feel: feel) { [weak self] in
                 guard let self else { return }
                 self.animatingPage = false
                 self.settled()
@@ -419,13 +437,17 @@ final class MinimalHomeViewController: UIViewController, UIScrollViewDelegate, U
 
     /// Tapping Home again: close an open analytics child page, then scroll
     /// analytics to the top, then return to the connection page.
+    ///
+    /// 3.5.7: both quick (the owner: slow, and two quick taps jerked). A second
+    /// tap while the list is still on its way up goes to the connection page at
+    /// once; the list finishes its way up under the leaving page.
     func reselect() {
         if analyticsNavigation.viewControllers.count > 1 {
             analyticsNavigation.popToRootViewController(animated: true)
-        } else if page == 1, !analytics.isAtTop {
+        } else if page == 1, !analytics.isAtTop, !analytics.isScrollingToTop {
             analytics.scrollToTop()
         } else if page == 1 {
-            go(to: 0, animated: true)
+            go(to: 0, animated: true, feel: .quick)
         }
     }
 
