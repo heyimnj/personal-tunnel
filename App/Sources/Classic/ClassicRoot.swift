@@ -81,7 +81,7 @@ final class ClassicRootViewController: UIViewController {
     }
 
     func select(_ next: Int) {
-        if next != index { Haptics.selection() }
+        if next != index { Haptics.item() }
         index = next
         counter.text = String(format: "VPN / %02d", next + 1)
         for (offset, page) in pages.enumerated() { page.view.isHidden = offset != next }

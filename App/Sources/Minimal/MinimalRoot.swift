@@ -133,6 +133,8 @@ final class MinimalRootViewController: UITabBarController, UITabBarControllerDel
     /// it first; one already at its top goes back one page, not to the root.
     /// 3.5.7: the way up on a quick spring; a tap while it runs counts as at the top.
     func tabBarController(_: UITabBarController, shouldSelect controller: UIViewController) -> Bool {
+        // 3.5.14 (the owner): every tap on the bar, as a server or a subscription answers.
+        Haptics.item()
         // Home tapped again: ours alone (3.5.8). Let through, UIKit ran its own
         // reselect on the tab (its way to the top of the first scroll view it
         // finds) against the page's spring: a frozen frame, then a jump.

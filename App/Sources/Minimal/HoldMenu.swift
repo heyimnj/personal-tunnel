@@ -122,7 +122,7 @@ final class HoldMenuView: UIView {
     private var direction: CGFloat = 1
     private var leaving = false
     private var onDismiss: (() -> Void)?
-    /// The sheet dims under the menu (not for a held subscription).
+    /// The sheet dims under the menu.
     private var dims = true
 
     /// The menu's surface: the cards' colour, a step lighter in dark mode so it
@@ -143,7 +143,7 @@ final class HoldMenuView: UIView {
         // the light theme on a phone set to dark).
         host.addSubview(menu)
         menu.overrideUserInterfaceStyle = host.traitCollection.userInterfaceStyle
-        // A held subscription (lift .null) darkens its own card instead; the rest stays as it is.
+        // Nothing to lift (.null): nothing dims either.
         menu.dims = !(source?.lift.isNull ?? false)
         menu.build(items)
         var row = CGRect(origin: point, size: .zero)

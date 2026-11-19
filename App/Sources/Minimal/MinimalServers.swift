@@ -1014,6 +1014,7 @@ final class MinimalServersViewController: UIViewController, UIScrollViewDelegate
         list.onSelect = { [weak self] id, tag in
             guard let self else { return }
             if self.selecting { self.toggleSelected(node: tag, in: id); return }
+            Haptics.item()
             App.shared.select(node: tag, in: id)
             // «Недавние»: the chosen server goes up at once, with the VPN off as well.
             if Prefs.sortByRecent { self.reload() }
@@ -1218,8 +1219,7 @@ final class MinimalServersViewController: UIViewController, UIScrollViewDelegate
         let open = !list.isOpen(id)
         if open { expanded.insert(id) } else { expanded.remove(id) }
         Prefs.expandedSubscriptions = expanded
-        // 3.5.13 (the owner): weak.
-        Haptics.soft(open ? 0.3 : 0.22)
+        Haptics.item()
         list.setOpen(id, open)
     }
 
