@@ -119,7 +119,7 @@ final class AnalyticsNavigationController: UINavigationController {
 }
 
 /// The Home tab: the connection page and, one swipe up, analytics.
-final class MinimalHomeViewController: UIViewController, UIScrollViewDelegate, UINavigationControllerDelegate {
+final class MinimalHomeViewController: UIViewController, UIScrollViewDelegate, UINavigationControllerDelegate, UIGestureRecognizerDelegate {
     private let pager = UIScrollView()
     private let connection = MinimalConnectionView()
     private let analytics = MinimalAnalyticsViewController()
@@ -157,6 +157,13 @@ final class MinimalHomeViewController: UIViewController, UIScrollViewDelegate, U
         pager.delegate = self
         pager.bounces = false
         pager.delaysContentTouches = false
+        let press = UILongPressGestureRecognizer(target: self, action: #selector(touchDown(_:)))
+        press.minimumPressDuration = 0
+        press.cancelsTouchesInView = false
+        press.delaysTouchesBegan = false
+        press.delaysTouchesEnded = false
+        press.delegate = self
+        pager.addGestureRecognizer(press)
         view.addSubview(pager)
         pager.addSubview(connection)
         analyticsNavigation.delegate = self
@@ -239,6 +246,7 @@ final class MinimalHomeViewController: UIViewController, UIScrollViewDelegate, U
     private func pullPage(_ pull: CGFloat) {
         let height = pager.bounds.height
         guard height > 0 else { return }
+        stopPageAnimator()
         if pageSpring.isRunning {
             pageSpring.stop()
             animatingPage = false
@@ -347,9 +355,12 @@ final class MinimalHomeViewController: UIViewController, UIScrollViewDelegate, U
 
     /// `velocity`: the page offset's speed in points per second (from the finger),
     /// carried into the spring.
-    /// `glide`: a tap's motion, under way from its first frame (see SpringDriver.glide).
-    private func go(to next: Int, animated: Bool, velocity: CGFloat = 0, feel: SpringDriver.Feel = .page, glide: Bool = false) {
+    /// `byTap`: the tab's tap (see animatePage).
+    private func go(to next: Int, animated: Bool, velocity: CGFloat = 0, feel: SpringDriver.Feel = .page, byTap: Bool = false) {
         guard pager.bounds.height > 0 else { return }
+        // A Core Animation move still running stops where it shows; whatever comes
+        // next starts from there.
+        stopPageAnimator()
         // 3.5: leaving analytics, a fling of its list stops where it is (it ran on
         // to the end of the page under the moving page).
         if next == 0 { analytics.stopScrolling() }
@@ -367,8 +378,9 @@ final class MinimalHomeViewController: UIViewController, UIScrollViewDelegate, U
                 self.animatingPage = false
                 self.settled()
             }
-            if glide, carried == 0 {
-                pageSpring.glide(from: pager.contentOffset.y, to: target, feel: feel, completion: done)
+            if byTap, carried == 0 {
+                pageSpring.stop()
+                animatePage(to: target, completion: done)
             } else {
                 pageSpring.run(from: pager.contentOffset.y, to: target, velocity: speed, feel: feel, completion: done)
             }
@@ -379,6 +391,74 @@ final class MinimalHomeViewController: UIViewController, UIScrollViewDelegate, U
         }
         setPage(next)
     }
+
+    /// 3.5.9 (the owner: the tab's way to Home still stuttered; the recording lost
+    /// frames all through the page's move, while the list's own way up beside it
+    /// ran clean): a move set off by a tap is a Core Animation spring, run by the
+    /// render server, so no busy moment of the app's main thread can drop its
+    /// frames. A finger stops it where it shows (`touchDown`); swipes keep the
+    /// per-frame spring, which carries the finger's speed.
+    private var pageAnimator: UIViewPropertyAnimator?
+
+    private func animatePage(to target: CGFloat, completion: @escaping () -> Void) {
+        let distance = target - pager.contentOffset.y
+        guard abs(distance) > 0.5 else {
+            pager.contentOffset = CGPoint(x: 0, y: target)
+            completion()
+            return
+        }
+        // Under way from the first frame, settling without a bounce.
+        let timing = UISpringTimingParameters(dampingRatio: 1, initialVelocity: CGVector(dx: 0, dy: 1.4))
+        let animator = UIViewPropertyAnimator(duration: 0.44, timingParameters: timing)
+        animator.addAnimations { [weak self] in
+            self?.pager.contentOffset = CGPoint(x: 0, y: target)
+        }
+        animator.addCompletion { [weak self, weak animator] _ in
+            guard let self, let animator, self.pageAnimator === animator else { return }
+            self.pageAnimator = nil
+            completion()
+        }
+        pageAnimator = animator
+        animator.startAnimation()
+    }
+
+    /// Ends a Core Animation move where it shows (no completion: whoever stops it goes on).
+    private func stopPageAnimator() {
+        guard let animator = pageAnimator else { return }
+        pageAnimator = nil
+        animator.stopAnimation(true)
+        animatingPage = false
+    }
+
+    /// A finger came down anywhere on the pages: a tap's move stops under it
+    /// before any drag reads the page's place.
+    @objc private func touchDown(_ press: UILongPressGestureRecognizer) {
+        switch press.state {
+        case .began:
+            guard pageAnimator != nil else { return }
+            stopPageAnimator()
+            caughtPage = true
+        case .ended, .cancelled, .failed:
+            guard caughtPage else { return }
+            caughtPage = false
+            // A finger that held the page and let go without a swipe: the page goes
+            // on to where it was heading (a swipe settles it itself).
+            DispatchQueue.main.async { [weak self] in
+                guard let self, !self.pageMoving, !self.pageSpring.isRunning, self.pageAnimator == nil else { return }
+                let height = self.pager.bounds.height
+                guard height > 0 else { return }
+                if abs(self.pager.contentOffset.y - CGFloat(self.page) * height) > 0.5 {
+                    self.go(to: self.page, animated: true)
+                } else {
+                    self.settled()
+                }
+            }
+        default:
+            break
+        }
+    }
+
+    private var caughtPage = false
 
     /// During a page change only the dots follow; the analytics streams and timer
     /// switch when the page has settled, so the core's reconnect and the first
@@ -402,6 +482,7 @@ final class MinimalHomeViewController: UIViewController, UIScrollViewDelegate, U
     func scrollViewWillBeginDragging(_ scrollView: UIScrollView) {
         guard scrollView === pager else { return }
         // Caught mid-way: the page is where it shows; the finger takes it from there.
+        stopPageAnimator()
         if pageSpring.isRunning {
             pageSpring.stop()
             animatingPage = false
@@ -423,7 +504,7 @@ final class MinimalHomeViewController: UIViewController, UIScrollViewDelegate, U
     }
 
     func scrollViewDidEndDragging(_ scrollView: UIScrollView, willDecelerate decelerate: Bool) {
-        guard scrollView === pager, !decelerate, !animatingPage, !pageSpring.isRunning else { return }
+        guard scrollView === pager, !decelerate, !animatingPage, !pageSpring.isRunning, pageAnimator == nil else { return }
         // A drag that ended exactly on a page.
         if pager.contentOffset.y.truncatingRemainder(dividingBy: max(1, pager.bounds.height)) == 0 { settled() }
     }
@@ -450,9 +531,12 @@ final class MinimalHomeViewController: UIViewController, UIScrollViewDelegate, U
         } else if page == 1, !analytics.isAtTop, !analytics.isScrollingToTop {
             analytics.scrollToTop()
         } else if page == 1 {
-            go(to: 0, animated: true, feel: .quick, glide: true)
+            go(to: 0, animated: true, byTap: true)
         }
     }
+
+    /// The touch-down watcher never takes a touch from anyone.
+    func gestureRecognizer(_: UIGestureRecognizer, shouldRecognizeSimultaneouslyWith _: UIGestureRecognizer) -> Bool { true }
 
     func navigationController(_ navigationController: UINavigationController, willShow viewController: UIViewController, animated: Bool) {
         let isRoot = viewController === analytics
