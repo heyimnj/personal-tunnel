@@ -302,6 +302,12 @@ final class CoreClient {
         appendPrepared(entries.map { ($0.0, CoreClient.prepareLine($0.1)) })
     }
 
+    /// A core line about a connection of the app's tests through the tunnel's
+    /// way out for them (`probe-in` → `probe-direct`).
+    static func isProbeExitLine(_ text: String) -> Bool {
+        text.contains("[\(ProbeExit.directTag)]") || text.contains("[\(ProbeExit.inboundTag)]")
+    }
+
     /// Colours and the level word out, the core's seconds since its start out
     /// (3.5: the line's time is shown instead), masked, translated.
     fileprivate static func prepareLine(_ text: String) -> String {
@@ -382,7 +388,13 @@ final class CoreClient {
             guard let owner else { return }
             var entries: [(Int32, String)] = []
             while let messageList, messageList.hasNext() {
-                if let entry = messageList.next() { entries.append((entry.level, entry.message)) }
+                guard let entry = messageList.next() else { continue }
+                // 3.5.5 (the owner: red lines while everything worked): the app's own
+                // server tests through the tunnel's way out are not the owner's
+                // traffic; a dead server's dial gave an ERROR line for every try.
+                // Which servers did not answer, the app's own WARN lines already say.
+                if CoreClient.isProbeExitLine(entry.message) { continue }
+                entries.append((entry.level, entry.message))
             }
             let replaced = replay
             replay = false
