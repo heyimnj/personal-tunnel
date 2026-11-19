@@ -325,8 +325,9 @@ final class RouteRingsView: UIView {
         guard let context = UIGraphicsGetCurrentContext() else { return }
         let side = min(bounds.width, bounds.height)
         guard side > 8 else { return }
-        let rings = max(3, parts.count)
-        let line = max(4, min(9, side / CGFloat(rings * 2 + 3)))
+        // 3.5.3: as many rings as routes (empty tracks inside looked unfinished).
+        let rings = max(1, parts.count)
+        let line = max(4, min(10, side / CGFloat(max(3, rings) * 2 + 3)))
         let gap = line * 0.45
         let center = CGPoint(x: bounds.midX, y: bounds.midY)
         let total = parts.reduce(0) { $0 + max(0, $1.value) }
@@ -818,7 +819,7 @@ final class MinimalAnalyticsViewController: UIViewController {
             speed(upSpeed, upUnit, "arrow.up", L("Отдача"), SpeedGraphView.upColor), UIView(),
         ])
         let room = UIView()
-        room.heightAnchor.constraint(equalToConstant: 92).isActive = true
+        room.heightAnchor.constraint(equalToConstant: 100).isActive = true
         let hero = AnalyticsCard(insets: UIEdgeInsets(top: 14, left: 16, bottom: 0, right: 16))
         hero.stack.alignment = .fill
         hero.stack.spacing = 6
@@ -833,8 +834,10 @@ final class MinimalAnalyticsViewController: UIViewController {
         graphHint.translatesAutoresizingMaskIntoConstraints = false
         hero.addSubview(graphHint)
         NSLayoutConstraint.activate([
-            graph.topAnchor.constraint(equalTo: room.topAnchor), graph.bottomAnchor.constraint(equalTo: hero.bottomAnchor),
-            graph.leadingAnchor.constraint(equalTo: hero.leadingAnchor), graph.trailingAnchor.constraint(equalTo: hero.trailingAnchor),
+            // 3.5.3 (the owner's screenshot): inside the card's rounded corners, not
+            // under them — edge to edge, the corners cut the lines' ends and the dot.
+            graph.topAnchor.constraint(equalTo: room.topAnchor), graph.bottomAnchor.constraint(equalTo: hero.bottomAnchor, constant: -14),
+            graph.leadingAnchor.constraint(equalTo: hero.leadingAnchor, constant: 16), graph.trailingAnchor.constraint(equalTo: hero.trailingAnchor, constant: -16),
             graphHint.centerYAnchor.constraint(equalTo: room.centerYAnchor),
             graphHint.leadingAnchor.constraint(equalTo: room.leadingAnchor), graphHint.trailingAnchor.constraint(equalTo: room.trailingAnchor),
         ])
