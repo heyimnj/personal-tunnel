@@ -42,6 +42,12 @@ final class TunnelController {
     /// The app asked for a start that has not reached «connected» yet.
     private var startRequested = false
     private var reloading = false
+    /// 3.5.6: a stop asked for by the app, not yet seen by the system (iOS saves
+    /// the On Demand change first): the button already says «Отключение…».
+    private var stopPending: Date?
+    /// When the stop was asked for and when its settings were saved, for the log.
+    private var stopAsked: Date?
+    private var stopSaved: Date?
 
     init() {
         let center = NotificationCenter.default
@@ -110,6 +116,22 @@ final class TunnelController {
         case .disconnecting: next = .disconnecting
         case .reasserting: next = .reasserting
         default: next = .disconnected
+        }
+        if let asked = stopPending {
+            if next == .connected || next == .reasserting, Date().timeIntervalSince(asked) < 5 {
+                next = .disconnecting
+            } else {
+                stopPending = nil
+            }
+        }
+        if next == .disconnected, let asked = stopAsked {
+            // 3.5.6: how long the stop took, and how much of it the settings (the
+            // owner: «Отключение…» stood about 1.5 s, other clients take 0.5 s).
+            let total = String(format: "%.2f", Date().timeIntervalSince(asked))
+            let saving = String(format: "%.2f", (stopSaved ?? asked).timeIntervalSince(asked))
+            stopAsked = nil
+            stopSaved = nil
+            App.shared.core.note(Lf("VPN выключен за %@ с (настройки VPN — %@ с)", total, saving))
         }
         if let pending = startPending {
             if next != .disconnected {
@@ -412,22 +434,33 @@ final class TunnelController {
     /// 3.5.4: the extension is told the stop is the app's (On Demand already set
     /// here), so it ends at once instead of loading and saving the VPN
     /// configuration again — a second or so of «Отключение…».
-    private static func stopTunnel(_ manager: NETunnelProviderManager) {
+    private func stopTunnel(_ manager: NETunnelProviderManager) {
         AppGroup.defaults.set(Date().timeIntervalSince1970, forKey: SharedKey.stopRequestedByApp)
         manager.connection.stopVPNTunnel()
+        DispatchQueue.main.async { if self.stopAsked != nil { self.stopSaved = Date() } }
     }
 
     func stop() {
         startPending = nil
         guard let manager else { sync(); return }
+        // 3.5.6: «Отключение…» at once; the system's own status follows.
+        stopAsked = Date()
+        stopSaved = nil
+        if state.value == .connected || state.value == .reasserting {
+            stopPending = Date()
+            state.set(.disconnecting)
+        }
         guard manager.isOnDemandEnabled else {
-            Self.stopTunnel(manager)
+            stopTunnel(manager)
             return
         }
         guard Prefs.autoConnect else {
             // Otherwise on-demand brings the tunnel straight back.
             manager.isOnDemandEnabled = false
-            manager.saveToPreferences { _ in Self.stopTunnel(manager) }
+            manager.saveToPreferences { [weak self] _ in
+                guard let self else { manager.connection.stopVPNTunnel(); return }
+                self.stopTunnel(manager)
+            }
             return
         }
         // 3.2.11: the rules for unknown Wi-Fi replace «keep it on» before the stop,
@@ -443,7 +476,10 @@ final class TunnelController {
                 Prefs.pausedNetwork = ssid.flatMap { Prefs.trustedNetworks.contains($0) ? nil : $0 }
                 self.configure(manager, keepAlive: false)
             }
-            manager.saveToPreferences { _ in Self.stopTunnel(manager) }
+            manager.saveToPreferences { [weak self] _ in
+                guard let self else { manager.connection.stopVPNTunnel(); return }
+                self.stopTunnel(manager)
+            }
         }
     }
 
