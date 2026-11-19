@@ -852,20 +852,43 @@ final class MinimalAnalyticsViewController: UIViewController, UIGestureRecognize
         // `flush`). 3.2.11 changed a few labels a second; 3.5 redraws charts and
         // lays out a much larger page, twice a second (the status and the
         // connections come apart) — at 120 Hz that cost a frame in any motion.
-        client.status.observe(self, fireNow: false) { [weak self] _ in self?.behind = true }
+        client.status.observe(self, fireNow: false) { [weak self] value in
+            if value == nil { self?.firstPending = true }
+            self?.arrived()
+        }
         client.history.observe(self, fireNow: false) { [weak self] _ in self?.behind = true }
         client.samples.observe(self, fireNow: false) { [weak self] _ in self?.behind = true }
         client.connections.observe(self, fireNow: false) { [weak self] _ in self?.behind = true }
         App.shared.latency.changed.observe(self) { [weak self] _ in self?.showDelay() }
-        App.shared.tunnel.connectedSince.observe(self) { [weak self] _ in self?.behind = true }
+        App.shared.tunnel.connectedSince.observe(self) { [weak self] _ in self?.arrived() }
         showDelay()
         show(client.status.value)
         // 3.5.12: kept ready off screen from the start (see `everySecond`), and drawn
         // once soon after the app comes back, when the core's data flows again.
         timer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in self?.everySecond() }
         NotificationCenter.default.addObserver(forName: UIApplication.didBecomeActiveNotification, object: nil, queue: .main) { [weak self] _ in
+            self?.firstPending = true
             DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) { self?.flush() }
         }
+    }
+
+    /// 3.5.14 (the owner: up to 3.2.x analytics opened ready at once; now, right
+    /// after a launch, it showed «—» for a second or two): the first data after a
+    /// launch, a return to the app or a new session is drawn the moment it comes,
+    /// not at the next off-screen turn (every two seconds) or when the page stops.
+    private var firstPending = true
+
+    private func arrived() {
+        behind = true
+        // On the next turn: the history and the samples come right after the status.
+        if firstPending { DispatchQueue.main.async { [weak self] in self?.flush() } }
+    }
+
+    /// A finger came down on Home (3.5.14): what came since the last turn is drawn
+    /// now, before the page starts to move, so it slides in with today's figures.
+    func aboutToShow() {
+        guard !visible else { return }
+        flush()
     }
 
     /// Something came from the core since the page was last drawn.
@@ -881,6 +904,7 @@ final class MinimalAnalyticsViewController: UIViewController, UIGestureRecognize
         guard !moving, !listMoving, behind || force else { return }
         behind = false
         measured { refresh() }
+        if App.shared.core.status.value != nil, App.shared.tunnel.connectedSince.value != nil { firstPending = false }
     }
 
     /// 3.5.12 (the owner: as before 3.5, the page must be ready before it is
