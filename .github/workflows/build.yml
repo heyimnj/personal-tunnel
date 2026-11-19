@@ -182,8 +182,10 @@ jobs:
             fi
             local sum want
             sum="$(bash scripts/framework-hash.sh "$dir")"
-            want="$(awk -v k="$key" '$1 == k { print $2 }' core/FRAMEWORKS.sha256 2>/dev/null || true)"
-            if [ -n "$want" ] && [ "$sum" = "$want" ]; then
+            # Строк на ключ может быть несколько: кэш у каждой ветки свой, а ядро, собранное заново,
+            # побайтно другое. Подходит любая записанная сумма этого ключа.
+            want="$(awk -v k="$key" '$1 == k { print $2 }' core/FRAMEWORKS.sha256 2>/dev/null | paste -sd, - || true)"
+            if awk -v k="$key" -v s="$sum" '$1 == k && $2 == s { found = 1 } END { exit !found }' core/FRAMEWORKS.sha256 2>/dev/null; then
               echo "$name: из кэша, SHA256 совпал с core/FRAMEWORKS.sha256 ($sum)"
               echo "$name=true" >> "$GITHUB_OUTPUT"
             else

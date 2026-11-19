@@ -20,7 +20,7 @@ final class SpringDriver {
         /// Page changes: long, calm, no bounce.
         static let page = Feel(response: 0.46, damping: 0.94)
         /// A tap on the tab: quick and without a bounce (3.5.7).
-        static let quick = Feel(response: 0.3, damping: 1)
+        static let quick = Feel(response: 0.36, damping: 1)
     }
 
     private(set) var value: CGFloat = 0
@@ -61,6 +61,15 @@ final class SpringDriver {
         lastTime = CACurrentMediaTime()
         link.add(to: .main, forMode: .common)
         self.link = link
+    }
+
+    /// 3.5.8: a motion set off by a tap, already moving at its start (the owner:
+    /// one from rest looked as if it lagged before it got going). The spring is
+    /// given a share of the speed that would carry it straight there, so it
+    /// leaves at once and slows into its end without a bounce.
+    func glide(from: CGFloat, to: CGFloat, feel: Feel, completion: (() -> Void)? = nil) {
+        let omega = 2 * .pi / max(0.05, feel.response)
+        run(from: from, to: to, velocity: 0.6 * omega * (to - from), feel: feel, completion: completion)
     }
 
     /// Stops where it is (a finger took over); no completion.
@@ -205,10 +214,11 @@ final class ScrollTopSpring: NSObject {
     func run() {
         guard let scroll else { return }
         let top = -scroll.adjustedContentInset.top
-        let speed = spring.isRunning ? spring.velocity : 0
+        // A second call while on the way changes nothing.
+        guard !spring.isRunning else { return }
         // A fling still running ends here; the spring goes on from where it shows.
         scroll.setContentOffset(scroll.contentOffset, animated: false)
-        spring.run(from: scroll.contentOffset.y, to: top, velocity: speed, feel: .quick)
+        spring.glide(from: scroll.contentOffset.y, to: top, feel: .quick)
     }
 }
 

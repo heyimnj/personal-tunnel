@@ -1,6 +1,9 @@
 # SHA256 ядер (scripts/framework-hash.sh), которым сборка доверяет из кэша (3.5, PT-17 п. 4).
 # Строка: <ключ кэша> <sha256>. Берётся из build/frameworks.sha256 сборки, где ядра собраны с нуля
 # (в журнале шаг «Сверка ядер из кэша» пишет «в кэше нет — собирается заново»).
-# Нет строки для ключа — ядро собирается заново. Новые core/VERSION, патчи или Xcode дают новый ключ.
+# Строк на ключ может быть несколько (3.5.8): кэш у каждой ветки свой (ветка видит ещё кэш main), а ядро,
+# собранное заново, побайтно другое; годится любая. Нет строки для ключа — ядро собирается заново. Новые core/VERSION, патчи или Xcode дают новый ключ.
 appcore-v3-X64-18730ed2ae28a2c9-f28bbeb30d549fc17e3c28a44db54cb7b987dea7a5ac16dc512351833a278cb6 a6afdaa01511aadf57a861e8416f29ca4eceb800642b70470ed42c396b43df1f
 libbox-v3-combined-X64-18730ed2ae28a2c9-f28bbeb30d549fc17e3c28a44db54cb7b987dea7a5ac16dc512351833a278cb6 f8482511a6e279dc890b79eb3ebfe6df9f33ac9923ed044ce4edf01124918964
+appcore-v3-X64-18730ed2ae28a2c9-f28bbeb30d549fc17e3c28a44db54cb7b987dea7a5ac16dc512351833a278cb6 54b7d4fc8cd6e9598cebc299599f1c035b803bf0ae8261eba6bee4200a2dbc3c
+libbox-v3-combined-X64-18730ed2ae28a2c9-f28bbeb30d549fc17e3c28a44db54cb7b987dea7a5ac16dc512351833a278cb6 a0b4a52e45d2827d45c4150194a38a61e2e65013e8c6b0687d356b37b6be7059

@@ -347,7 +347,8 @@ final class MinimalHomeViewController: UIViewController, UIScrollViewDelegate, U
 
     /// `velocity`: the page offset's speed in points per second (from the finger),
     /// carried into the spring.
-    private func go(to next: Int, animated: Bool, velocity: CGFloat = 0, feel: SpringDriver.Feel = .page) {
+    /// `glide`: a tap's motion, under way from its first frame (see SpringDriver.glide).
+    private func go(to next: Int, animated: Bool, velocity: CGFloat = 0, feel: SpringDriver.Feel = .page, glide: Bool = false) {
         guard pager.bounds.height > 0 else { return }
         // 3.5: leaving analytics, a fling of its list stops where it is (it ran on
         // to the end of the page under the moving page).
@@ -361,10 +362,15 @@ final class MinimalHomeViewController: UIViewController, UIScrollViewDelegate, U
             // second tap on the tab restarted it from rest).
             let carried = velocity == 0 && pageSpring.isRunning ? pageSpring.velocity : velocity
             let speed = max(-6000, min(6000, carried))
-            pageSpring.run(from: pager.contentOffset.y, to: target, velocity: speed, feel: feel) { [weak self] in
+            let done: () -> Void = { [weak self] in
                 guard let self else { return }
                 self.animatingPage = false
                 self.settled()
+            }
+            if glide, carried == 0 {
+                pageSpring.glide(from: pager.contentOffset.y, to: target, feel: feel, completion: done)
+            } else {
+                pageSpring.run(from: pager.contentOffset.y, to: target, velocity: speed, feel: feel, completion: done)
             }
         } else {
             pageSpring.stop()
@@ -444,7 +450,7 @@ final class MinimalHomeViewController: UIViewController, UIScrollViewDelegate, U
         } else if page == 1, !analytics.isAtTop, !analytics.isScrollingToTop {
             analytics.scrollToTop()
         } else if page == 1 {
-            go(to: 0, animated: true, feel: .quick)
+            go(to: 0, animated: true, feel: .quick, glide: true)
         }
     }
 

@@ -98,7 +98,6 @@ final class MinimalRootViewController: UITabBarController, UITabBarControllerDel
         controller.navigationBar.prefersLargeTitles = true
         return controller
     }()
-    private var previous = 0
 
     override func viewDidLoad() {
         super.viewDidLoad()
@@ -134,6 +133,13 @@ final class MinimalRootViewController: UITabBarController, UITabBarControllerDel
     /// it first; one already at its top goes back one page, not to the root.
     /// 3.5.7: the way up on a quick spring; a tap while it runs counts as at the top.
     func tabBarController(_: UITabBarController, shouldSelect controller: UIViewController) -> Bool {
+        // Home tapped again: ours alone (3.5.8). Let through, UIKit ran its own
+        // reselect on the tab (its way to the top of the first scroll view it
+        // finds) against the page's spring: a frozen frame, then a jump.
+        if controller === home, selectedViewController === home {
+            home.reselect()
+            return false
+        }
         guard controller === settings, selectedViewController === settings, let page = settings.topViewController else { return true }
         if let scroll = Self.scrollView(in: page) {
             let top = -scroll.adjustedContentInset.top
@@ -159,10 +165,6 @@ final class MinimalRootViewController: UITabBarController, UITabBarControllerDel
     }
 
     func tabBarController(_: UITabBarController, didSelect _: UIViewController) {
-        let next = selectedIndex
-        // Tapping Home again steps back through analytics (Settings pops to its root by itself).
-        if next == previous, next == 0 { home.reselect() }
-        previous = next
         setNeedsStatusBarAppearanceUpdate()
     }
 
