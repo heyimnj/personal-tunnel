@@ -182,14 +182,14 @@ final class RingChart: UIView {
         let shown = parts.filter { $0.value > 0 }
         let total = shown.reduce(0) { $0 + $1.value }
         guard total > 0 else { return }
-        // A small gap between parts, where the round caps meet.
-        let gap = shown.count > 1 ? lineWidth / radius * 1.1 : 0
+        // 3.5.11 (the owner: the gaps between download and upload looked like
+        // something missing): the parts meet edge to edge, square where they join.
+        context.setLineCap(.butt)
         var angle = -CGFloat.pi / 2
         for part in shown {
             let sweep = CGFloat(part.value / total) * .pi * 2
-            let drawn = max(0.001, sweep - gap)
             context.setStrokeColor(part.color.cgColor)
-            context.addArc(center: center, radius: radius, startAngle: angle + gap / 2, endAngle: angle + gap / 2 + drawn, clockwise: false)
+            context.addArc(center: center, radius: radius, startAngle: angle, endAngle: angle + sweep, clockwise: false)
             context.strokePath()
             angle += sweep
         }
