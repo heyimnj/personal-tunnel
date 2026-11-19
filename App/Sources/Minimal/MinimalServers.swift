@@ -1003,7 +1003,8 @@ final class MinimalServersViewController: UIViewController, UIScrollViewDelegate
             return [SwipeAction(symbol: "pencil", color: .systemOrange, title: L("Изменить")) { self?.edit(node: tag, in: id) },
              // 3.5.15 (the owner): pin in place of ping (ping is the row's own button).
              { () -> SwipeAction in
-                 let key = Arrangement.server(id, tag)
+                 let standalone = App.shared.library.subscription(id)?.isStandalone == true
+                 let key = standalone ? Arrangement.subscription(id) : Arrangement.server(id, tag)
                  let pinned = Prefs.arrangement.isPinned(key)
                  return SwipeAction(symbol: pinned ? "pin.slash" : "pin", color: .systemBlue, title: pinned ? L("Открепить") : L("Закрепить")) { self?.togglePin(key) }
              }(),
