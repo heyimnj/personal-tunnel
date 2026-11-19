@@ -410,8 +410,9 @@ final class MinimalHomeViewController: UIViewController, UIScrollViewDelegate, U
             return
         }
         // Under way from the first frame, settling without a bounce.
-        let timing = UISpringTimingParameters(dampingRatio: 1, initialVelocity: CGVector(dx: 0, dy: 1.4))
-        let animator = UIViewPropertyAnimator(duration: 0.44, timingParameters: timing)
+        // 3.5.12 (the owner: too fast, it seemed to stutter): longer and gentler at its start.
+        let timing = UISpringTimingParameters(dampingRatio: 1, initialVelocity: CGVector(dx: 0, dy: 0.6))
+        let animator = UIViewPropertyAnimator(duration: 0.58, timingParameters: timing)
         animator.addAnimations { [weak self] in
             self?.pager.contentOffset = CGPoint(x: 0, y: target)
         }

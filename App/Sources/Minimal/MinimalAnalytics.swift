@@ -589,7 +589,8 @@ final class MinimalAnalyticsViewController: UIViewController {
         }
     }
     /// 3.5.7: on a quick spring (see ScrollTopSpring).
-    func scrollToTop() { scroll.springToTop() }
+    /// 3.5.12: calmer than elsewhere (the owner: too fast here).
+    func scrollToTop() { scroll.springToTop(feel: .calm, lead: 0.3) }
 
     /// The list is on its way to the top after a tap on the tab.
     var isScrollingToTop: Bool { scroll.isSpringingToTop }
