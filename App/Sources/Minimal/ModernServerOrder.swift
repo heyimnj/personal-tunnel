@@ -341,6 +341,7 @@ private final class TopHeader: UICollectionReusableView {
     override init(frame: CGRect) {
         super.init(frame: frame)
         byName.onTintColor = Theme.accent
+        byName.addTactileToggle()
         byName.addAction(UIAction { [weak self] _ in
             guard let self else { return }
             self.onByName?(self.byName.isOn)

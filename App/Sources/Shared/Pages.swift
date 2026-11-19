@@ -387,6 +387,7 @@ final class ServerOrderViewController: UITableViewController {
         tableView.allowsSelectionDuringEditing = true
         view.tintColor = Theme.accent
         let toggle = UISwitch()
+        toggle.addTactileToggle()
         toggle.isOn = Prefs.arrangement.byName
         toggle.onTintColor = Theme.accent
         toggle.addAction(UIAction { [weak self, weak toggle] _ in

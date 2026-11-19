@@ -7,7 +7,9 @@ final class SceneDelegate: UIResponder, UIWindowSceneDelegate {
 
     func scene(_ scene: UIScene, willConnectTo _: UISceneSession, options _: UIScene.ConnectionOptions) {
         guard let windowScene = scene as? UIWindowScene else { return }
-        let window = UIWindow(windowScene: windowScene)
+        // 3.5.12: every touch answers, as in 1.5.0 (`TactileWindow`).
+        let window = TactileWindow(windowScene: windowScene)
+        Tactile.warmUp()
         window.rootViewController = RootViewController()
         window.overrideUserInterfaceStyle = Theme.userInterfaceStyle
         window.makeKeyAndVisible()
@@ -21,6 +23,7 @@ final class SceneDelegate: UIResponder, UIWindowSceneDelegate {
 
     func sceneWillEnterForeground(_: UIScene) {
         lockIfNeeded()
+        Tactile.warmUp()
         App.shared.endDiagnosticLogIfDue()
         App.shared.autoPing()
     }

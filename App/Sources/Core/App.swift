@@ -77,6 +77,7 @@ final class App {
         if let paths { CoreClient.setUp(paths: paths) }
         tunnel.state.observe(self) { [weak self] state in
             guard let self else { return }
+            self.feelConnection(state)
             self.connectionOrderChanged()
             if self.refreshDueWhenSettled, state == .connected || state == .disconnected {
                 self.refreshDueWhenSettled = false
@@ -149,6 +150,23 @@ final class App {
     var library: Library { store.library.value }
 
     // MARK: Connection
+
+    /// 3.5.12: the connection's own patterns, as 1.5.0 played them — only for a
+    /// change seen happening (a state the app found on launch or on return stays silent).
+    private var feltState: TunnelState?
+
+    private func feelConnection(_ state: TunnelState) {
+        let previous = feltState
+        feltState = state
+        guard let previous, previous != state, UIApplication.shared.applicationState == .active else { return }
+        switch state {
+        case .connecting: Tactile.play(.vpnConnecting)
+        case .disconnecting: Tactile.play(.vpnDisconnecting)
+        case .reasserting: break
+        case .connected: if previous == .connecting { Tactile.play(.vpnConnected) } else if previous == .reasserting { Tactile.play(.vpnSwitched) }
+        case .disconnected: if previous == .disconnecting || previous == .connected || previous == .connecting { Tactile.play(.vpnDisconnected) }
+        }
+    }
 
     func toggleConnection() {
         Haptics.tap()

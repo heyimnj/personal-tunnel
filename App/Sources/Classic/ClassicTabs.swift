@@ -302,6 +302,7 @@ final class ClassicManageViewController: ClassicPage {
         }, for: .editingDidEndOnExit)
         content.addArrangedSubview(field)
         let toggle = UISwitch()
+        toggle.addTactileToggle()
         toggle.isOn = Prefs.arrangement.byName
         toggle.onTintColor = Theme.accent
         toggle.addAction(UIAction { [weak self, weak toggle] _ in
@@ -410,6 +411,7 @@ final class ClassicSettingsViewController: ClassicPage {
 
     private func toggle(_ title: String, _ get: Bool, _ set: @escaping (Bool) -> Void) -> UIView {
         let control = UISwitch()
+        control.addTactileToggle()
         control.isOn = get
         control.onTintColor = Theme.accent
         control.addAction(UIAction { [weak control] _ in set(control?.isOn ?? false) }, for: .valueChanged)

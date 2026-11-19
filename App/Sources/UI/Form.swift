@@ -177,6 +177,7 @@ class FormViewController: UITableViewController, UIColorPickerViewControllerDele
         case let .toggle(title, get, set):
             content.text = title
             let toggle = UISwitch()
+            toggle.addTactileToggle()
             toggle.isOn = get()
             toggle.onTintColor = Theme.accent
             toggle.addAction(UIAction { [weak toggle] _ in set(toggle?.isOn ?? false) }, for: .valueChanged)
