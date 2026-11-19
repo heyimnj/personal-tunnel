@@ -13,8 +13,6 @@ final class HandoffScrollView: UIScrollView {
     /// list used to take it, scrolled to its end, and the page swipe was lost.
     /// 3.5.7: told which way the finger goes (`upward`: into the list).
     var acceptsDrag: ((_ upward: Bool) -> Bool)?
-    /// A drag of the list began (a spring moving the list stops).
-    var onDragBegan: (() -> Void)?
     private var anchor: CGFloat?
     /// How far past its top the list stood when the pull began (a drag that
     /// caught it in the bounce after a flick); the pull starts from there.
@@ -40,7 +38,6 @@ final class HandoffScrollView: UIScrollView {
     /// a drag to the pager, which started from its own resting place a moment
     /// later: the screen jumped about 30 pt up and then slid down under the finger.
     @objc private func tracked(_ pan: UIPanGestureRecognizer) {
-        if pan.state == .began { onDragBegan?() }
         guard onPull != nil else { return }
         let top = -adjustedContentInset.top
         let translation = pan.translation(in: self).y

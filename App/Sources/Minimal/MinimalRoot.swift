@@ -132,12 +132,13 @@ final class MinimalRootViewController: UITabBarController, UITabBarControllerDel
 
     /// Settings tapped again (3.1.4): a page that is not at its top goes back to
     /// it first; one already at its top goes back one page, not to the root.
+    /// 3.5.7: the way up on a quick spring; a tap while it runs counts as at the top.
     func tabBarController(_: UITabBarController, shouldSelect controller: UIViewController) -> Bool {
         guard controller === settings, selectedViewController === settings, let page = settings.topViewController else { return true }
         if let scroll = Self.scrollView(in: page) {
             let top = -scroll.adjustedContentInset.top
-            if scroll.contentOffset.y > top + 1 {
-                scroll.setContentOffset(CGPoint(x: scroll.contentOffset.x, y: top), animated: true)
+            if scroll.contentOffset.y > top + 1, !scroll.isSpringingToTop {
+                scroll.springToTop()
                 return false
             }
         }

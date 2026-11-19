@@ -178,3 +178,55 @@ final class FramePacer {
         }
     }
 }
+
+/// 3.5.7 (the owner: going up by a tap on the tab was slow everywhere, and two
+/// quick taps jerked): a list's way to its top on a quick per-frame spring, in
+/// place of the system's animated offset (slow, and restarted from rest by a
+/// second call). A finger on the list stops it where it is.
+final class ScrollTopSpring: NSObject {
+    private weak var scroll: UIScrollView?
+    private lazy var spring = SpringDriver { [weak self] y in
+        guard let scroll = self?.scroll else { return }
+        scroll.contentOffset = CGPoint(x: scroll.contentOffset.x, y: y)
+    }
+
+    var isRunning: Bool { spring.isRunning }
+
+    init(_ scroll: UIScrollView) {
+        self.scroll = scroll
+        super.init()
+        scroll.panGestureRecognizer.addTarget(self, action: #selector(dragged(_:)))
+    }
+
+    @objc private func dragged(_ pan: UIPanGestureRecognizer) {
+        if pan.state == .began { spring.stop() }
+    }
+
+    func run() {
+        guard let scroll else { return }
+        let top = -scroll.adjustedContentInset.top
+        let speed = spring.isRunning ? spring.velocity : 0
+        // A fling still running ends here; the spring goes on from where it shows.
+        scroll.setContentOffset(scroll.contentOffset, animated: false)
+        spring.run(from: scroll.contentOffset.y, to: top, velocity: speed, feel: .quick)
+    }
+}
+
+extension UIScrollView {
+    private static var topSpringKey = 0
+
+    private var topSpring: ScrollTopSpring {
+        if let spring = objc_getAssociatedObject(self, &Self.topSpringKey) as? ScrollTopSpring { return spring }
+        let spring = ScrollTopSpring(self)
+        objc_setAssociatedObject(self, &Self.topSpringKey, spring, .OBJC_ASSOCIATION_RETAIN_NONATOMIC)
+        return spring
+    }
+
+    /// Quickly to the top (see ScrollTopSpring).
+    func springToTop() { topSpring.run() }
+
+    /// On its way to the top after `springToTop`.
+    var isSpringingToTop: Bool {
+        (objc_getAssociatedObject(self, &Self.topSpringKey) as? ScrollTopSpring)?.isRunning ?? false
+    }
+}
