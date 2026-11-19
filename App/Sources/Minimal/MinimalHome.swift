@@ -460,6 +460,51 @@ final class MinimalHomeViewController: UIViewController, UIScrollViewDelegate, U
 
     private var caughtPage = false
 
+    // MARK: 3.5.10 — a page change: analytics holds still, and the frames are counted
+
+    private var meter: CADisplayLink?
+    private var lastFrame: CFTimeInterval = 0
+    private var frames = 0
+    private var dropped = 0
+    private var longest: CFTimeInterval = 0
+
+    /// The page began to move: analytics stops updating until it stands still,
+    /// and every frame of the move is timed (for the service log).
+    private func moveStarted() {
+        guard meter == nil else { return }
+        analytics.moving = true
+        analytics.resetCounters()
+        frames = 0
+        dropped = 0
+        longest = 0
+        lastFrame = 0
+        let link = CADisplayLink(target: FrameMeterProxy(self), selector: #selector(FrameMeterProxy.tick(_:)))
+        link.preferredFrameRateRange = CAFrameRateRange(minimum: 60, maximum: 120, preferred: 120)
+        link.add(to: .main, forMode: .common)
+        meter = link
+    }
+
+    fileprivate func meterTick(_ link: CADisplayLink) {
+        let expected = max(1.0 / 120, link.targetTimestamp - link.timestamp)
+        if lastFrame > 0 {
+            let gap = link.timestamp - lastFrame
+            frames += 1
+            longest = max(longest, gap)
+            if gap > expected * 1.5 { dropped += max(1, Int((gap / expected).rounded()) - 1) }
+        }
+        lastFrame = link.timestamp
+        if !pageMoving { moveEnded() }
+    }
+
+    private func moveEnded() {
+        meter?.invalidate()
+        meter = nil
+        analytics.moving = false
+        let ms = { (seconds: CFTimeInterval) in String(format: "%.0f", seconds * 1000) }
+        App.shared.core.note(Lf("Переход страницы: кадров %@, пропущено %@, самый долгий %@ мс; раскладок аналитики %@, её обновлений %@ (%@ мс).",
+                                "\(frames)", "\(dropped)", ms(longest), "\(analytics.layoutPasses)", "\(analytics.updates)", ms(analytics.updateTime)))
+    }
+
     /// During a page change only the dots follow; the analytics streams and timer
     /// switch when the page has settled, so the core's reconnect and the first
     /// redraws never land in the middle of the motion.
@@ -515,6 +560,7 @@ final class MinimalHomeViewController: UIViewController, UIScrollViewDelegate, U
     }
 
     func scrollViewDidScroll(_ scrollView: UIScrollView) {
+        if scrollView === pager, pageMoving { moveStarted() }
         guard scrollView === pager, pager.bounds.height > 0, pager.isDragging || pullingPage else { return }
         setPage(pager.contentOffset.y > pager.bounds.height / 2 ? 1 : 0)
     }
@@ -543,6 +589,20 @@ final class MinimalHomeViewController: UIViewController, UIScrollViewDelegate, U
         pager.isScrollEnabled = isRoot
         navigationController.setNavigationBarHidden(isRoot, animated: animated)
         for control in dotControls { control.isHidden = !isRoot }
+    }
+}
+
+/// Keeps the frame meter's display link from holding Home.
+private final class FrameMeterProxy: NSObject {
+    weak var owner: MinimalHomeViewController?
+    init(_ owner: MinimalHomeViewController) {
+        self.owner = owner
+        super.init()
+    }
+
+    @objc func tick(_ link: CADisplayLink) {
+        guard let owner else { link.invalidate(); return }
+        owner.meterTick(link)
     }
 }
 

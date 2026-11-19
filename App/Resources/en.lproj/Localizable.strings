@@ -714,3 +714,4 @@
 "Макс. за минуту: %@" = "Max in a minute: %@";
 "2 мин · предел ≈ 50 МБ" = "2 min · limit ≈ 50 MB";
 "VPN выключен за %@ с (настройки VPN — %@ с)" = "VPN off in %@ s (VPN settings: %@ s)";
+"Переход страницы: кадров %@, пропущено %@, самый долгий %@ мс; раскладок аналитики %@, её обновлений %@ (%@ мс)." = "Page change: %@ frames, %@ dropped, longest %@ ms; analytics layout passes %@, its updates %@ (%@ ms).";

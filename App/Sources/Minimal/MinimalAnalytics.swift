@@ -46,7 +46,10 @@ final class SpeedGraphView: UIView {
     private let upDot = CAShapeLayer()
     static let downColor = UIColor(red: 0.33, green: 0.75, blue: 0.91, alpha: 1)
     static let upColor = UIColor(red: 0.93, green: 0.26, blue: 0.36, alpha: 1)
-    var history = TrafficHistory() { didSet { setNeedsLayout() } }
+    var history = TrafficHistory() { didSet { drawnSize = nil; setNeedsLayout() } }
+    /// 3.5.10: the size the lines were last built for; a layout pass that changes
+    /// nothing (the page moving, its insets settling) builds nothing.
+    private var drawnSize: CGSize?
     /// The highest speed shown, bytes per second (for the caption).
     private(set) var peak: Int64 = 0
 
@@ -81,6 +84,8 @@ final class SpeedGraphView: UIView {
 
     override func layoutSubviews() {
         super.layoutSubviews()
+        guard drawnSize != bounds.size else { return }
+        drawnSize = bounds.size
         peak = max(0, (history.down + history.up).max() ?? 0)
         let scale = max(1, peak)
         CATransaction.begin()
@@ -146,7 +151,13 @@ final class SpeedGraphView: UIView {
 /// A ring split between parts (3.5): the session's traffic, download against
 /// upload, with the total in the middle.
 final class RingChart: UIView {
-    var parts: [(value: Double, color: UIColor)] = [] { didSet { setNeedsDisplay() } }
+    /// 3.5.10: redrawn only when a value changed (it was redrawn every second).
+    var parts: [(value: Double, color: UIColor)] = [] {
+        didSet {
+            guard parts.map(\.value) != oldValue.map(\.value) || parts.map(\.color) != oldValue.map(\.color) else { return }
+            setNeedsDisplay()
+        }
+    }
     var lineWidth: CGFloat = 11
 
     override init(frame: CGRect) {
@@ -787,22 +798,75 @@ final class MinimalAnalyticsViewController: UIViewController {
         ])
 
         let client = App.shared.core
-        client.status.observe(self) { [weak self] in self?.show($0) }
+        // 3.5.10 (the owner: page changes stuttered since 3.5): the page is
+        // updated only while it is on screen and standing still; the status came
+        // every second even under Home and in the middle of a page change, and
+        // relaid the whole page each time. A missed update is caught up at once
+        // when the page shows or stops (`refresh`).
+        client.status.observe(self) { [weak self] status in
+            guard let self, self.live else { return }
+            self.measured { self.show(status) }
+        }
         client.history.observe(self) { [weak self] history in
-            guard let self, self.visible else { return }
-            self.showGraph(history)
+            guard let self, self.live else { return }
+            self.measured { self.showGraph(history) }
         }
         client.samples.observe(self) { [weak self] samples in
-            guard let self, self.visible else { return }
-            self.show(samples)
+            guard let self, self.live else { return }
+            self.measured { self.show(samples) }
         }
         client.connections.observe(self) { [weak self] connections in
-            guard let self, self.visible else { return }
-            self.show(connections)
+            guard let self, self.live else { return }
+            self.measured { self.show(connections) }
         }
         App.shared.latency.changed.observe(self) { [weak self] _ in self?.showDelay() }
         App.shared.tunnel.connectedSince.observe(self) { [weak self] _ in self?.tick() }
         showDelay()
+        show(client.status.value)
+    }
+
+    /// On screen and not in a page change.
+    private var live: Bool { visible && !moving }
+    /// Home's page is moving (set by Home): nothing on this page changes meanwhile.
+    var moving = false {
+        didSet {
+            guard moving != oldValue, !moving, visible else { return }
+            refresh()
+        }
+    }
+
+    /// Everything as it is now, at once.
+    private func refresh() {
+        let client = App.shared.core
+        show(client.status.value)
+        showGraph(client.history.value)
+        show(client.samples.value)
+        show(client.connections.value)
+        tick()
+    }
+
+    /// 3.5.10 diagnostics (read by Home after each page change): layout passes of
+    /// this page and the time its updates took.
+    private(set) var layoutPasses = 0
+    private(set) var updates = 0
+    private(set) var updateTime: CFTimeInterval = 0
+
+    func resetCounters() {
+        layoutPasses = 0
+        updates = 0
+        updateTime = 0
+    }
+
+    private func measured(_ work: () -> Void) {
+        let start = CACurrentMediaTime()
+        work()
+        updates += 1
+        updateTime += CACurrentMediaTime() - start
+    }
+
+    override func viewDidLayoutSubviews() {
+        super.viewDidLayoutSubviews()
+        layoutPasses += 1
     }
 
     /// The speed now, large, over the last two minutes: the graph runs from edge
@@ -892,6 +956,7 @@ final class MinimalAnalyticsViewController: UIViewController {
         if value {
             // The first redraw in two steps: the graph and the session now, the
             // lists (views built) on the next turn of the run loop.
+            show(App.shared.core.status.value)
             showGraph(App.shared.core.history.value)
             show(App.shared.core.samples.value)
             DispatchQueue.main.async { [weak self] in
@@ -899,7 +964,10 @@ final class MinimalAnalyticsViewController: UIViewController {
                 self.show(App.shared.core.connections.value)
             }
             tick()
-            timer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in self?.tick() }
+            timer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in
+                guard let self, !self.moving else { return }
+                self.tick()
+            }
         }
     }
 
