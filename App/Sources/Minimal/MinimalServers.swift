@@ -324,15 +324,13 @@ final class MinimalServersViewController: UIViewController, UIScrollViewDelegate
         more.menu = moreMenu()
         more.showsMenuAsPrimaryAction = true
         let accessory = UIStackView(.horizontal, spacing: 0, alignment: .center, [pingDial, more])
-        let holder = UIView(frame: CGRect(x: 0, y: 0, width: 90, height: 54))
-        holder.addSubview(accessory)
-        accessory.translatesAutoresizingMaskIntoConstraints = false
-        NSLayoutConstraint.activate([
-            more.widthAnchor.constraint(equalToConstant: 44), more.heightAnchor.constraint(equalToConstant: 44),
-            accessory.leadingAnchor.constraint(equalTo: holder.leadingAnchor), accessory.trailingAnchor.constraint(equalTo: holder.trailingAnchor, constant: -4),
-            accessory.centerYAnchor.constraint(equalTo: holder.centerYAnchor),
-            holder.widthAnchor.constraint(equalToConstant: 90), holder.heightAnchor.constraint(equalToConstant: 54),
-        ])
+        NSLayoutConstraint.activate([more.widthAnchor.constraint(equalToConstant: 44), more.heightAnchor.constraint(equalToConstant: 44)])
+        // 3.5.4 (the owner: the ping did nothing here): the buttons lie over the
+        // field, not inside it as its right view — the field gave that view less
+        // room than its buttons and kept their touches. The right view only keeps
+        // the text clear of them.
+        let holder = UIView(frame: CGRect(x: 0, y: 0, width: 90, height: 44))
+        holder.isUserInteractionEnabled = false
         search.rightView = holder
         search.rightViewMode = .always
         stylePlus(size: 54)
@@ -368,6 +366,12 @@ final class MinimalServersViewController: UIViewController, UIScrollViewDelegate
             segments.leadingAnchor.constraint(equalTo: bar.leadingAnchor, constant: 16), segments.trailingAnchor.constraint(equalTo: bar.trailingAnchor, constant: -16),
             selectionPills.topAnchor.constraint(equalTo: segments.topAnchor), selectionPills.bottomAnchor.constraint(equalTo: segments.bottomAnchor),
             selectionPills.leadingAnchor.constraint(equalTo: segments.leadingAnchor), selectionPills.trailingAnchor.constraint(equalTo: segments.trailingAnchor),
+        ])
+        accessory.translatesAutoresizingMaskIntoConstraints = false
+        bar.addSubview(accessory)
+        NSLayoutConstraint.activate([
+            accessory.trailingAnchor.constraint(equalTo: search.trailingAnchor, constant: -4),
+            accessory.centerYAnchor.constraint(equalTo: search.centerYAnchor),
         ])
         showBar()
     }

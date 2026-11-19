@@ -409,17 +409,25 @@ final class TunnelController {
         return rules
     }
 
+    /// 3.5.4: the extension is told the stop is the app's (On Demand already set
+    /// here), so it ends at once instead of loading and saving the VPN
+    /// configuration again — a second or so of «Отключение…».
+    private static func stopTunnel(_ manager: NETunnelProviderManager) {
+        AppGroup.defaults.set(Date().timeIntervalSince1970, forKey: SharedKey.stopRequestedByApp)
+        manager.connection.stopVPNTunnel()
+    }
+
     func stop() {
         startPending = nil
         guard let manager else { sync(); return }
         guard manager.isOnDemandEnabled else {
-            manager.connection.stopVPNTunnel()
+            Self.stopTunnel(manager)
             return
         }
         guard Prefs.autoConnect else {
             // Otherwise on-demand brings the tunnel straight back.
             manager.isOnDemandEnabled = false
-            manager.saveToPreferences { _ in manager.connection.stopVPNTunnel() }
+            manager.saveToPreferences { _ in Self.stopTunnel(manager) }
             return
         }
         // 3.2.11: the rules for unknown Wi-Fi replace «keep it on» before the stop,
@@ -435,7 +443,7 @@ final class TunnelController {
                 Prefs.pausedNetwork = ssid.flatMap { Prefs.trustedNetworks.contains($0) ? nil : $0 }
                 self.configure(manager, keepAlive: false)
             }
-            manager.saveToPreferences { _ in manager.connection.stopVPNTunnel() }
+            manager.saveToPreferences { _ in Self.stopTunnel(manager) }
         }
     }
 

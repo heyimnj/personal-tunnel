@@ -111,7 +111,13 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
             // Center left On Demand on, and the VPN came back a few seconds later.
             // A tunnel the system ends without stopping it (the memory limit) gets no
             // stop at all, so On Demand still restarts that one.
-            guard reason == .userInitiated || reason == .superceded else {
+            // 3.5.4: stopped by the app, which has already set On Demand as it
+            // should stay (off, or the rules for unknown Wi-Fi): nothing to change,
+            // the stop ends now (loading and saving the configuration again took
+            // about a second, and turned off the app's automatic start as well).
+            let byApp = Date().timeIntervalSince1970 - AppGroup.defaults.double(forKey: SharedKey.stopRequestedByApp) < 20
+            AppGroup.defaults.removeObject(forKey: SharedKey.stopRequestedByApp)
+            guard (reason == .userInitiated || reason == .superceded), !byApp else {
                 completionHandler()
                 return
             }

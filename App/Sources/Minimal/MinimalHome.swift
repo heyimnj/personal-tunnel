@@ -580,11 +580,12 @@ final class MinimalConnectionView: UIView {
         switch App.shared.tunnel.state.value {
         case .disconnected: look = .off
         case .connecting, .disconnecting, .reasserting: look = .working
-        // Green only once a test through the server has answered; until then the
-        // ring keeps running.
+        // 3.5.4 (the owner: «Подключено» stood beside a running ring for seconds):
+        // green as soon as the system says connected; red only when tests through
+        // the server fail (two in a row).
         case .connected:
             switch App.shared.health.state.value {
-            case .unknown: look = .working
+            case .unknown: look = .ok
             case .ok: look = .ok
             case .failing: look = .failing
             }

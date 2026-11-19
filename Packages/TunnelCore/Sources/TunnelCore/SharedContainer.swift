@@ -110,6 +110,9 @@ public enum SharedKey {
     public static let tunnelMemory = "pt.tunnel.memory"
     /// 3.3 (PT-16): end of «Подробный журнал для диагностики», seconds since 1970.
     public static let diagnosticLogUntil = "pt.log.diagnosticUntil"
+    /// 3.5.4: the app stopped the tunnel itself (seconds since 1970); it has set
+    /// On Demand as it should be, so the extension's stop does not touch it.
+    public static let stopRequestedByApp = "pt.tunnel.stopByApp"
 }
 
 /// Start options and messages the app sends to the packet tunnel.
