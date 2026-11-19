@@ -504,7 +504,7 @@ final class AnalyticsRow: UIView {
 /// top over its graph, then tiles). 3.5 (release, the owner: the page was too
 /// busy): the session's two square tiles; 3.5.2: routes (4:2), connections as in
 /// beta 4 (columns and two rows), the core's memory (4:2).
-final class MinimalAnalyticsViewController: UIViewController {
+final class MinimalAnalyticsViewController: UIViewController, UIGestureRecognizerDelegate {
     private let scroll = HandoffScrollView()
     // 3.5 beta 2 (the owner: the page was larger than the rest of the app): smaller
     // figures, charts and rows throughout.
@@ -589,11 +589,46 @@ final class MinimalAnalyticsViewController: UIViewController {
         }
     }
     /// 3.5.7: on a quick spring (see ScrollTopSpring).
-    /// 3.5.12: calmer than elsewhere (the owner: too fast here).
-    func scrollToTop() { scroll.springToTop(feel: .calm, lead: 0.3) }
+    /// 3.5.13 (the owner: one stutter left, at the start of the way up from low
+    /// down the page): a Core Animation spring, run by the render server — the
+    /// tab bar's own work on the tap no longer costs its first frames (the
+    /// per-frame spring ran on the main thread). As calm as 3.5.12. A finger on
+    /// the list stops it where it shows.
+    func scrollToTop() {
+        stopScrollingToTop()
+        let top = -scroll.adjustedContentInset.top
+        // A fling still running ends here.
+        scroll.setContentOffset(scroll.contentOffset, animated: false)
+        guard abs(scroll.contentOffset.y - top) > 0.5 else { return }
+        let timing = UISpringTimingParameters(dampingRatio: 1, initialVelocity: CGVector(dx: 0, dy: 0.4))
+        let animator = UIViewPropertyAnimator(duration: 0.55, timingParameters: timing)
+        animator.addAnimations { [weak self] in
+            self?.scroll.contentOffset = CGPoint(x: 0, y: top)
+        }
+        animator.addCompletion { [weak self, weak animator] _ in
+            guard let self, let animator, self.topAnimator === animator else { return }
+            self.topAnimator = nil
+        }
+        topAnimator = animator
+        animator.startAnimation()
+    }
+
+    private var topAnimator: UIViewPropertyAnimator?
+
+    private func stopScrollingToTop() {
+        guard let animator = topAnimator else { return }
+        topAnimator = nil
+        animator.stopAnimation(true)
+    }
+
+    @objc private func listTouched(_ press: UILongPressGestureRecognizer) {
+        if press.state == .began { stopScrollingToTop() }
+    }
+
+    func gestureRecognizer(_: UIGestureRecognizer, shouldRecognizeSimultaneouslyWith _: UIGestureRecognizer) -> Bool { true }
 
     /// The list is on its way to the top after a tap on the tab.
-    var isScrollingToTop: Bool { scroll.isSpringingToTop }
+    var isScrollingToTop: Bool { topAnimator != nil }
 
     override func viewDidLoad() {
         super.viewDidLoad()
@@ -608,6 +643,13 @@ final class MinimalAnalyticsViewController: UIViewController {
         // 3.5.7 (the owner): no scroll bar — at the page change it jumped in length
         // as the list met its top and the page's insets settled.
         scroll.showsVerticalScrollIndicator = false
+        let press = UILongPressGestureRecognizer(target: self, action: #selector(listTouched(_:)))
+        press.minimumPressDuration = 0
+        press.cancelsTouchesInView = false
+        press.delaysTouchesBegan = false
+        press.delaysTouchesEnded = false
+        press.delegate = self
+        scroll.addGestureRecognizer(press)
         view.addSubview(scroll)
         scroll.pin(to: view)
 
@@ -831,7 +873,7 @@ final class MinimalAnalyticsViewController: UIViewController {
     /// Home's page is moving (set by Home).
     var moving = false
     /// The list itself moves, or a finger is on it.
-    private var listMoving: Bool { scroll.isTracking || scroll.isDragging || scroll.isDecelerating || scroll.isSpringingToTop }
+    private var listMoving: Bool { scroll.isTracking || scroll.isDragging || scroll.isDecelerating || topAnimator != nil }
 
     /// Draws what came, if the page is on screen and nothing moves; otherwise the
     /// next second's turn does. `force`: the session clock is due too.

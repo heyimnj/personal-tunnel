@@ -84,7 +84,6 @@ final class ServerUpdateBanner: UIView {
         fill.isActive = true
         container.layoutIfNeeded()
         transform = CGAffineTransform(translationX: 0, y: -(frame.maxY + 20))
-        Haptics.soft()
         UIView.animate(withDuration: 0.45, delay: 0, usingSpringWithDamping: 0.82, initialSpringVelocity: 0.4) {
             self.transform = .identity
         }
@@ -107,7 +106,6 @@ final class ServerUpdateBanner: UIView {
 
     private func finish(reconnect: Bool) {
         guard shown else { return }
-        Haptics.tap()
         dismiss()
         if reconnect { onReconnect?() } else { onLater?() }
     }

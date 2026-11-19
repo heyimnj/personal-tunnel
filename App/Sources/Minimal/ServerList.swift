@@ -788,7 +788,6 @@ final class FilterBar: UIScrollView {
         }
         button.configuration = configuration
         button.addAction(UIAction { _ in
-            Haptics.selection()
             action()
         }, for: .touchUpInside)
         return button

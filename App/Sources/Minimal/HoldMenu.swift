@@ -153,7 +153,6 @@ final class HoldMenuView: UIView {
         }
         menu.place(at: point, row: row)
         menu.animateIn()
-        Haptics.soft()
     }
 
     private func build(_ list: [HoldMenuItem]) {

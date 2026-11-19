@@ -1,10 +1,8 @@
 import CoreHaptics
 import UIKit
 
-/// 3.5.12 (the owner: «ты Haptics убрал практически из приложения»): the touch
-/// language of 1.5.0 (`HapticManager`) — every touch anywhere answers as it lands
-/// and as it lifts, and the connection, the switches and the tabs have patterns
-/// of their own. The same pulses (time, intensity, sharpness) as 1.5.0.
+/// 3.5.12: 1.5.0's patterns (`HapticManager`, the same pulses). 3.5.13 (the
+/// owner): only where he named them — the switches here; the buttons use `Haptics`.
 ///
 /// Patterns play on their own queue, never on the main thread: a cold haptic
 /// engine once cost the main thread frames mid-swipe (3.1.7).
@@ -106,25 +104,6 @@ enum Tactile {
             return true
         } catch {
             return false
-        }
-    }
-}
-
-/// 1.5.0's `hapticTouchSurface` over the whole app: the first finger down and
-/// the last one up answer, wherever they are.
-final class TactileWindow: UIWindow {
-    private var touching = false
-
-    override func sendEvent(_ event: UIEvent) {
-        super.sendEvent(event)
-        guard event.type == .touches, let touches = event.allTouches, !touches.isEmpty else { return }
-        let down = touches.contains { $0.phase != .ended && $0.phase != .cancelled }
-        if down, !touching {
-            touching = true
-            Tactile.play(.touchDown)
-        } else if !down, touching {
-            touching = false
-            Tactile.play(.touchUp)
         }
     }
 }

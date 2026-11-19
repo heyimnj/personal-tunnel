@@ -298,13 +298,17 @@ class FormViewController: UITableViewController, UIColorPickerViewControllerDele
 
     override func tableView(_ tableView: UITableView, didSelectRowAt indexPath: IndexPath) {
         tableView.deselectRow(at: indexPath, animated: true)
+        // 3.5.13 (the owner): the settings' buttons answer to the touch.
         switch sections[indexPath.section].rows[indexPath.row].bare {
         case let .link(_, _, action), let .button(_, _, action):
+            Haptics.tap()
             action()
         case let .check(_, _, action):
+            Haptics.tap()
             action()
             rebuild()
         case let .color(_, get, set):
+            Haptics.tap()
             colorSetter = set
             let picker = UIColorPickerViewController()
             picker.selectedColor = get()

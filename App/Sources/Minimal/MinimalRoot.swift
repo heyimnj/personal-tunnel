@@ -165,8 +165,6 @@ final class MinimalRootViewController: UITabBarController, UITabBarControllerDel
     }
 
     func tabBarController(_: UITabBarController, didSelect _: UIViewController) {
-        // 3.5.12: another tab, as 1.5.0 felt it (a tab tapped again never gets here).
-        Tactile.play(.navigation)
         setNeedsStatusBarAppearanceUpdate()
     }
 

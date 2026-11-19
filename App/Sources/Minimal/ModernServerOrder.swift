@@ -96,7 +96,7 @@ final class ModernServerOrderViewController: UIViewController, UICollectionViewD
         let id = groups[section - 1].subscription.id
         let open = !unfolded.contains(id)
         if open { unfolded.insert(id) } else { unfolded.remove(id) }
-        Haptics.soft(open ? 0.55 : 0.4)
+        Haptics.soft(open ? 0.3 : 0.22)
         let paths = groups[section - 1].nodes.indices.map { IndexPath(item: $0, section: section) }
         if open {
             collection.performBatchUpdates { collection.insertItems(at: paths) }

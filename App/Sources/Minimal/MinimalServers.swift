@@ -386,12 +386,10 @@ final class MinimalServersViewController: UIViewController, UIScrollViewDelegate
     /// «B»: the order's item opens its menu; in a selection it copies.
     @objc private func bottomSortTapped() {
         guard selecting else { return }
-        Haptics.selection()
         copySelected()
     }
 
     @objc private func refreshTapped() {
-        Haptics.tap()
         App.shared.refreshAll()
     }
 
@@ -779,7 +777,6 @@ final class MinimalServersViewController: UIViewController, UIScrollViewDelegate
         closing = true
         search.resignFirstResponder()
         list.closeSwipe()
-        Haptics.soft(0.4)
         dismiss(animated: true)
     }
 
@@ -897,7 +894,6 @@ final class MinimalServersViewController: UIViewController, UIScrollViewDelegate
     }
 
     private func selectionChanged(actions: Bool = false) {
-        Haptics.selection()
         showBar()
         list.reconfigureRows()
         if actions { list.reloadActions() } else { list.reconfigureHeaders() }
@@ -944,7 +940,6 @@ final class MinimalServersViewController: UIViewController, UIScrollViewDelegate
             return
         }
         Clipboard.copySecret(links.joined(separator: "\n"))
-        Haptics.result(true)
         App.shared.notice.value = Lf("Скопировано ссылок: %@.", "\(links.count)")
     }
 
@@ -1223,7 +1218,8 @@ final class MinimalServersViewController: UIViewController, UIScrollViewDelegate
         let open = !list.isOpen(id)
         if open { expanded.insert(id) } else { expanded.remove(id) }
         Prefs.expandedSubscriptions = expanded
-        Haptics.soft(open ? 0.55 : 0.4)
+        // 3.5.13 (the owner): weak.
+        Haptics.soft(open ? 0.3 : 0.22)
         list.setOpen(id, open)
     }
 
@@ -1282,7 +1278,6 @@ final class MinimalServersViewController: UIViewController, UIScrollViewDelegate
             return
         }
         Clipboard.copySecret(text)
-        Haptics.result(true)
     }
 
     private func prompt(_ title: String, value: String, apply: @escaping (String) -> Void) {
