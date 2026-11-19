@@ -909,6 +909,11 @@ final class SurfaceView: UIView {
 
     private var shownProgress: CGFloat = -1
     private var shownStandalone: Bool?
+    /// 3.5.11 (the owner's video): the subscription is folding shut. The fold's
+    /// spring runs on for about a second with the body all but gone, and a swipe
+    /// then took the open head's way: the surface stood whole behind the actions,
+    /// with no gap between them and the card. Folding, it gives way as a closed card.
+    private var shownClosing = false
     /// The surface's colour and shape, apart from the view: a closed subscription
     /// or a lone server is a card that moves aside for its actions (3.1.2) while
     /// what it holds stays where the list put it.
@@ -956,10 +961,11 @@ final class SurfaceView: UIView {
     required init?(coder _: NSCoder) { fatalError() }
 
     /// Restyles only when something changed: still subscriptions cost nothing per frame.
-    func show(progress: CGFloat, standalone: Bool) {
-        guard abs(progress - shownProgress) > 0.001 || standalone != shownStandalone else { return }
+    func show(progress: CGFloat, standalone: Bool, closing: Bool = false) {
+        guard abs(progress - shownProgress) > 0.001 || standalone != shownStandalone || closing != shownClosing else { return }
         shownProgress = progress
         shownStandalone = standalone
+        shownClosing = closing
         header.isHidden = standalone
         plateColor = standalone ? Self.card : Self.blend(Self.card, Self.container, progress, traits: traitCollection)
         plate.backgroundColor = plateColor
@@ -986,7 +992,7 @@ final class SurfaceView: UIView {
     }
 
     private func placePlates() {
-        let open = shownStandalone == false && shownProgress > 0.001
+        let open = shownStandalone == false && shownProgress > 0.001 && !shownClosing
         // Closed (or a lone server): the whole card moves aside, out past the
         // surface's side (the list clips it at the screen's edge).
         let shift = open ? 0 : pull
@@ -1469,7 +1475,7 @@ final class ServerListView: UIScrollView {
                 if surface.filters.frame != filterFrame { surface.filters.frame = filterFrame }
                 surface.filters.alpha = min(1, filtersShown / Self.filterHeight)
             }
-            surface.show(progress: min(1, progress), standalone: section.standalone)
+            surface.show(progress: min(1, progress), standalone: section.standalone, closing: !isOpen(section.id))
             // 3.5.3 (the owner's video): while the card folds, the filters reach its
             // bottom and the last, half-shown tag stuck out past its round corner;
             // there the bar takes the card's bottom corners.
