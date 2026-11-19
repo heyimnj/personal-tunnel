@@ -1470,6 +1470,18 @@ final class ServerListView: UIScrollView {
                 surface.filters.alpha = min(1, filtersShown / Self.filterHeight)
             }
             surface.show(progress: min(1, progress), standalone: section.standalone)
+            // 3.5.3 (the owner's video): while the card folds, the filters reach its
+            // bottom and the last, half-shown tag stuck out past its round corner;
+            // there the bar takes the card's bottom corners.
+            if hasFilters {
+                let atBottom = surface.filters.frame.maxY >= surface.bounds.height - 0.5
+                let corner = atBottom ? surface.layer.cornerRadius : 0
+                if surface.filters.layer.cornerRadius != corner {
+                    surface.filters.layer.cornerRadius = corner
+                    surface.filters.layer.cornerCurve = .continuous
+                    surface.filters.layer.maskedCorners = [.layerMinXMaxYCorner, .layerMaxXMaxYCorner]
+                }
+            }
             y += height + Self.gap
         }
         var height = max(0, y - Self.gap) + 24
