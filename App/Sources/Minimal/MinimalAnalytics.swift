@@ -818,6 +818,12 @@ final class MinimalAnalyticsViewController: UIViewController {
         App.shared.tunnel.connectedSince.observe(self) { [weak self] _ in self?.behind = true }
         showDelay()
         show(client.status.value)
+        // 3.5.12: kept ready off screen from the start (see `everySecond`), and drawn
+        // once soon after the app comes back, when the core's data flows again.
+        timer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in self?.everySecond() }
+        NotificationCenter.default.addObserver(forName: UIApplication.didBecomeActiveNotification, object: nil, queue: .main) { [weak self] _ in
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) { self?.flush() }
+        }
     }
 
     /// Something came from the core since the page was last drawn.
@@ -830,9 +836,25 @@ final class MinimalAnalyticsViewController: UIViewController {
     /// Draws what came, if the page is on screen and nothing moves; otherwise the
     /// next second's turn does. `force`: the session clock is due too.
     private func flush(force: Bool = false) {
-        guard visible, !moving, !listMoving, behind || force else { return }
+        guard !moving, !listMoving, behind || force else { return }
         behind = false
         measured { refresh() }
+    }
+
+    /// 3.5.12 (the owner: as before 3.5, the page must be ready before it is
+    /// opened, with no loading seen): off screen, while Home stands still, the page
+    /// is drawn every two seconds, so it shows fresh the moment it slides in.
+    /// Not under another tab (Home is out of the window then) or in the background.
+    private var offscreenTurn = false
+
+    private func everySecond() {
+        if visible {
+            flush(force: true)
+            return
+        }
+        offscreenTurn.toggle()
+        guard offscreenTurn, viewIfLoaded?.window != nil, UIApplication.shared.applicationState == .active else { return }
+        flush()
     }
 
     /// Everything as it is now, at once.
@@ -951,13 +973,12 @@ final class MinimalAnalyticsViewController: UIViewController {
         // 3.5: the connections are streamed for the whole Home (MinimalHome), not
         // from the moment this page shows: the first visit after a launch showed an
         // empty page for a second while the stream started again.
-        timer?.invalidate()
-        timer = nil
-        if value {
-            // Drawn now (Home calls this once the page stands still), then once a second.
-            flush(force: true)
+        // Drawn now (Home calls this once the page stands still); the timer runs
+        // all the time (see `everySecond`).
+        if value { flush(force: true) }
+        if timer == nil {
             timer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in
-                self?.flush(force: true)
+                self?.everySecond()
             }
         }
     }
