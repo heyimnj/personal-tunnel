@@ -372,33 +372,34 @@ final class TimelineBarsView: UIView {
         let count = CGFloat(max(slots, buckets.count))
         let gap: CGFloat = count > 40 ? 2 : 4
         let width = max(1.5, (bounds.width - gap * (count - 1)) / count)
+        // 3.6 (the owner: the red top looked blurred over the blue, the ring's join is
+        // sharp): every edge on the screen's pixel grid, and the two colours meet
+        // directly, as in the ring — no blended separator line between them.
+        let scale = max(1, window?.screen.scale ?? traitCollection.displayScale)
+        func snap(_ value: CGFloat) -> CGFloat { (value * scale).rounded() / scale }
         for (index, bucket) in buckets.enumerated() {
-            let x = CGFloat(index) * (width + gap)
-            let total = max(bucket.total > 0 ? 2 : 1.5, height * CGFloat(bucket.total) / CGFloat(peak))
-            let down = bucket.total > 0 ? total * CGFloat(bucket.down) / CGFloat(bucket.total) : total
-            let shape = CGRect(x: x, y: height - total, width: width, height: total)
-            let radius = min(width / 2, 4)
+            let left = snap(CGFloat(index) * (width + gap))
+            let right = snap(CGFloat(index) * (width + gap) + width)
+            let barWidth = max(1 / scale, right - left)
+            let raw = max(bucket.total > 0 ? 2 : 1.5, height * CGFloat(bucket.total) / CGFloat(peak))
+            let top = snap(height - raw)
+            let total = height - top
+            let shape = CGRect(x: left, y: top, width: barWidth, height: total)
+            let radius = min(barWidth / 2, 4)
             context.saveGState()
             UIBezierPath(roundedRect: shape, cornerRadius: radius).addClip()
-            // 3.5.27 (the owner): the upload on top looked jagged — a sliver thinner
-            // than the corner was cut into a crescent. Now the upload is at least as
-            // tall as the corner, and a column too low for two parts is one colour
-            // (the larger part's).
+            // The upload is at least as tall as the corner (a thinner sliver was cut into
+            // a crescent), and a column too low for two parts is one colour.
             let low = total < radius * 2 + 4
             let upShare = bucket.total > 0 ? CGFloat(bucket.up) / CGFloat(bucket.total) : 0
             let base: UIColor = bucket.total == 0 ? UIColor.label.withAlphaComponent(0.1)
                 : (low && upShare > 0.5 ? SpeedGraphView.upColor : SpeedGraphView.downColor)
             context.setFillColor(base.cgColor)
             context.fill(shape)
-            if bucket.up > 0, !low, upShare < 1 {
-                let up = min(total - radius - 2, max(radius + 1, total - down))
+            if bucket.up > 0, !low {
+                let up = upShare >= 1 ? total : snap(min(total - radius - 2, max(radius + 1, total * upShare)))
                 context.setFillColor(SpeedGraphView.upColor.cgColor)
-                context.fill(CGRect(x: x, y: height - total, width: width, height: up))
-                context.setFillColor(separator.cgColor)
-                context.fill(CGRect(x: x, y: height - total + up - 0.75, width: width, height: 1.5))
-            } else if bucket.up > 0, !low {
-                context.setFillColor(SpeedGraphView.upColor.cgColor)
-                context.fill(shape)
+                context.fill(CGRect(x: left, y: top, width: barWidth, height: up))
             }
             context.restoreGState()
         }
