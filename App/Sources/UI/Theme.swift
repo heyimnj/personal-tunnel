@@ -491,11 +491,13 @@ class TapControl: UIControl {
             CATransaction.commit()
             return
         }
-        let duration = 0.85
+        // 3.6.3 (the owner): 0.85 s was not seen — the next sheet opened over it.
+        // Now most of the plate is covered in the first fifth of a second.
+        let duration = 0.4
         let grow = CABasicAnimation(keyPath: "transform.scale")
         grow.fromValue = scale
         grow.toValue = max(scale, shadeReach)
-        grow.timingFunction = CAMediaTimingFunction(controlPoints: 0.2, 0.7, 0.3, 1)
+        grow.timingFunction = CAMediaTimingFunction(controlPoints: 0.1, 0.8, 0.25, 1)
         // Deeper while it runs out (the ring's weight moves to the spot), then gone.
         let ink = UIColor.label.resolvedColor(with: traitCollection)
         let deepen = CABasicAnimation(keyPath: "colors")
@@ -505,8 +507,8 @@ class TapControl: UIControl {
         deepen.autoreverses = false
         deepen.fillMode = .forwards
         let fade = CAKeyframeAnimation(keyPath: "opacity")
-        fade.values = [current, 1, 0.85, 0]
-        fade.keyTimes = [0, 0.18, 0.5, 1]
+        fade.values = [current, 1, 0.8, 0]
+        fade.keyTimes = [0, 0.12, 0.55, 1]
         let group = CAAnimationGroup()
         group.animations = [grow, deepen, fade]
         group.duration = duration
