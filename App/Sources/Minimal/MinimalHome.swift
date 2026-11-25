@@ -639,7 +639,7 @@ final class MinimalConnectionView: UIView {
     /// 3.5 beta 2 (the owner: the capsule wanted something at its end, not the
     /// old up-and-down chevrons): the server's delay, and a small chevron up — the
     /// servers come up from below.
-    private let delay = UILabel(font: UIFont.monospacedDigitSystemFont(ofSize: 15, weight: .regular), color: .secondaryLabel)
+    private let delay = UILabel(font: Theme.digits(15, .regular), color: .secondaryLabel)
     private let opener = UIImageView(image: UIImage(systemName: "chevron.up", withConfiguration: UIImage.SymbolConfiguration(pointSize: 13, weight: .semibold)))
     private lazy var capsuleRow = UIStackView(.horizontal, spacing: 8, alignment: .center, [flag, mark, name, UIView(), delay, opener])
 

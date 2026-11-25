@@ -450,7 +450,7 @@ final class AnalyticsGroup: UIView {
 /// chevron when it opens something.
 final class AnalyticsRow: UIView {
     let title = UILabel(font: Theme.font(.subheadline))
-    let value = UILabel(font: UIFont.monospacedDigitSystemFont(ofSize: Theme.font(.subheadline).pointSize, weight: .regular), color: .secondaryLabel)
+    let value = UILabel(font: Theme.digits(Theme.font(.subheadline).pointSize, .regular), color: .secondaryLabel)
     private let press = TapControl()
 
     init(_ text: String, dot: UIColor? = nil, onTap: (() -> Void)? = nil) {
@@ -508,27 +508,27 @@ final class MinimalAnalyticsViewController: UIViewController, UIGestureRecognize
     private let scroll = HandoffScrollView()
     // 3.5 beta 2 (the owner: the page was larger than the rest of the app): smaller
     // figures, charts and rows throughout.
-    private let downSpeed = UILabel(font: UIFont.monospacedDigitSystemFont(ofSize: 28, weight: .semibold))
+    private let downSpeed = UILabel(font: Theme.digits(28, .semibold))
     private let downUnit = UILabel(font: Theme.font(13, .medium), color: .secondaryLabel)
-    private let upSpeed = UILabel(font: UIFont.monospacedDigitSystemFont(ofSize: 28, weight: .semibold))
+    private let upSpeed = UILabel(font: Theme.digits(28, .semibold))
     private let upUnit = UILabel(font: Theme.font(13, .medium), color: .secondaryLabel)
     private let graph = SpeedGraphView()
-    private let graphPeak = UILabel(font: UIFont.monospacedDigitSystemFont(ofSize: Theme.font(.caption2).pointSize, weight: .medium), color: .secondaryLabel)
+    private let graphPeak = UILabel(font: Theme.digits(Theme.font(.caption2).pointSize, .medium), color: .secondaryLabel)
     private let graphHint = UILabel(L("Данные появятся после подключения"), font: Theme.font(.caption1), color: .secondaryLabel)
     private let sessionRow = AnalyticsRow(L("Сеанс"))
     // 3.5: each measure drawn its own way — a ring, a gauge, rings, a line.
     private let trafficRing = RingChart()
-    private let trafficTotal = UILabel(font: UIFont.monospacedDigitSystemFont(ofSize: Theme.font(.footnote).pointSize, weight: .semibold))
-    private let downTotal = UILabel(font: UIFont.monospacedDigitSystemFont(ofSize: Theme.font(.subheadline).pointSize, weight: .semibold))
-    private let upTotal = UILabel(font: UIFont.monospacedDigitSystemFont(ofSize: Theme.font(.subheadline).pointSize, weight: .semibold))
+    private let trafficTotal = UILabel(font: Theme.digits(Theme.font(.footnote).pointSize, .semibold))
+    private let downTotal = UILabel(font: Theme.digits(Theme.font(.subheadline).pointSize, .semibold))
+    private let upTotal = UILabel(font: Theme.digits(Theme.font(.subheadline).pointSize, .semibold))
     private let delayGauge = GaugeView()
-    private let delayValue = UILabel(font: UIFont.monospacedDigitSystemFont(ofSize: 22, weight: .semibold))
+    private let delayValue = UILabel(font: Theme.digits(22, .semibold))
     private let delayCaption = UILabel(font: Theme.font(.footnote), color: .secondaryLabel, lines: 2)
     private let memoryLine = SparklineView()
-    private let memoryValue = UILabel(font: UIFont.monospacedDigitSystemFont(ofSize: 20, weight: .semibold))
-    private let memoryDetail = UILabel(font: UIFont.monospacedDigitSystemFont(ofSize: Theme.font(.caption2).pointSize, weight: .regular), color: .secondaryLabel)
+    private let memoryValue = UILabel(font: Theme.digits(20, .semibold))
+    private let memoryDetail = UILabel(font: Theme.digits(Theme.font(.caption2).pointSize, .regular), color: .secondaryLabel)
     private let columns = ColumnsView()
-    private let columnsPeak = UILabel(font: UIFont.monospacedDigitSystemFont(ofSize: Theme.font(.caption2).pointSize, weight: .medium), color: .secondaryLabel)
+    private let columnsPeak = UILabel(font: Theme.digits(Theme.font(.caption2).pointSize, .medium), color: .secondaryLabel)
     private var tcpRow: AnalyticsRow!
     private var udpRow: AnalyticsRow!
     private let routeRings = RouteRingsView()
@@ -704,7 +704,7 @@ final class MinimalAnalyticsViewController: UIViewController, UIGestureRecognize
             let icon = UIImageView(image: UIImage(systemName: symbol, withConfiguration: UIImage.SymbolConfiguration(font: Theme.font(.caption1, .bold))))
             icon.tintColor = color
             icon.setContentHuggingPriority(.required, for: .horizontal)
-            label.font = UIFont.monospacedDigitSystemFont(ofSize: Theme.font(.footnote).pointSize, weight: .semibold)
+            label.font = Theme.digits(Theme.font(.footnote).pointSize, .semibold)
             label.adjustsFontSizeToFitWidth = true
             label.minimumScaleFactor = 0.7
             return UIStackView(.horizontal, spacing: 3, alignment: .center, [icon, label])
@@ -1141,7 +1141,7 @@ final class MinimalAnalyticsViewController: UIViewController, UIGestureRecognize
             let name = UILabel(route.key, font: Theme.font(.footnote))
             name.lineBreakMode = .byTruncatingTail
             name.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
-            let value = UILabel(Format.bytes(route.value), font: UIFont.monospacedDigitSystemFont(ofSize: Theme.font(.footnote).pointSize, weight: .regular), color: .secondaryLabel)
+            let value = UILabel(Format.bytes(route.value), font: Theme.digits(Theme.font(.footnote).pointSize, .regular), color: .secondaryLabel)
             value.setContentHuggingPriority(.required, for: .horizontal)
             value.setContentCompressionResistancePriority(.required, for: .horizontal)
             routeLegend.addArrangedSubview(UIStackView(.horizontal, spacing: 7, alignment: .center, [dot, name, UIView(), value]))
@@ -1342,7 +1342,7 @@ private final class ConnectionCell: UITableViewCell {
     private let dot = UIView()
     private let destination = UILabel(font: Theme.font(.callout), lines: 2)
     private let outbound = UILabel(font: Theme.font(.caption1), color: .secondaryLabel)
-    private let traffic = UILabel(font: UIFont.monospacedDigitSystemFont(ofSize: Theme.font(.caption1).pointSize, weight: .regular))
+    private let traffic = UILabel(font: Theme.digits(Theme.font(.caption1).pointSize, .regular))
 
     override init(style: UITableViewCell.CellStyle, reuseIdentifier: String?) {
         super.init(style: style, reuseIdentifier: reuseIdentifier)

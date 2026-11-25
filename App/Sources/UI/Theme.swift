@@ -87,8 +87,23 @@ enum Theme {
         fixed(UIFont.preferredFont(forTextStyle: style).pointSize, weight)
     }
 
+    /// 3.5.18: with an imported font, the log, the Classic labels and every figure
+    /// take it too (the owner found analytics and the log in the system font);
+    /// its digits made even-width where the font can.
     static func mono(_ size: CGFloat, _ weight: UIFont.Weight = .regular) -> UIFont {
-        .monospacedSystemFont(ofSize: scaled(size), weight: weight)
+        fixedMono(scaled(size), weight)
+    }
+
+    /// Figures that change in place (speeds, totals, delays): even-width digits.
+    static func digits(_ size: CGFloat, _ weight: UIFont.Weight = .regular) -> UIFont {
+        if let descriptor = customDigits() { return UIFont(descriptor: descriptor, size: size) }
+        return .monospacedDigitSystemFont(ofSize: size, weight: weight)
+    }
+
+    private static func customDigits() -> UIFontDescriptor? {
+        guard let descriptor = custom() else { return nil }
+        let feature: [UIFontDescriptor.FeatureKey: Int] = [.type: kNumberSpacingType, .selector: kMonospacedNumbersSelector]
+        return descriptor.addingAttributes([.featureSettings: [feature]])
     }
 
     static func fixed(_ size: CGFloat, _ weight: UIFont.Weight = .regular) -> UIFont {
@@ -97,7 +112,8 @@ enum Theme {
     }
 
     static func fixedMono(_ size: CGFloat, _ weight: UIFont.Weight = .regular) -> UIFont {
-        .monospacedSystemFont(ofSize: size, weight: weight)
+        if let descriptor = customDigits() { return UIFont(descriptor: descriptor, size: size) }
+        return .monospacedSystemFont(ofSize: size, weight: weight)
     }
 
     /// A size scaled like the text style it is closest to.

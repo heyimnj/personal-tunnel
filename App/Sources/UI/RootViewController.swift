@@ -5,6 +5,7 @@ final class RootViewController: UIViewController {
     private var current: UIViewController?
     private var shownStyle: InterfaceStyle?
     private var shownLanguage: String?
+    private var shownFont: String?
 
     override func viewDidLoad() {
         super.viewDidLoad()
@@ -46,9 +47,15 @@ final class RootViewController: UIViewController {
         view.backgroundColor = Theme.background
         view.tintColor = Theme.accent
         // A new style or language builds the interface again.
-        guard shownStyle != Prefs.style || shownLanguage != Language.code else { return }
+        // 3.5.18: an imported font too — labels take their font when made, and
+        // the navigation bars' titles take it from here.
+        let font = Prefs.fontFile ?? ""
+        let titles: [NSAttributedString.Key: Any]? = font.isEmpty ? nil : [.font: Theme.fixed(17, .semibold)]
+        UINavigationBar.appearance().titleTextAttributes = titles
+        guard shownStyle != Prefs.style || shownLanguage != Language.code || shownFont != font else { return }
         shownStyle = Prefs.style
         shownLanguage = Language.code
+        shownFont = font
         let next: UIViewController = Prefs.style == .classic ? ClassicRootViewController() : MinimalRootViewController()
         let previous = current
         addChild(next)

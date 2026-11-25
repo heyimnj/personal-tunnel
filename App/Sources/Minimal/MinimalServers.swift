@@ -1392,7 +1392,7 @@ final class PillButton: UIControl {
     private let fill = UIView()
     private let icon = UIImageView()
     private let label = UILabel(font: Theme.font(17, .medium))
-    private let detail = UILabel(font: UIFont.monospacedDigitSystemFont(ofSize: 15, weight: .semibold), color: .secondaryLabel)
+    private let detail = UILabel(font: Theme.digits(15, .semibold), color: .secondaryLabel)
     private var progress: Double?
 
     override init(frame: CGRect) {
