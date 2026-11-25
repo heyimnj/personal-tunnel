@@ -343,7 +343,7 @@ class TapControl: UIControl {
     var rippleCornerRadius: CGFloat?
     private var rippleClip: UIView?
     /// The shade of the current press, faded when the press ends.
-    private var shade: CALayer?
+    private var shade: CAGradientLayer?
 
     override init(frame: CGRect) {
         super.init(frame: frame)
@@ -364,7 +364,7 @@ class TapControl: UIControl {
                 // 3.5.26 (the owner: like a heavy stone into calm water, slower but not
                 // slow): the surface sinks under the finger, and on release rises back
                 // with a couple of settling swings.
-                if !pressed { fadeShade() }
+                // 3.6.2: the spot is let go by endTracking / cancelTracking (spread or faded).
                 if reduce {
                     transform = .identity
                 } else if pressed {
@@ -397,8 +397,9 @@ class TapControl: UIControl {
     }
 
     override func endTracking(_ touch: UITouch?, with event: UIEvent?) {
+        let inside = isTouchInside
         super.endTracking(touch, with: event)
-        fadeShade()
+        fadeShade(spreading: inside)
     }
 
     override func cancelTracking(with event: UIEvent?) {
@@ -415,8 +416,7 @@ class TapControl: UIControl {
     }
 
     /// 3.5.26 (the owner): a stone into water. Under the finger a soft dimple grows
-    /// and stays while it holds; one ring runs out from it, slowing as it goes and
-    /// fading by the edges (about a second).
+    /// and stays while it holds. 3.6.2: no ring; on release the spot spreads.
     private func spread(from point: CGPoint) {
         let clip: UIView
         if let rippleClip { clip = rippleClip } else {
@@ -461,54 +461,59 @@ class TapControl: UIControl {
         shade.add(appear, forKey: "appear")
         self.shade = shade
 
-        // 3.5.25 (the owner): one ring, not several.
-        for index in 0 ..< 1 {
-            let ring = CAShapeLayer()
-            ring.fillColor = UIColor.clear.cgColor
-            ring.strokeColor = ink.withAlphaComponent(0.16 - CGFloat(index) * 0.035).cgColor
-            ring.opacity = 0
-            clip.layer.addSublayer(ring)
-            func circle(_ radius: CGFloat) -> CGPath {
-                UIBezierPath(ovalIn: CGRect(x: point.x - radius, y: point.y - radius, width: radius * 2, height: radius * 2)).cgPath
-            }
-            let start = CACurrentMediaTime() + Double(index) * 0.16
-            let duration = 0.95
-            let path = CABasicAnimation(keyPath: "path")
-            path.fromValue = circle(4)
-            path.toValue = circle(farthest * 1.05)
-            let width = CABasicAnimation(keyPath: "lineWidth")
-            width.fromValue = 3.5
-            width.toValue = 0.6
-            let fade = CAKeyframeAnimation(keyPath: "opacity")
-            fade.values = [0, 1, 0.6, 0]
-            fade.keyTimes = [0, 0.12, 0.55, 1]
-            let group = CAAnimationGroup()
-            group.animations = [path, width, fade]
-            group.duration = duration
-            group.beginTime = start
-            group.timingFunction = CAMediaTimingFunction(controlPoints: 0.15, 0.55, 0.3, 1)
-            group.fillMode = .backwards
-            CATransaction.begin()
-            CATransaction.setCompletionBlock { ring.removeFromSuperlayer() }
-            ring.add(group, forKey: "ring")
-            CATransaction.commit()
-        }
+        // 3.6.2 (the owner): no thin ring — the spot alone carries the touch, and
+        // on release it spreads over the whole plate (fadeShade).
+        shadeReach = farthest * 1.08 / dimpleRadius
     }
 
-    /// The press ended: the dimple fills back in over half a second.
-    private func fadeShade() {
+    /// The scale at which the spot covers the whole plate (set by `spread`).
+    private var shadeReach: CGFloat = 1
+
+    /// The press ended. 3.6.2 (the owner: the accent is on the spot now): let go
+    /// on the plate, the spot runs out over all of it — at the speed it grew, the
+    /// same soft round shape — a touch deeper as it goes, then fades. A press
+    /// taken by a scroll (or let go off the plate) only fades.
+    private func fadeShade(spreading: Bool = false) {
         guard let shade else { return }
         self.shade = nil
         let current = shade.presentation()?.opacity ?? shade.opacity
+        let scale = (shade.presentation()?.value(forKeyPath: "transform.scale") as? CGFloat) ?? 1
         CATransaction.begin()
         CATransaction.setCompletionBlock { shade.removeFromSuperlayer() }
-        let fade = CABasicAnimation(keyPath: "opacity")
-        fade.fromValue = current
-        fade.toValue = 0
-        fade.duration = 0.5
-        fade.timingFunction = CAMediaTimingFunction(name: .easeOut)
-        shade.opacity = 0
-        shade.add(fade, forKey: "fade")
+        guard spreading, !UIAccessibility.isReduceMotionEnabled else {
+            let fade = CABasicAnimation(keyPath: "opacity")
+            fade.fromValue = current
+            fade.toValue = 0
+            fade.duration = 0.5
+            fade.timingFunction = CAMediaTimingFunction(name: .easeOut)
+            shade.opacity = 0
+            shade.add(fade, forKey: "fade")
+            CATransaction.commit()
+            return
+        }
+        let duration = 0.85
+        let grow = CABasicAnimation(keyPath: "transform.scale")
+        grow.fromValue = scale
+        grow.toValue = max(scale, shadeReach)
+        grow.timingFunction = CAMediaTimingFunction(controlPoints: 0.2, 0.7, 0.3, 1)
+        // Deeper while it runs out (the ring's weight moves to the spot), then gone.
+        let ink = UIColor.label.resolvedColor(with: traitCollection)
+        let deepen = CABasicAnimation(keyPath: "colors")
+        deepen.fromValue = shade.colors
+        deepen.toValue = [ink.withAlphaComponent(0.11).cgColor, ink.withAlphaComponent(0.075).cgColor, ink.withAlphaComponent(0).cgColor]
+        deepen.duration = duration * 0.35
+        deepen.autoreverses = false
+        deepen.fillMode = .forwards
+        let fade = CAKeyframeAnimation(keyPath: "opacity")
+        fade.values = [current, 1, 0.85, 0]
+        fade.keyTimes = [0, 0.18, 0.5, 1]
+        let group = CAAnimationGroup()
+        group.animations = [grow, deepen, fade]
+        group.duration = duration
+        group.fillMode = .forwards
+        group.isRemovedOnCompletion = false
+        shade.removeAnimation(forKey: "spread")
+        shade.add(group, forKey: "release")
         CATransaction.commit()
     }
 }
