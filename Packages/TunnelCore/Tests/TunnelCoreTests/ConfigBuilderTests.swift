@@ -445,6 +445,12 @@ final class ConfigBuilderTests: XCTestCase {
         XCTAssertTrue(full.at("dns", "rules")?.arrayValue?.contains { $0["server"] == "dns-ru" && $0["rule_set"] == ["pt-ru-domains", "pt-ru-inside"] } ?? false)
         let direct = (full.at("dns", "servers")?.arrayValue ?? []).filter { $0["tag"]?.stringValue?.hasPrefix("dns-direct-") ?? false }
         XCTAssertFalse(direct.contains { $0["server"] == "77.88.8.8" })
+        // 3.5.17: QUIC is refused only after every rule that leaves the VPN.
+        let fullRules = full.at("route", "rules")?.arrayValue ?? []
+        let quicRule: JSONValue = ["network": "udp", "port": 443, "action": "reject", "no_drop": true]
+        XCTAssertEqual(fullRules.last, quicRule)
+        let bypass = fullRules.firstIndex { (rule: JSONValue) -> Bool in rule["outbound"] == "direct" && rule["rule_set"] != nil }
+        XCTAssertNotNil(bypass)
 
         options.adBlocking = false
         options.bypassRussia = false
@@ -455,7 +461,12 @@ final class ConfigBuilderTests: XCTestCase {
         XCTAssertEqual(server(bare, "dns-direct-https")?["servers"], ["dns-direct-1", "dns-direct-2"])
         XCTAssertEqual(server(bare, "dns-direct-1")?["server"], "9.9.9.9")
         XCTAssertNil(server(bare, "dns-ru"))
-        XCTAssertEqual(bare.at("route", "rules")?.arrayValue?.count, 2)
+        // 3.5.17: sniff, DNS and the QUIC refusal (on by default).
+        XCTAssertEqual(bare.at("route", "rules")?.arrayValue?.count, 3)
+        XCTAssertEqual(bare.at("route", "rules")?.arrayValue?.last, ["network": "udp", "port": 443, "action": "reject", "no_drop": true])
+        options.blockQUIC = false
+        let quic = try ConfigBuilder.build(subscription: subscription, selected: nil, options: options)
+        XCTAssertEqual(quic.at("route", "rules")?.arrayValue?.count, 2)
         XCTAssertNil(bare.at("route", "rule_set"))
         XCTAssertNil(bare.at("dns", "rules"))
     }

@@ -285,7 +285,7 @@ final class ServiceLogViewController: UIViewController, UITableViewDataSource, U
         text.append(Lf("Подписок %@, серверов %@", "\(library.subscriptions.count)", "\(library.subscriptions.reduce(0) { $0 + $1.nodes.count })"))
         let options = Prefs.tunnelOptions
         let flags: [(String, Bool)] = [("autoSelect", options.autoSelect), ("killSwitch", Prefs.killSwitch), ("bypassRussia", options.bypassRussia),
-                                       ("adBlocking", options.adBlocking), ("blockEncryptedDNS", options.blockEncryptedDNS), ("localNetwork", options.bypassPrivate),
+                                       ("adBlocking", options.adBlocking), ("blockEncryptedDNS", options.blockEncryptedDNS), ("localNetwork", options.bypassPrivate), ("blockQUIC", options.blockQUIC),
                                        ("secureDNS", Prefs.secureDNS), ("autoConnect", Prefs.autoConnect), ("autoPing", Prefs.autoPing)]
         text.append(L("Настройки: ") + flags.map { "\($0.0)=\($0.1 ? "on" : "off")" }.joined(separator: ", ") + ", log=\(options.logLevel), ping=\(Prefs.pingMode)")
         text.append("")

@@ -158,6 +158,9 @@ try write("legacy-1x-subscription", carried)
 try write("legacy-1x-auto-select", carried) { $0.autoSelect = true }
 try write("ad-block-extended", try samples[0].1.map(ShareLink.parse)) { $0.adBlockLevel = .extended }
 try write("ad-block-basic", try samples[0].1.map(ShareLink.parse)) { $0.adBlockLevel = .basic }
+// 3.5.17: a WebSocket path with its own query (a relay's token), to a local
+// server — `scripts/e2e-local.sh` runs real traffic through it.
+try write("e2e-local-ws-query", [try ShareLink.parse("vless://11111111-2222-3333-4444-555555555555@127.0.0.1:30443?security=none&type=ws&host=relay.example&path=%2Frelay%3Ftoken%3Dabc%26pool%3Dde#Local WS")])
 try write("auto-select", try samples.prefix(3).flatMap { try $0.1.map(ShareLink.parse) }) { $0.autoSelect = true }
 // What the app's own core measures servers with, without the VPN.
 for (name, subscription) in [("probe-all-together", Subscription(id: 1, name: "all", nodes: NodeAssembler.assemble(try samples.flatMap { try $0.1.map(ShareLink.parse) } + ContentImporter.parse(xray).nodes))),

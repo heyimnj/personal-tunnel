@@ -934,13 +934,15 @@ final class MinimalServersViewController: UIViewController, UIScrollViewDelegate
 
     private func copySelected() {
         let library = App.shared.library
-        let links = selectedSubscriptions.compactMap { library.subscription($0)?.url } + selectedPairs.compactMap { $0.1.link }
-        guard !links.isEmpty else {
-            App.shared.notice.value = L("У выбранного нет исходных ссылок: серверы добавлены из файла или из подписки в формате JSON.")
-            return
+        // 3.5.17: servers without a link (Xray JSON, a file) are copied as JSON.
+        let subscriptionLinks = selectedSubscriptions.compactMap { library.subscription($0)?.url }
+        guard let result = ServerExport.text(selectedPairs.map(\.1), extraLinks: subscriptionLinks) else { return }
+        Clipboard.copySecret(result.text)
+        switch (result.links, result.configs) {
+        case (_, 0): App.shared.notice.value = Lf("Скопировано ссылок: %@.", "\(result.links)")
+        case (0, _): App.shared.notice.value = Lf("Скопировано в JSON: %@.", Format.plural(result.configs, L("сервер"), L("сервера"), L("серверов")))
+        default: App.shared.notice.value = Lf("Скопировано ссылок: %@, в JSON: %@.", "\(result.links)", Format.plural(result.configs, L("сервер"), L("сервера"), L("серверов")))
         }
-        Clipboard.copySecret(links.joined(separator: "\n"))
-        App.shared.notice.value = Lf("Скопировано ссылок: %@.", "\(links.count)")
     }
 
     private func confirmDeleteSelected() {

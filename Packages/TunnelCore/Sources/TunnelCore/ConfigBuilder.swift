@@ -16,6 +16,12 @@ public struct TunnelOptions: Codable, Equatable, Sendable {
     public var bypassRussia = true
     /// Private (LAN) addresses go outside the VPN.
     public var bypassPrivate = true
+    /// 3.5.17 (battery): QUIC (UDP/443) that would go through the server is refused
+    /// at once, and apps (YouTube, TikTok, browsers) take HTTPS over TCP instead:
+    /// QUIC through the tunnel goes through the core's own network stack and then
+    /// inside the server's TCP connection — far more work per megabyte. QUIC that
+    /// leaves outside the VPN (the Russian bypass, the local network) is untouched.
+    public var blockQUIC = true
     /// Resolver for everything that goes through the VPN.
     public var dnsServer = "1.1.1.1"
     /// 3.3 (PT-09): resolvers outside the tunnel (server addresses), asked over
@@ -358,6 +364,12 @@ public enum ConfigBuilder {
             // Names that leave the tunnel are resolved outside it as well: 3.3 (PT-09)
             // by Yandex over DNS over HTTPS, only for these names.
             dnsRules.append(["rule_set": ["pt-ru-domains", "pt-ru-inside"], "server": .string(DirectResolvers.russianTag)])
+        }
+        if options.blockQUIC {
+            // After every rule that sends traffic outside the VPN, so only QUIC for
+            // the server is refused; a refusal (not a silent drop, `no_drop`) makes
+            // the app fall back to TCP at once instead of waiting out its timeout.
+            routeRules.append(["network": "udp", "port": 443, "action": "reject", "no_drop": true])
         }
 
         if probeExit != nil {

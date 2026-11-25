@@ -344,3 +344,30 @@ final class GroupIntervalTests: XCTestCase {
         XCTAssertEqual(ConfigBuilder.Carried.adapt(bare, known: known)["interval"], "10m")
     }
 }
+
+/// 3.5.17: servers without a link are copied as JSON that imports again.
+final class ServerExportTests: XCTestCase {
+    func testXrayServersRoundTripAndLinksStayLinks() throws {
+        let nodes = NodeAssembler.assemble(try ContentImporter.parse(ImportTests.xraySubscription).nodes)
+        XCTAssertTrue(nodes.allSatisfy { $0.link == nil && $0.source != nil })
+        let exported = try XCTUnwrap(ServerExport.text(nodes))
+        XCTAssertEqual(exported.links, 0)
+        XCTAssertEqual(exported.configs, nodes.count)
+        let again = try ContentImporter.parse(exported.text).nodes
+        XCTAssertEqual(again.count, nodes.count)
+        XCTAssertEqual(Set(again.map(\.name)), Set(nodes.map(\.name)))
+
+        let linked = NodeAssembler.assemble([try ShareLink.parse("trojan://pw@t.example:443#T")])
+        let both = try XCTUnwrap(ServerExport.text(linked))
+        XCTAssertEqual(both.text, "trojan://pw@t.example:443#T")
+        XCTAssertEqual(both.configs, 0)
+    }
+
+    func testSingBoxServersBecomeASingBoxDocument() throws {
+        let node = ServerNode(id: "s", name: "S", outbound: ["type": "shadowsocks", "tag": "s", "server": "s.example", "server_port": 8388, "method": "aes-256-gcm", "password": "pw"])
+        let exported = try XCTUnwrap(ServerExport.text([node]))
+        let again = try ContentImporter.parse(exported.text).nodes
+        XCTAssertEqual(again.count, 1)
+        XCTAssertNil(ServerExport.text([]))
+    }
+}

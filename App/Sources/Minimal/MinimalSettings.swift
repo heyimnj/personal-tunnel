@@ -173,6 +173,8 @@ final class NetworkSettingsViewController: FormViewController {
                 .link(symbol: nil, title: L("Блокировка рекламы")) { [weak self] in self?.navigationController?.pushViewController(AdBlockViewController(), animated: true) },
                 .toggle(title: L("Обход российских сайтов"), get: { Prefs.bypassRussia }, set: { Prefs.bypassRussia = $0; changed() }),
                 .note(L("Российские сайты открываются мимо VPN, с вашим настоящим IP. Сайт, который подгружает что-то с российского адреса, может увидеть настоящий IP рядом с IP VPN.")),
+                .toggle(title: L("Без QUIC через VPN"), get: { Prefs.blockQUIC }, set: { Prefs.blockQUIC = $0; changed() }),
+                .note(L("Видео и сайты, которые идут через VPN, грузятся по обычному HTTPS вместо QUIC: так туннель тратит заметно меньше батареи. Звонки, игры и сайты мимо VPN не затрагиваются.")),
                 .toggle(title: L("Защищённый DNS"), get: { Prefs.secureDNS }, set: { Prefs.secureDNS = $0; App.shared.tunnel.applySettings() }),
                 .toggle(title: L("Локальная сеть"), get: { Prefs.localNetwork }, set: { Prefs.localNetwork = $0; changed() }),
                 .note(L("Серверы DNS берутся из конфигурации. После изменения системных маршрутов переподключите VPN.")),

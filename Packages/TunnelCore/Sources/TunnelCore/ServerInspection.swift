@@ -114,3 +114,35 @@ public enum ServerInspection {
         return String(path[...mark]) + "***"
     }
 }
+
+/// 3.5.17: what «Скопировать» puts on the clipboard for selected servers. The
+/// owner: a server with no link (from an Xray JSON subscription or a file) is
+/// copied as JSON — its secrets included, like a link, since it is copied to be
+/// imported elsewhere.
+public enum ServerExport {
+    public struct Result: Equatable, Sendable {
+        public var text: String
+        public var links: Int
+        public var configs: Int
+    }
+
+    /// Links stay links. Servers without one: the provider's Xray configs (an
+    /// array Happ, v2rayNG and this app import), or for servers from a sing-box
+    /// file a sing-box document with their outbounds. Nil when there is nothing.
+    public static func text(_ nodes: [ServerNode], extraLinks: [String] = []) -> Result? {
+        let links = extraLinks + nodes.compactMap(\.link)
+        let unlinked = nodes.filter { $0.link == nil }
+        var blocks: [String] = []
+        if !links.isEmpty { blocks.append(links.joined(separator: "\n")) }
+        let xray: [JSONValue] = unlinked.compactMap { node in
+            guard case var .object(fields)? = node.source else { return nil }
+            fields["remarks"] = .string(node.name)
+            return .object(fields)
+        }
+        if !xray.isEmpty { blocks.append(JSONValue.array(xray).serialized(pretty: true)) }
+        let singBox = unlinked.filter { $0.source == nil }.flatMap { [$0.outbound] + $0.members }
+        if !singBox.isEmpty { blocks.append(JSONValue.object(["outbounds": .array(singBox)]).serialized(pretty: true)) }
+        guard !blocks.isEmpty else { return nil }
+        return Result(text: blocks.joined(separator: "\n\n"), links: links.count, configs: unlinked.count)
+    }
+}

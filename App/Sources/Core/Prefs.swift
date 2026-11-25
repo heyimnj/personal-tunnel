@@ -252,6 +252,12 @@ enum Prefs {
         set { defaults.set(newValue, forKey: "pt.net.localNetwork") }
     }
 
+    /// «Без QUIC через VPN» (3.5.17, battery): on by default.
+    static var blockQUIC: Bool {
+        get { bool("pt.net.blockQUIC", true) }
+        set { defaults.set(newValue, forKey: "pt.net.blockQUIC") }
+    }
+
     /// «Kill switch» (3.1.6): while the VPN is on but not connected (reconnecting,
     /// or ended by the system) nothing goes to the internet around it.
     static var killSwitch: Bool {
@@ -360,6 +366,7 @@ enum Prefs {
         options.blockEncryptedDNS = blockEncryptedDNS
         options.bypassRussia = bypassRussia
         options.bypassPrivate = localNetwork
+        options.blockQUIC = blockQUIC
         options.autoSelect = autoSelect
         options.directResolvers = DirectResolvers.addresses(directResolvers)
         return options

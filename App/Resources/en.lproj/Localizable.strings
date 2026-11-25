@@ -728,3 +728,9 @@
 "Подписок %@, серверов %@" = "Subscriptions %@, servers %@";
 "Настройки: " = "Settings: ";
 "Скопировано строк: %@ из %@." = "Copied %@ of %@ lines.";
+
+/* 3.5.17: QUIC through the VPN */
+"Без QUIC через VPN" = "No QUIC through VPN";
+"Видео и сайты, которые идут через VPN, грузятся по обычному HTTPS вместо QUIC: так туннель тратит заметно меньше батареи. Звонки, игры и сайты мимо VPN не затрагиваются." = "Video and sites that go through the VPN load over regular HTTPS instead of QUIC, so the tunnel uses noticeably less battery. Calls, games and sites outside the VPN are not affected.";
+"Скопировано в JSON: %@." = "Copied as JSON: %@.";
+"Скопировано ссылок: %@, в JSON: %@." = "Links copied: %@; as JSON: %@.";
