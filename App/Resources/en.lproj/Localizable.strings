@@ -782,3 +782,9 @@
 "Сбросить фон" = "Reset background";
 "Как будет выглядеть фон" = "How the background will look";
 "Два цвета: сверху и снизу. Три: два сверху и один снизу. Четыре: по углам." = "Two colours: top and bottom. Three: two on top and one at the bottom. Four: one in each corner.";
+
+/* 3.5.25 */
+"Сейчас" = "Now";
+"больше всего %@" = "most %@";
+"Маршруты: новый поток соединений от ядра (снимок)" = "Routes: a new connection stream from the core (snapshot)";
+"Маршруты: без исходящего %@ (%@ соед.), обновления без начала %@ (%@)" = "Routes: no outbound %@ (%@ conn.), updates without a start %@ (%@)";

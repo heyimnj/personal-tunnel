@@ -593,12 +593,17 @@ final class MinimalAnalyticsViewController: UIViewController, UIGestureRecognize
     private let routeRings = RouteRingsView()
     /// 3.5.23: «Трафик по времени».
     private let timelineBars = TimelineBarsView()
-    private let timelineSpan = UILabel(font: Theme.font(.caption2), color: .secondaryLabel)
+    /// 3.5.25 (the owner): «Сейчас | Сеанс» in the speed card — the live graph or the
+    /// session's columns under the same figures.
+    private let heroMode = UISegmentedControl(items: [L("Сейчас"), L("Сеанс")])
+    private let timelineBox = UIStackView(.vertical, spacing: 4, alignment: .fill, [])
+    private var sessionMode: Bool {
+        get { UserDefaults.standard.bool(forKey: "pt.analytics.sessionGraph") }
+        set { UserDefaults.standard.set(newValue, forKey: "pt.analytics.sessionGraph") }
+    }
     private let timelineAxis = [UILabel(font: Theme.digits(Theme.font(.caption2).pointSize, .regular), color: .secondaryLabel),
                                 UILabel(font: Theme.digits(Theme.font(.caption2).pointSize, .regular), color: .secondaryLabel),
                                 UILabel(font: Theme.digits(Theme.font(.caption2).pointSize, .regular), color: .secondaryLabel)]
-    private let timelinePeakTitle = UILabel(font: Theme.font(.caption1), color: .secondaryLabel)
-    private let timelinePeak = UILabel(font: Theme.digits(Theme.font(.footnote).pointSize, .semibold))
     private var timelineShownAt: Date?
     private let routeLegend = UIStackView(.vertical, spacing: 3, alignment: .fill, [])
     private let routesEmpty = UILabel(L("Данные соединений пока недоступны"), font: Theme.font(.footnote), color: .secondaryLabel, lines: 0)
@@ -837,27 +842,6 @@ final class MinimalAnalyticsViewController: UIViewController, UIGestureRecognize
         chart.pressScale = 0.98
         connections.add([chart, tcpRow, udpRow])
 
-        // 3.5.23 (the owner): the session's traffic over time (4:2), under the tiles.
-        let timeline = AnalyticsCard(insets: UIEdgeInsets(top: 14, left: 14, bottom: 12, right: 14))
-        timeline.stack.alignment = .fill
-        timeline.stack.spacing = 6
-        timelineSpan.textAlignment = .right
-        timelineBars.setContentHuggingPriority(.defaultLow, for: .vertical)
-        timelineBars.setContentCompressionResistancePriority(.defaultLow, for: .vertical)
-        timelineBars.separator = Theme.card
-        timelineAxis[1].textAlignment = .center
-        timelineAxis[2].textAlignment = .right
-        let axis = UIStackView(.horizontal, spacing: 0, alignment: .fill, timelineAxis)
-        axis.distribution = .fillEqually
-        timelinePeak.textAlignment = .right
-        timelinePeak.setContentHuggingPriority(.required, for: .horizontal)
-        timelinePeakTitle.lineBreakMode = .byTruncatingTail
-        let timelineHead = UIStackView(.horizontal, spacing: 8, alignment: .center, [small(L("Трафик по времени")), UIView(), timelineSpan])
-        let timelineFoot = UIStackView(.horizontal, spacing: 8, alignment: .center, [timelinePeakTitle, UIView(), timelinePeak])
-        for item in [timelineHead, timelineBars, axis, timelineFoot] as [UIView] { timeline.stack.addArrangedSubview(item) }
-        timeline.stack.setCustomSpacing(10, after: timelineHead)
-        timeline.stack.setCustomSpacing(8, after: axis)
-
         // Routes (4:2): the rings on the left, the largest routes beside them.
         let routes = AnalyticsCard(insets: UIEdgeInsets(top: 14, left: 14, bottom: 14, right: 14))
         routes.stack.alignment = .fill
@@ -909,18 +893,16 @@ final class MinimalAnalyticsViewController: UIViewController, UIGestureRecognize
         let content = UIStackView(.vertical, spacing: 8, alignment: .fill, [
             header, hero,
             AnalyticsGroup.caption(L("Сеанс")), session, tiles,
-            timeline, routes, AnalyticsGroup.caption(L("Соединения")), connections, memory, routesNote,
+            routes, AnalyticsGroup.caption(L("Соединения")), connections, memory, routesNote,
             links,
         ])
         // 4:2 — as tall as the square tiles. Only now: the views must already share
         // a parent (3.5 (271) tied two of them earlier and crashed at launch).
         routes.heightAnchor.constraint(equalTo: traffic.heightAnchor).isActive = true
-        timeline.heightAnchor.constraint(equalTo: traffic.heightAnchor).isActive = true
         memory.heightAnchor.constraint(equalTo: traffic.heightAnchor).isActive = true
         content.setCustomSpacing(6, after: header)
         content.setCustomSpacing(12, after: session)
         content.setCustomSpacing(12, after: tiles)
-        content.setCustomSpacing(12, after: timeline)
         content.setCustomSpacing(18, after: routes)
         content.setCustomSpacing(12, after: connections)
         content.setCustomSpacing(10, after: memory)
@@ -1059,9 +1041,15 @@ final class MinimalAnalyticsViewController: UIViewController, UIGestureRecognize
             let label = UIStackView(.horizontal, spacing: 4, alignment: .center, [icon, UILabel(caption, font: Theme.font(.footnote, .medium), color: color)])
             return UIStackView(.vertical, spacing: 2, alignment: .leading, [figure, label])
         }
-        let now = UILabel(L("СЕЙЧАС"), font: Theme.font(.caption2, .semibold), color: .secondaryLabel)
+        heroMode.selectedSegmentIndex = sessionMode ? 1 : 0
+        heroMode.setTitleTextAttributes([.font: Theme.font(.caption1, .medium)], for: .normal)
+        heroMode.setTitleTextAttributes([.font: Theme.font(.caption1, .semibold)], for: .selected)
+        heroMode.setContentHuggingPriority(.required, for: .horizontal)
+        heroMode.addAction(UIAction { [weak self] _ in self?.switchHero() }, for: .valueChanged)
         graphPeak.textAlignment = .right
-        let top = UIStackView(.horizontal, spacing: 8, alignment: .center, [now, UIView(), graphPeak])
+        graphPeak.adjustsFontSizeToFitWidth = true
+        graphPeak.minimumScaleFactor = 0.7
+        let top = UIStackView(.horizontal, spacing: 8, alignment: .center, [heroMode, UIView(), graphPeak])
         let speeds = UIStackView(.horizontal, spacing: 28, alignment: .top, [
             speed(downSpeed, downUnit, "arrow.down", L("Загрузка"), SpeedGraphView.downColor),
             speed(upSpeed, upUnit, "arrow.up", L("Отдача"), SpeedGraphView.upColor), UIView(),
@@ -1077,6 +1065,22 @@ final class MinimalAnalyticsViewController: UIViewController, UIGestureRecognize
         hero.clipsToBounds = true
         graph.translatesAutoresizingMaskIntoConstraints = false
         hero.addSubview(graph)
+        // The session's columns over the same room, with their time axis.
+        timelineBars.separator = Theme.card
+        timelineAxis[1].textAlignment = .center
+        timelineAxis[2].textAlignment = .right
+        let axis = UIStackView(.horizontal, spacing: 0, alignment: .fill, timelineAxis)
+        axis.distribution = .fillEqually
+        timelineBox.addArrangedSubview(timelineBars)
+        timelineBox.addArrangedSubview(axis)
+        timelineBox.translatesAutoresizingMaskIntoConstraints = false
+        hero.addSubview(timelineBox)
+        NSLayoutConstraint.activate([
+            timelineBox.topAnchor.constraint(equalTo: room.topAnchor, constant: 4), timelineBox.bottomAnchor.constraint(equalTo: hero.bottomAnchor, constant: -10),
+            timelineBox.leadingAnchor.constraint(equalTo: hero.leadingAnchor, constant: 16), timelineBox.trailingAnchor.constraint(equalTo: hero.trailingAnchor, constant: -16),
+        ])
+        graph.alpha = sessionMode ? 0 : 1
+        timelineBox.alpha = sessionMode ? 1 : 0
         graphHint.textAlignment = .center
         graphHint.numberOfLines = 0
         graphHint.translatesAutoresizingMaskIntoConstraints = false
@@ -1154,8 +1158,20 @@ final class MinimalAnalyticsViewController: UIViewController, UIGestureRecognize
     private func showGraph(_ history: TrafficHistory) {
         graph.history = history
         let peak = max(0, (history.down + history.up).max() ?? 0)
+        guard !sessionMode else { return }
         let text = peak > 0 ? Lf("пик сейчас %@", Format.speed(peak)) : ""  // 3.5.23: the last two minutes, not the session
         if graphPeak.text != text { graphPeak.text = text }
+    }
+
+    private func switchHero() {
+        Haptics.selection()
+        sessionMode = heroMode.selectedSegmentIndex == 1
+        timelineShownAt = nil
+        if sessionMode { showTimeline() } else { showGraph(App.shared.core.history.value) }
+        UIView.animate(withDuration: 0.25) {
+            self.graph.alpha = self.sessionMode ? 0 : 1
+            self.timelineBox.alpha = self.sessionMode ? 1 : 0
+        }
     }
 
     /// «Трафик по времени»: the extension's points (stored with its memory sample,
@@ -1166,10 +1182,8 @@ final class MinimalAnalyticsViewController: UIViewController, UIGestureRecognize
         timelineShownAt = Date()
         guard let since = App.shared.tunnel.connectedSince.value, App.shared.core.status.value != nil else {
             timelineBars.buckets = []
-            timelineSpan.showText("")
             for label in timelineAxis { label.showText("") }
-            timelinePeakTitle.showText(L("Появится, когда VPN подключён"))
-            timelinePeak.showText("")
+            if sessionMode { graphPeak.showText("") }
             return
         }
         let timeline = AppGroup.defaults.data(forKey: SharedKey.trafficTimeline).flatMap(TrafficTimeline.init(encoded:)) ?? TrafficTimeline()
@@ -1185,21 +1199,22 @@ final class MinimalAnalyticsViewController: UIViewController, UIGestureRecognize
         timelineBars.minimumPeak = width * 1_000_000 / 60
         timelineBars.buckets = buckets
         let minutes = Lf("%@ мин", "\(width / 60)")
-        timelineSpan.showText(Lf("столбик = %@", minutes))
+
         let clock = DateFormatter()
         clock.locale = Language.locale
         clock.dateFormat = "HH:mm"
         let end = start + Int64(slots) * width
         let times = [start, start + (end - start) / 2, end].map { clock.string(from: Date(timeIntervalSince1970: TimeInterval($0))) }
-        for (label, text) in zip(timelineAxis, times) { label.showText(text) }
+        timelineAxis[0].showText(times[0])
+        timelineAxis[1].showText(Lf("столбик = %@", minutes))
+        timelineAxis[2].showText(times[2])
+        guard sessionMode else { return }
         if let busiest = buckets.max(by: { $0.total < $1.total }), busiest.total > 0 {
-            timelinePeakTitle.showText(Lf("самые загруженные %@", minutes))
             let at = clock.string(from: Date(timeIntervalSince1970: TimeInterval(busiest.start)))
             // 3.5.25: how much, not a speed rounded down to «≈0 KB/s».
-            timelinePeak.showText(at + " · " + Format.bytes(busiest.total))
+            graphPeak.showText(Lf("больше всего %@", at + " · " + Format.bytes(busiest.total)))
         } else {
-            timelinePeakTitle.showText(L("Трафика пока нет"))
-            timelinePeak.showText("")
+            graphPeak.showText(L("Трафика пока нет"))
         }
     }
 

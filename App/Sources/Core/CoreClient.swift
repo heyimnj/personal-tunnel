@@ -391,6 +391,26 @@ final class CoreClient {
 
     /// Owned by `parse`: the route of each open connection, for its traffic updates.
     private var routeOf: [String: String] = [:]
+    /// 3.5.25 (the owner: «Без разбивки» again, 360 KB of 3 MB with the app open):
+    /// what the routes could not take, noted in the log once a minute to find why.
+    private var missed: (noRoute: Int64, noRouteCount: Int, orphan: Int64, orphanCount: Int) = (0, 0, 0, 0)
+    private var missedNotedAt = Date()
+
+    /// Once a minute, while the app watches: what the routes missed, if anything.
+    private func noteMissed(reset: Bool) {
+        if reset { noteFromParse(L("Маршруты: новый поток соединений от ядра (снимок)")) }
+        guard Date().timeIntervalSince(missedNotedAt) > 60 else { return }
+        missedNotedAt = Date()
+        let value = missed
+        missed = (0, 0, 0, 0)
+        guard value.noRoute > 0 || value.orphan > 0 else { return }
+        noteFromParse(Lf("Маршруты: без исходящего %@ (%@ соед.), обновления без начала %@ (%@)",
+                Format.bytes(value.noRoute), "\(value.noRouteCount)", Format.bytes(value.orphan), "\(value.orphanCount)"))
+    }
+
+    private func noteFromParse(_ text: String) {
+        DispatchQueue.main.async { self.note(text, level: 4) }
+    }
 
     /// The route a connection's bytes count under: the tunnel's DNS and (3.2.10) the
     /// app's own server tests through the kill switch's way out under their own names.
@@ -404,13 +424,18 @@ final class CoreClient {
     /// stream's snapshot) adds what it moved beyond what was counted for it; a
     /// traffic update adds its bytes.
     private func countRoutes(_ events: LibboxConnectionEvents) {
+        defer { noteMissed(reset: events.reset) }
         guard let iterator = events.iterator() else { return }
         while iterator.hasNext() {
             guard let event = iterator.next() else { continue }
             let id = event.id_
             if let item = event.connection {
                 let route = Self.route(of: item)
-                guard !route.isEmpty else { continue }
+                guard !route.isEmpty else {
+                    missed.noRoute += item.uplinkTotal + item.downlinkTotal
+                    missed.noRouteCount += 1
+                    continue
+                }
                 let total = item.uplinkTotal + item.downlinkTotal
                 let delta = total - counted[id, default: 0]
                 if delta > 0 {
@@ -420,7 +445,12 @@ final class CoreClient {
                 if item.closedAt == 0 { routeOf[id] = route } else { routeOf[id] = nil }
             } else {
                 let delta = event.uplinkDelta + event.downlinkDelta
-                guard delta > 0, let route = routeOf[id] else { continue }
+                guard delta > 0 else { continue }
+                guard let route = routeOf[id] else {
+                    missed.orphan += delta
+                    missed.orphanCount += 1
+                    continue
+                }
                 counted[id, default: 0] += delta
                 sessionRoutes[route, default: 0] += delta
             }
