@@ -876,23 +876,8 @@ final class MinimalAnalyticsViewController: UIViewController, UIGestureRecognize
         let legendColumn = UIStackView(.vertical, spacing: 0, alignment: .fill, [above, routeLegend, below])
         above.heightAnchor.constraint(equalTo: below.heightAnchor).isActive = true
         let routesBody = UIStackView(.horizontal, spacing: 16, alignment: .fill, [routeRings, legendColumn])
-        // 3.5.26 (the owner): the routes' note opens from the ⓘ by the title.
-        let routesTitle = UIButton(type: .system)
-        routesTitle.setAttributedTitle({
-            let text = NSMutableAttributedString(string: L("Маршруты за сеанс") + " ", attributes: [.font: Theme.font(.footnote, .medium), .foregroundColor: UIColor.secondaryLabel])
-            if let mark = UIImage(systemName: "info.circle", withConfiguration: UIImage.SymbolConfiguration(pointSize: 11))?.withTintColor(.tertiaryLabel, renderingMode: .alwaysOriginal) {
-                text.append(NSAttributedString(attachment: NSTextAttachment(image: mark)))
-            }
-            return text
-        }(), for: .normal)
-        routesTitle.contentHorizontalAlignment = .leading
-        routesTitle.addAction(UIAction { [weak self, weak routesTitle] _ in
-            guard let self, let routesTitle else { return }
-            Haptics.tap()
-            InfoBubble.show(L("Маршруты — куда ушёл трафик сеанса: через какой сервер или напрямую. «Без разбивки» — трафик, пока приложение было закрыто: ядро сохраняет только последние соединения."),
-                            under: routesTitle, in: self.view.window ?? self.view)
-        }, for: .touchUpInside)
-        for item in [routesTitle, routesBody] as [UIView] { routes.stack.addArrangedSubview(item) }
+        // 3.5.26 (the owner): no note for the routes at all.
+        for item in [small(L("Маршруты за сеанс")), routesBody] as [UIView] { routes.stack.addArrangedSubview(item) }
 
         // The core's memory (4:2): the figure, then its line over two minutes,
         // drawn to whatever room the card leaves (scaled inside its own box).
