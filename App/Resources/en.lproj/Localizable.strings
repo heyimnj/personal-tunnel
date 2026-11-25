@@ -757,3 +757,15 @@
 "самые загруженные %@" = "busiest %@";
 "Трафика пока нет" = "No traffic yet";
 "пик сейчас %@" = "peak now %@";
+
+/* 3.5.23: appearance */
+"Цвет карточек аналитики" = "Analytics card colour";
+"Плотность карточек аналитики" = "Analytics card density";
+"Шрифт" = "Font";
+"Сбросить шрифт" = "Reset font";
+"Сбросить всё" = "Reset all";
+"Сбросить всё?" = "Reset all?";
+"Сбросить" = "Reset";
+"Вернуть исходный цвет" = "Return to the original colour";
+"Цвета, фон, шрифт, стекло и прозрачность вернутся к исходным." = "Colours, background, font, glass and transparency go back to how they were.";
+"Фон главной и аналитики в тёмной теме: чёрный, а без AMOLED — тёмно-серый. Свой цвет фона задаётся в «Цветах»." = "Home and analytics background in the dark theme: black, or dark grey without AMOLED. A colour of your own is set in «Colours».";

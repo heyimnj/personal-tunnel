@@ -46,11 +46,12 @@ final class MinimalSettingsViewController: FormViewController {
     }
 }
 
-/// «Внешний вид» (3.5, the owner's choice): the colours, the background and
-/// the font are here, not one page further; the glass has its own page.
-/// «Обои» is gone: its one switch (AMOLED) was in «Цвета и шрифт» as well.
+/// «Внешний вид». 3.5.23 (the owner): every colour in «Цвета» — each opens the
+/// colour panel with its own «Сбросить»; nothing applies until the ✓ at the top
+/// right (it shows while something is changed); «Сбросить всё» at the bottom. The
+/// card background's density is under «Фон»; the background is a colour, not a switch.
 final class AppearanceViewController: ColorsViewController {
-    override init() { super.init(title: L("Внешний вид")) }
+    init() { super.init(title: L("Внешний вид"), background: true) }
 
     override func build() -> [FormSection] {
         [
@@ -62,18 +63,51 @@ final class AppearanceViewController: ColorsViewController {
                 .picker(title: L("Язык"), options: [("system", L("Системный")), ("ru", "Русский"), ("en", "English")], get: { Prefs.language }, set: { Prefs.language = $0 }),
                 .note(L("Системный — язык устройства: русский на русском iPhone, иначе английский.")),
             ]),
-        ] + colorSections(background: true) + [
-            // 3.5 beta 3 (the owner): three layouts of the servers sheet.
-            FormSection(footer: L("«Заголовок слева» — заголовок и кнопки сверху; «Действия снизу» — кнопки в панели внизу; «Поиск в шапке» — поиск сверху, сортировка сегментами."), [
+            FormSection(L("Цвета"), colorRows()),
+            FormSection(L("Фон"), [
+                .toggle(title: L("AMOLED — чёрный фон в тёмной теме"), get: { Prefs.amoled }, set: { Prefs.amoled = $0 }),
+                .note(L("Фон главной и аналитики в тёмной теме: чёрный, а без AMOLED — тёмно-серый. Свой цвет фона задаётся в «Цветах».")),
+                // 3.5 beta 2 (the owner): how solid the analytics cards are.
+                .slider(title: L("Плотность карточек аналитики"), get: { Prefs.cardFill }, set: { Prefs.cardFill = $0 }),
+            ]),
+            fontSection(),
+            FormSection([
                 .picker(title: L("Панель серверов"), options: [("header", L("Заголовок слева")), ("bottom", L("Действия снизу")), ("search", L("Поиск в шапке"))],
                         get: { Prefs.serversLayout }, set: { Prefs.serversLayout = $0 }),
+                .note(L("«Заголовок слева» — заголовок и кнопки сверху; «Действия снизу» — кнопки в панели внизу; «Поиск в шапке» — поиск сверху, сортировка сегментами.")),
             ]),
             FormSection([
                 .link(symbol: "drop", title: L("Стекло и прозрачность")) { [weak self] in self?.navigationController?.pushViewController(GlassSettingsViewController(), animated: true) },
                 .toggle(title: L("Только иконки вкладок"), get: { Prefs.hideTabLabels }, set: { Prefs.hideTabLabels = $0 }),
                 .toggle(title: L("Акцентная активная точка"), get: { Prefs.accentDots }, set: { Prefs.accentDots = $0 }),
             ]),
+            FormSection([
+                .button(title: L("Сбросить всё"), destructive: true) { [weak self] in self?.confirmResetAll() },
+            ]),
         ]
+    }
+
+    private func confirmResetAll() {
+        let alert = UIAlertController(title: L("Сбросить всё?"), message: L("Цвета, фон, шрифт, стекло и прозрачность вернутся к исходным."), preferredStyle: .alert)
+        alert.addAction(UIAlertAction(title: L("Отмена"), style: .cancel))
+        alert.addAction(UIAlertAction(title: L("Сбросить"), style: .destructive) { [weak self] _ in self?.resetAll() })
+        present(alert, animated: true)
+    }
+
+    private func resetAll() {
+        discardChanges()
+        Prefs.setAccentHex(nil)
+        Prefs.customBackground = false
+        Prefs.textHex = nil
+        Prefs.panelHex = nil
+        Prefs.cardHex = nil
+        Prefs.cardFill = Prefs.defaultCardFill
+        Prefs.amoled = true
+        Prefs.fontName = ""
+        Prefs.fontFile = nil
+        Prefs.glassStyle = Prefs.defaultGlassStyle
+        for key in [Prefs.glassOpacityKey, Prefs.buttonOpacityKey, Prefs.serverOpacityKey] { Prefs.setOpacity(Prefs.defaultOpacity, key) }
+        rebuild()
     }
 }
 
@@ -94,15 +128,6 @@ final class GlassSettingsViewController: FormViewController {
                 slider(L("Весь интерфейс"), Prefs.glassOpacityKey),
                 slider(L("Кнопка подключения"), Prefs.buttonOpacityKey),
                 slider(L("Выбранный сервер"), Prefs.serverOpacityKey),
-            ]),
-            // 3.5 beta 2 (the owner): the cards of analytics — how solid, and their colour.
-            FormSection(L("Фон карточек"), footer: L("Карточки аналитики: график скорости, сеанс, ядро, соединения, маршруты."), [
-                .slider(title: L("Плотность фона"), get: { Prefs.cardFill }, set: { Prefs.cardFill = $0 }),
-                .color(title: L("Цвет фона"), get: { UIColor(hex: Prefs.cardHex) ?? UIColor.secondarySystemBackground }, set: { Prefs.cardHex = $0.hexString }),
-                .button(title: L("Сбросить фон карточек"), destructive: false) {
-                    Prefs.cardHex = nil
-                    Prefs.cardFill = Prefs.defaultCardFill
-                },
             ]),
         ]
     }
@@ -216,88 +241,125 @@ final class NetworkSettingsViewController: FormViewController {
     }
 }
 
-/// «Цвета и шрифт». Classic opens it as a page; Minimal has the same rows on
-/// «Внешний вид» (3.5), with its background's colours as well.
+/// «Цвета и шрифт» (Classic's page) and the base of «Внешний вид». 3.5.23 (the
+/// owner): a colour changes nothing until the ✓ at the top right — it shows while
+/// something waits — and the colour panel has «Сбросить» for its own part.
 class ColorsViewController: FormViewController {
-    init() { super.init(title: L("Цвета и шрифт")) }
-    override init(title: String) { super.init(title: title) }
-    private var pendingAccent: UIColor?
-    private var pendingText: UIColor?
-    private var pendingPanel: UIColor?
+    enum Part: Hashable { case accent, background, text, panel, cards }
+    enum Change { case color(UIColor), reset }
 
-    override func build() -> [FormSection] { colorSections(background: false) }
+    private let withBackground: Bool
+    private var pending: [Part: Change] = [:] { didSet { showSave() } }
+    private lazy var saveItem: UIBarButtonItem = {
+        var config = UIButton.Configuration.filled()
+        config.image = UIImage(systemName: "checkmark", withConfiguration: UIImage.SymbolConfiguration(pointSize: 15, weight: .bold))
+        config.baseBackgroundColor = Theme.accent
+        config.baseForegroundColor = .white
+        config.cornerStyle = .capsule
+        let button = UIButton(configuration: config, primaryAction: UIAction { [weak self] _ in self?.save() })
+        button.accessibilityLabel = L("Сохранить")
+        button.frame = CGRect(x: 0, y: 0, width: 36, height: 36)
+        return UIBarButtonItem(customView: button)
+    }()
 
-    /// `background`: the Minimal background's own colours (`Wallpaper`).
-    func colorSections(background: Bool) -> [FormSection] {
-        var colors: [FormRow] = [
-            .color(title: L("Акцентный цвет"), get: { [weak self] in self?.pendingAccent ?? Theme.accent }, set: { [weak self] in self?.pendingAccent = $0 }),
-        ]
-        // Minimal: AMOLED stands with the background.
-        if !background { colors.append(.toggle(title: L("AMOLED — чёрный фон в тёмной теме"), get: { Prefs.amoled }, set: { Prefs.amoled = $0 })) }
-        colors.append(.button(title: L("Применить цвета"), destructive: false) { [weak self] in
-            if let color = self?.pendingAccent { Prefs.setAccentHex(color.hexString) }
-            self?.pendingAccent = nil
-        })
-        colors.append(.button(title: L("Сбросить цвета"), destructive: false) { [weak self] in
-            self?.pendingAccent = nil
-            Prefs.setAccentHex(nil)
-        })
-        var sections: [FormSection] = [
-            FormSection(L("Цвета"), footer: background ? nil : L("Цвета этого интерфейса сохраняются отдельно. Выключите AMOLED для тёмно-серого фона."), colors),
-        ]
-        if background { sections.append(backgroundSection()) }
-        sections.append(FormSection(L("Текст и шрифт"), [
-            .color(title: L("Цвет текста"), get: { [weak self] in self?.pendingText ?? Theme.text }, set: { [weak self] in self?.pendingText = $0 }),
-            .color(title: L("Цвет панелей"), get: { [weak self] in self?.pendingPanel ?? Theme.panel }, set: { [weak self] in self?.pendingPanel = $0 }),
-            .button(title: L("Применить цвет текста и панелей"), destructive: false) { [weak self] in
-                if let color = self?.pendingText { Prefs.textHex = color.hexString }
-                if let color = self?.pendingPanel { Prefs.panelHex = color.hexString }
-                self?.pendingText = nil
-                self?.pendingPanel = nil
-            },
-            .button(title: L("Импорт шрифта TTF / OTF"), destructive: false) { [weak self] in self?.importFont() },
-            .note(L("Шрифт: ") + (Prefs.fontName.isEmpty ? L("системный") : Prefs.fontName)),
-            .button(title: L("Сбросить текст, панели и шрифт"), destructive: false) {
-                Prefs.fontName = ""
-                Prefs.textHex = nil
-                Prefs.panelHex = nil
-                Prefs.fontFile = nil
-            },
-        ]))
-        return sections
+    init() {
+        withBackground = false
+        super.init(title: L("Цвета и шрифт"))
     }
 
-    /// 3.5: the Home and analytics background of up to four colours, as 1.x had it.
-    private func backgroundSection() -> FormSection {
-        var rows: [FormRow] = [
+    init(title: String, background: Bool) {
+        withBackground = background
+        super.init(title: title)
+    }
+
+    override func build() -> [FormSection] {
+        [FormSection(L("Цвета"), colorRows() + [
             .toggle(title: L("AMOLED — чёрный фон в тёмной теме"), get: { Prefs.amoled }, set: { Prefs.amoled = $0 }),
-            .toggle(title: L("Свой фон"), get: { Prefs.customBackground }, set: { Prefs.customBackground = $0 }),
+        ]), fontSection()]
+    }
+
+    /// One row a part; a tap opens the colour panel with «Сбросить».
+    func colorRows() -> [FormRow] {
+        var parts: [(Part, String)] = [(.accent, L("Акцентный цвет"))]
+        if withBackground { parts.append((.background, L("Цвет фона"))) }
+        parts += [(.text, L("Цвет текста")), (.panel, L("Цвет панелей"))]
+        if withBackground { parts.append((.cards, L("Цвет карточек аналитики"))) }
+        return parts.map { part, title in
+            .paint(title: title, get: { [weak self] in self?.shown(part) ?? .clear }, set: { [weak self] in self?.pending[part] = .color($0) },
+                   reset: { [weak self] in self?.pending[part] = .reset })
+        }
+    }
+
+    /// The part's colour as it would be saved: the change waiting, or what is stored.
+    private func shown(_ part: Part) -> UIColor {
+        switch pending[part] {
+        case let .color(color)?: return color
+        case .reset?: return Self.standard(part, traits: traitCollection)
+        case nil: return Self.stored(part, traits: traitCollection)
+        }
+    }
+
+    private static func stored(_ part: Part, traits: UITraitCollection) -> UIColor {
+        switch part {
+        case .accent: return Theme.accent
+        case .background: return Prefs.customBackground ? (UIColor(hex: Prefs.backgroundColors.first) ?? standard(part, traits: traits)) : standard(part, traits: traits)
+        case .text: return Theme.text
+        case .panel: return Theme.panel
+        case .cards: return UIColor(hex: Prefs.cardHex) ?? standard(part, traits: traits)
+        }
+    }
+
+    private static func standard(_ part: Part, traits: UITraitCollection) -> UIColor {
+        switch part {
+        case .accent: return UIColor(hex: Prefs.style == .classic ? "3478F6" : "FA243C") ?? .systemRed
+        case .background: return Theme.background.resolvedColor(with: traits)
+        case .text: return UIColor.label.resolvedColor(with: traits)
+        case .panel: return UIColor(red: 0.15, green: 0.17, blue: 0.21, alpha: 1)
+        case .cards: return UIColor.secondarySystemBackground.resolvedColor(with: traits)
+        }
+    }
+
+    private func showSave() {
+        var items = (navigationItem.rightBarButtonItems ?? []).filter { $0 !== saveItem }
+        if !pending.isEmpty { items.insert(saveItem, at: 0) }
+        navigationItem.setRightBarButtonItems(items, animated: true)
+    }
+
+    private func save() {
+        Haptics.result(true)
+        let changes = pending
+        pending = [:]
+        for (part, change) in changes {
+            let hex: String? = { if case let .color(color) = change { return color.hexString }; return nil }()
+            switch part {
+            case .accent: Prefs.setAccentHex(hex)
+            case .background:
+                if let hex { Prefs.backgroundColors = [hex] }
+                Prefs.customBackground = hex != nil
+            case .text: Prefs.textHex = hex
+            case .panel: Prefs.panelHex = hex
+            case .cards: Prefs.cardHex = hex
+            }
+        }
+        rebuild()
+    }
+
+    func discardChanges() { pending = [:] }
+
+    /// The font: import, its name, and «Сбросить шрифт» while one is imported.
+    func fontSection() -> FormSection {
+        var rows: [FormRow] = [
+            .button(title: L("Импорт шрифта TTF / OTF"), destructive: false) { [weak self] in self?.importFont() },
+            .value(title: L("Шрифт"), detail: { Prefs.fontName.isEmpty ? L("системный") : Prefs.fontName }),
         ]
-        guard Prefs.customBackground else {
-            return FormSection(L("Фон"), footer: L("Фон главной и аналитики: белый в светлой теме, чёрный или тёмно-серый в тёмной."), rows)
-        }
-        let colors = Prefs.backgroundColors
-        for index in colors.indices {
-            rows.append(.color(title: Lf("Цвет %@", "\(index + 1)"), get: { let all = Prefs.backgroundColors; return UIColor(hex: all.indices.contains(index) ? all[index] : nil) ?? .black }, set: { color in
-                var next = Prefs.backgroundColors
-                guard next.indices.contains(index) else { return }
-                next[index] = color.hexString
-                Prefs.backgroundColors = next
-            }))
-        }
-        if colors.count < Prefs.maxBackgroundColors {
-            rows.append(.button(title: L("Добавить цвет"), destructive: false) {
-                var next = Prefs.backgroundColors
-                next.append(next.count.isMultiple(of: 2) ? "BFBFBF" : "404040")
-                Prefs.backgroundColors = next
+        if !(Prefs.fontFile ?? "").isEmpty {
+            rows.append(.button(title: L("Сбросить шрифт"), destructive: false) { [weak self] in
+                Prefs.fontName = ""
+                Prefs.fontFile = nil
+                self?.rebuild()
             })
         }
-        if colors.count > 1 {
-            rows.append(.button(title: L("Убрать последний цвет"), destructive: true) {
-                Prefs.backgroundColors = Array(Prefs.backgroundColors.dropLast())
-            })
-        }
-        return FormSection(L("Фон"), footer: L("Фон главной и аналитики, в обеих темах. Два цвета: сверху и снизу. Три: два сверху и один снизу. Четыре: верхний левый, верхний правый, нижний левый, нижний правый."), rows)
+        return FormSection(L("Шрифт"), rows)
     }
 
     private func importFont() {

@@ -9,6 +9,8 @@ enum FormRow {
     case button(title: String, destructive: Bool, action: () -> Void)
     case value(title: String, detail: () -> String)
     case color(title: String, get: () -> UIColor, set: (UIColor) -> Void)
+    /// 3.5.23: a colour whose panel has «Сбросить» for this part (`reset`).
+    case paint(title: String, get: () -> UIColor, set: (UIColor) -> Void, reset: () -> Void)
     case check(title: String, selected: () -> Bool, action: () -> Void)
     /// A text field: title on the left, the value typed on the right.
     case field(title: String, placeholder: String, get: () -> String, set: (String) -> Void, keyboard: UIKeyboardType)
@@ -103,6 +105,15 @@ class FormViewController: UITableViewController, UIColorPickerViewControllerDele
     init(title: String) {
         super.init(style: .insetGrouped)
         self.title = title
+    }
+
+    /// 3.5.23 (the owner): a switch shows the system's pressed (glass) look on a
+    /// plain tap, as in iOS's own Settings — the list no longer holds the touch back
+    /// to see whether it starts a scroll; a scroll begun on a switch still scrolls.
+    override func loadView() {
+        let table = FormTableView(frame: .zero, style: .insetGrouped)
+        table.delaysContentTouches = false
+        tableView = table
     }
 
     @available(*, unavailable)
@@ -283,7 +294,7 @@ class FormViewController: UITableViewController, UIColorPickerViewControllerDele
             content.text = title
             content.secondaryText = detail()
             content.secondaryTextProperties.font = Theme.font(15)
-        case let .color(title, get, _):
+        case let .color(title, get, _), let .paint(title, get, _, _):
             content.text = title
             let well = UIView(frame: CGRect(x: 0, y: 0, width: 28, height: 28))
             well.backgroundColor = get()
@@ -367,7 +378,9 @@ class FormViewController: UITableViewController, UIColorPickerViewControllerDele
     }
 
     override func tableView(_ tableView: UITableView, didSelectRowAt indexPath: IndexPath) {
-        tableView.deselectRow(at: indexPath, animated: true)
+        // 3.5.23 (the owner: a row stayed dimmed all the way to the next page): the
+        // shade goes the moment the finger lifts, as in iOS's own Settings.
+        tableView.deselectRow(at: indexPath, animated: false)
         if let info = infos[indexPath], let cell = tableView.cellForRow(at: indexPath) {
             Haptics.tap()
             InfoBubble.show(info, under: cell, in: view.window ?? view)
@@ -382,6 +395,11 @@ class FormViewController: UITableViewController, UIColorPickerViewControllerDele
             Haptics.tap()
             action()
             rebuild()
+        case let .paint(title, get, set, reset):
+            Haptics.tap()
+            let panel = ColorPanelController(title: title, color: get(), pick: { [weak self] in set($0); self?.rebuild() },
+                                             reset: { [weak self] in reset(); self?.rebuild() })
+            present(panel, animated: true)
         case let .color(_, get, set):
             Haptics.tap()
             colorSetter = set
@@ -469,5 +487,80 @@ final class InfoBubble: UIView {
             self.card.alpha = 0
             self.card.transform = CGAffineTransform(scaleX: 0.96, y: 0.96)
         } completion: { _ in self.removeFromSuperview() }
+    }
+}
+
+
+/// The settings' list: a touch that starts on a control still scrolls the list.
+final class FormTableView: UITableView {
+    override func touchesShouldCancel(in view: UIView) -> Bool {
+        view is UISwitch || view is UIButton ? true : super.touchesShouldCancel(in: view)
+    }
+}
+
+/// 3.5.23 (the owner): the system's colour panel with «Сбросить» for the part it
+/// was opened for, under the colours.
+final class ColorPanelController: UIViewController, UIColorPickerViewControllerDelegate {
+    private let picker = UIColorPickerViewController()
+    private let pick: (UIColor) -> Void
+    private let reset: () -> Void
+    /// What it opened with: closing it unchanged changes nothing (no ✓ to save).
+    private var initial = ""
+
+    init(title: String, color: UIColor, pick: @escaping (UIColor) -> Void, reset: @escaping () -> Void) {
+        self.pick = pick
+        self.reset = reset
+        super.init(nibName: nil, bundle: nil)
+        picker.title = title
+        picker.selectedColor = color
+        initial = color.hexString
+        picker.supportsAlpha = false
+        picker.delegate = self
+        modalPresentationStyle = .pageSheet
+    }
+
+    @available(*, unavailable)
+    required init?(coder _: NSCoder) { fatalError() }
+
+    override func viewDidLoad() {
+        super.viewDidLoad()
+        view.backgroundColor = .systemBackground
+        addChild(picker)
+        view.addSubview(picker.view)
+        picker.didMove(toParent: self)
+        var config = UIButton.Configuration.gray()
+        config.title = L("Сбросить")
+        config.image = UIImage(systemName: "arrow.uturn.backward")
+        config.imagePadding = 8
+        config.cornerStyle = .capsule
+        config.buttonSize = .large
+        config.baseForegroundColor = .label
+        let resetButton = UIButton(configuration: config, primaryAction: UIAction { [weak self] _ in
+            Haptics.tap()
+            self?.reset()
+            self?.dismiss(animated: true)
+        })
+        resetButton.accessibilityHint = L("Вернуть исходный цвет")
+        for item in [picker.view!, resetButton] as [UIView] { item.translatesAutoresizingMaskIntoConstraints = false }
+        view.addSubview(resetButton)
+        NSLayoutConstraint.activate([
+            picker.view.topAnchor.constraint(equalTo: view.topAnchor),
+            picker.view.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+            picker.view.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+            picker.view.bottomAnchor.constraint(equalTo: resetButton.topAnchor, constant: -12),
+            resetButton.leadingAnchor.constraint(equalTo: view.safeAreaLayoutGuide.leadingAnchor, constant: 20),
+            resetButton.trailingAnchor.constraint(equalTo: view.safeAreaLayoutGuide.trailingAnchor, constant: -20),
+            resetButton.bottomAnchor.constraint(equalTo: view.safeAreaLayoutGuide.bottomAnchor, constant: -12),
+        ])
+    }
+
+    func colorPickerViewController(_ viewController: UIColorPickerViewController, didSelect color: UIColor, continuously: Bool) {
+        guard !continuously, color.hexString != initial else { return }
+        pick(color)
+    }
+
+    func colorPickerViewControllerDidFinish(_: UIColorPickerViewController) {
+        if picker.selectedColor.hexString != initial { pick(picker.selectedColor) }
+        dismiss(animated: true)
     }
 }

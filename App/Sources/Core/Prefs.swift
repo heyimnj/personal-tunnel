@@ -47,8 +47,10 @@ enum Prefs {
     }
 
     /// `clear`, `regular` (blur) or `tinted`.
+    static let defaultGlassStyle = "regular"
+    static let defaultOpacity = 1.0
     static var glassStyle: String {
-        get { defaults.string(forKey: "personal.glassStyle") ?? "regular" }
+        get { defaults.string(forKey: "personal.glassStyle") ?? defaultGlassStyle }
         set { defaults.set(newValue, forKey: "personal.glassStyle"); appearanceChanged.fire() }
     }
 
