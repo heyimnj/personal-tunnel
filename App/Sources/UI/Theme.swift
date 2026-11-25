@@ -337,7 +337,7 @@ class TapControl: UIControl {
     var onTap: (() -> Void)?
     var pressScale: CGFloat = 0.97
     var ripple = false {
-        didSet { if ripple { pressScale = 1.012 } }
+        didSet { if ripple { pressScale = 0.985 } }
     }
     /// Corner radius the shade is clipped to; `nil` makes a capsule or circle.
     var rippleCornerRadius: CGFloat?
@@ -361,9 +361,21 @@ class TapControl: UIControl {
             let pressed = isHighlighted
             let reduce = UIAccessibility.isReduceMotionEnabled
             if ripple {
+                // 3.5.26 (the owner: like a heavy stone into calm water, slower but not
+                // slow): the surface sinks under the finger, and on release rises back
+                // with a couple of settling swings.
                 if !pressed { fadeShade() }
-                UIView.animate(withDuration: reduce ? 0 : (pressed ? 0.10 : 0.18), delay: 0, options: [.curveEaseOut, .beginFromCurrentState, .allowUserInteraction]) {
-                    self.transform = pressed && !reduce ? CGAffineTransform(scaleX: self.pressScale, y: self.pressScale) : .identity
+                if reduce {
+                    transform = .identity
+                } else if pressed {
+                    UIView.animate(withDuration: 0.22, delay: 0, options: [.curveEaseOut, .beginFromCurrentState, .allowUserInteraction]) {
+                        self.transform = CGAffineTransform(scaleX: self.pressScale, y: self.pressScale)
+                    }
+                } else {
+                    UIView.animate(withDuration: 0.9, delay: 0, usingSpringWithDamping: 0.42, initialSpringVelocity: 0.6,
+                                   options: [.beginFromCurrentState, .allowUserInteraction]) {
+                        self.transform = .identity
+                    }
                 }
                 return
             }
@@ -402,9 +414,9 @@ class TapControl: UIControl {
         bringSubviewToFront(rippleClip)
     }
 
-    /// The wave: a faint disc with a slightly brighter soft rim, centred under the
-    /// finger. It runs out to the farthest corner in 0.35 s, the rim leaving past
-    /// the edges, and a barely visible tint stays while the finger holds on.
+    /// 3.5.26 (the owner): a stone into water. Under the finger a soft dimple grows
+    /// and stays while it holds; three rings run out from it one after another,
+    /// slowing as they go and fading by the edges (about a second in all).
     private func spread(from point: CGPoint) {
         let clip: UIView
         if let rippleClip { clip = rippleClip } else {
@@ -418,41 +430,72 @@ class TapControl: UIControl {
         }
         bringSubviewToFront(clip)
         fadeShade()
-        // From the finger to the farthest corner, so the disc covers it all; the rim
-        // (the outer 15 %) has left the control by then.
         let corners = [CGPoint.zero, CGPoint(x: bounds.width, y: 0), CGPoint(x: 0, y: bounds.height), CGPoint(x: bounds.width, y: bounds.height)]
         let farthest = corners.map { hypot($0.x - point.x, $0.y - point.y) }.max() ?? 1
-        let radius = farthest / 0.85
         let ink = UIColor.label.resolvedColor(with: traitCollection)
+
+        // The dimple: a soft darker centre.
+        let dimpleRadius = min(farthest, max(bounds.height, 44)) * 0.9
         let shade = CAGradientLayer()
         shade.type = .radial
-        shade.colors = [ink.withAlphaComponent(0.035).cgColor, ink.withAlphaComponent(0.035).cgColor,
-                        ink.withAlphaComponent(0.07).cgColor, ink.withAlphaComponent(0).cgColor]
-        shade.locations = [0, 0.84, 0.93, 1]
+        shade.colors = [ink.withAlphaComponent(0.07).cgColor, ink.withAlphaComponent(0.035).cgColor, ink.withAlphaComponent(0).cgColor]
+        shade.locations = [0, 0.55, 1]
         shade.startPoint = CGPoint(x: 0.5, y: 0.5)
         shade.endPoint = CGPoint(x: 1, y: 1)
         CATransaction.begin()
         CATransaction.setDisableActions(true)
-        shade.bounds = CGRect(x: 0, y: 0, width: radius * 2, height: radius * 2)
+        shade.bounds = CGRect(x: 0, y: 0, width: dimpleRadius * 2, height: dimpleRadius * 2)
         shade.position = point
-        shade.opacity = 1
         clip.layer.addSublayer(shade)
         CATransaction.commit()
         let grow = CABasicAnimation(keyPath: "transform.scale")
-        grow.fromValue = 0.05
+        grow.fromValue = 0.2
         grow.toValue = 1
-        grow.duration = 0.35
-        grow.timingFunction = CAMediaTimingFunction(controlPoints: 0.25, 0.6, 0.35, 1)
+        grow.duration = 0.5
+        grow.timingFunction = CAMediaTimingFunction(controlPoints: 0.2, 0.7, 0.3, 1)
         shade.add(grow, forKey: "spread")
         let appear = CABasicAnimation(keyPath: "opacity")
         appear.fromValue = 0
         appear.toValue = 1
-        appear.duration = 0.06
+        appear.duration = 0.12
         shade.add(appear, forKey: "appear")
         self.shade = shade
+
+        // The rings.
+        for index in 0 ..< 3 {
+            let ring = CAShapeLayer()
+            ring.fillColor = UIColor.clear.cgColor
+            ring.strokeColor = ink.withAlphaComponent(0.16 - CGFloat(index) * 0.035).cgColor
+            ring.opacity = 0
+            clip.layer.addSublayer(ring)
+            func circle(_ radius: CGFloat) -> CGPath {
+                UIBezierPath(ovalIn: CGRect(x: point.x - radius, y: point.y - radius, width: radius * 2, height: radius * 2)).cgPath
+            }
+            let start = CACurrentMediaTime() + Double(index) * 0.16
+            let duration = 0.95
+            let path = CABasicAnimation(keyPath: "path")
+            path.fromValue = circle(4)
+            path.toValue = circle(farthest * 1.05)
+            let width = CABasicAnimation(keyPath: "lineWidth")
+            width.fromValue = 3.5
+            width.toValue = 0.6
+            let fade = CAKeyframeAnimation(keyPath: "opacity")
+            fade.values = [0, 1, 0.6, 0]
+            fade.keyTimes = [0, 0.12, 0.55, 1]
+            let group = CAAnimationGroup()
+            group.animations = [path, width, fade]
+            group.duration = duration
+            group.beginTime = start
+            group.timingFunction = CAMediaTimingFunction(controlPoints: 0.15, 0.55, 0.3, 1)
+            group.fillMode = .backwards
+            CATransaction.begin()
+            CATransaction.setCompletionBlock { ring.removeFromSuperlayer() }
+            ring.add(group, forKey: "ring")
+            CATransaction.commit()
+        }
     }
 
-    /// The press ended: the wave keeps running and fades over 0.3 s.
+    /// The press ended: the dimple fills back in over half a second.
     private func fadeShade() {
         guard let shade else { return }
         self.shade = nil
@@ -462,7 +505,7 @@ class TapControl: UIControl {
         let fade = CABasicAnimation(keyPath: "opacity")
         fade.fromValue = current
         fade.toValue = 0
-        fade.duration = 0.3
+        fade.duration = 0.5
         fade.timingFunction = CAMediaTimingFunction(name: .easeOut)
         shade.opacity = 0
         shade.add(fade, forKey: "fade")
