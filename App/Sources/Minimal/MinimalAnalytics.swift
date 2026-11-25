@@ -356,6 +356,10 @@ final class SparklineView: UIView {
 /// upload on it, one shape with one rounding (the owner: the two parts must meet,
 /// not stand apart), a thin line of the card's tone between them.
 final class TimelineBarsView: UIView {
+    /// 3.6 (the owner, variant 5): the session's columns in light blue and lilac —
+    /// the ring below keeps the blue and red.
+    static let downColor = UIColor(red: 0.49, green: 0.77, blue: 1, alpha: 1)
+    static let upColor = UIColor(red: 0.71, green: 0.64, blue: 1, alpha: 1)
     var buckets: [TrafficTimeline.Bucket] = [] { didSet { if buckets != oldValue { setNeedsDisplay() } } }
     /// 3.5.25: columns the card has room for — the session fills them from the left
     /// (one column at the start of a session no longer took the whole card).
@@ -408,14 +412,14 @@ final class TimelineBarsView: UIView {
             let low = total < radius * 2 + 4
             let upShare = bucket.total > 0 ? CGFloat(bucket.up) / CGFloat(bucket.total) : 0
             let base: UIColor = bucket.total == 0 ? UIColor.label.withAlphaComponent(0.1)
-                : (low && upShare > 0.5 ? SpeedGraphView.upColor : SpeedGraphView.downColor)
+                : (low && upShare > 0.5 ? Self.upColor : Self.downColor)
             context.setFillColor(base.cgColor)
             context.addPath(UIBezierPath(roundedRect: shape, cornerRadius: radius).cgPath)
             context.fillPath()
             if bucket.up > 0, !low {
                 let up = upShare >= 1 ? total : snap(min(total - radius - 2, max(radius + 1, total * upShare)))
                 context.setBlendMode(.sourceAtop)
-                context.setFillColor(SpeedGraphView.upColor.cgColor)
+                context.setFillColor(Self.upColor.cgColor)
                 context.fill(CGRect(x: left - 1, y: top - 1, width: barWidth + 2, height: up + 1))
             }
             context.endTransparencyLayer()
