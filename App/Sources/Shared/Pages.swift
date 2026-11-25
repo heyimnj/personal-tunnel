@@ -42,7 +42,8 @@ final class DiagnosticsViewController: UIViewController {
             note(L("При раздельной маршрутизации успешный системный запрос не доказывает работу прокси. DNS-утечки этой проверкой не измеряются.")),
             action(L("Проверить соединение"), #selector(check)),
             note(L("Проверка обращается к www.gstatic.com/generate_204: через выбранный outbound и через системный маршрут; таймаут до 8 секунд.")),
-            action(L("Открыть журнал службы"), #selector(openLog)),
+            // 3.5.25 (the owner): no «Открыть журнал службы» — the log opens this page,
+            // and the two led into each other without end.
             action(L("Скопировать отчёт"), #selector(copyReport)),
             note(L("REALITY: проверьте SNI, ключ, short ID, время и ограничения версии Xray на сервере. Журнал показывает конкретную причину отказа.")),
             note(L("TLS: сертификат, SNI и доступность маскировочного сайта. DNS: резолвер и маршрут к нему. Транспорт: соответствие TCP/WS/gRPC и пути серверу.")),

@@ -322,6 +322,12 @@ final class SparklineView: UIView {
 /// not stand apart), a thin line of the card's tone between them.
 final class TimelineBarsView: UIView {
     var buckets: [TrafficTimeline.Bucket] = [] { didSet { if buckets != oldValue { setNeedsDisplay() } } }
+    /// 3.5.25: columns the card has room for — the session fills them from the left
+    /// (one column at the start of a session no longer took the whole card).
+    var slots = 30 { didSet { if slots != oldValue { setNeedsDisplay() } } }
+    /// 3.5.25: the height a full column stands for, at least: a few kilobytes no
+    /// longer fill the card to the top.
+    var minimumPeak: Int64 = 1 { didSet { if minimumPeak != oldValue { setNeedsDisplay() } } }
     var separator: UIColor = .secondarySystemBackground
 
     override init(frame: CGRect) {
@@ -343,8 +349,8 @@ final class TimelineBarsView: UIView {
         context.setFillColor(UIColor.label.withAlphaComponent(0.12).cgColor)
         context.fill(CGRect(x: 0, y: height, width: bounds.width, height: 0.5))
         guard !buckets.isEmpty else { return }
-        let peak = max(1, buckets.map(\.total).max() ?? 1)
-        let count = CGFloat(buckets.count)
+        let peak = max(minimumPeak, buckets.map(\.total).max() ?? 1)
+        let count = CGFloat(max(slots, buckets.count))
         let gap: CGFloat = count > 40 ? 2 : 4
         let width = max(1.5, (bounds.width - gap * (count - 1)) / count)
         for (index, bucket) in buckets.enumerated() {
@@ -1172,18 +1178,25 @@ final class MinimalAnalyticsViewController: UIViewController, UIGestureRecognize
         let start = Int64(since.timeIntervalSince1970)
         let fine = timeline.buckets(from: start, width: 120, now: .init(time: now, up: totals.up, down: totals.down))
         let (buckets, width) = TrafficTimeline.coarsened(fine, width: 120, limit: 40)
+        // 3.5.25: an hour of two-minute columns at least, filled from the left; a full
+        // column is at least a megabyte a minute.
+        let slots = max(30, buckets.count)
+        timelineBars.slots = slots
+        timelineBars.minimumPeak = width * 1_000_000 / 60
         timelineBars.buckets = buckets
         let minutes = Lf("%@ мин", "\(width / 60)")
         timelineSpan.showText(Lf("столбик = %@", minutes))
         let clock = DateFormatter()
         clock.locale = Language.locale
         clock.dateFormat = "HH:mm"
-        let times = [start, start + (now - start) / 2, now].map { clock.string(from: Date(timeIntervalSince1970: TimeInterval($0))) }
+        let end = start + Int64(slots) * width
+        let times = [start, start + (end - start) / 2, end].map { clock.string(from: Date(timeIntervalSince1970: TimeInterval($0))) }
         for (label, text) in zip(timelineAxis, times) { label.showText(text) }
         if let busiest = buckets.max(by: { $0.total < $1.total }), busiest.total > 0 {
             timelinePeakTitle.showText(Lf("самые загруженные %@", minutes))
             let at = clock.string(from: Date(timeIntervalSince1970: TimeInterval(busiest.start)))
-            timelinePeak.showText(at + " · ≈" + Format.speed(busiest.total / max(1, width)))
+            // 3.5.25: how much, not a speed rounded down to «≈0 KB/s».
+            timelinePeak.showText(at + " · " + Format.bytes(busiest.total))
         } else {
             timelinePeakTitle.showText(L("Трафика пока нет"))
             timelinePeak.showText("")
