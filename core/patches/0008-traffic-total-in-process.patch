@@ -1,15 +1,20 @@
 diff --git a/daemon/traffic_total_lx.go b/daemon/traffic_total_lx.go
 new file mode 100644
-index 0000000..90e799f
+index 0000000..8deb500
 --- /dev/null
 +++ b/daemon/traffic_total_lx.go
-@@ -0,0 +1,14 @@
+@@ -0,0 +1,19 @@
 +package daemon
 +
 +// TrafficTotals is the running service's traffic so far (uplink, downlink), read
 +// in the same process — Personal Tunnel's extension keeps the session's history
-+// with it on the timer it already has, without a stream of its own.
-+func (s *StartedService) TrafficTotals() (uplink int64, downlink int64) {
++// with it on the timer it already has, without a stream of its own. A function,
++// not a method: libbox's CommandServer embeds StartedService, and gomobile binds
++// its promoted methods, which may return only one value.
++func TrafficTotals(s *StartedService) (uplink int64, downlink int64) {
++	if s == nil {
++		return 0, 0
++	}
 +	s.serviceAccess.RLock()
 +	instance := s.instance
 +	s.serviceAccess.RUnlock()
@@ -20,11 +25,13 @@ index 0000000..90e799f
 +}
 diff --git a/experimental/libbox/command_server_traffic_lx.go b/experimental/libbox/command_server_traffic_lx.go
 new file mode 100644
-index 0000000..9992438
+index 0000000..ba3fca1
 --- /dev/null
 +++ b/experimental/libbox/command_server_traffic_lx.go
-@@ -0,0 +1,17 @@
+@@ -0,0 +1,19 @@
 +package libbox
++
++import "github.com/sagernet/sing-box/daemon"
 +
 +// TrafficTotal is the running service's traffic so far, in bytes (Personal Tunnel).
 +type TrafficTotal struct {
@@ -38,7 +45,7 @@ index 0000000..9992438
 +	if s.StartedService == nil {
 +		return &TrafficTotal{}
 +	}
-+	uplink, downlink := s.StartedService.TrafficTotals()
++	uplink, downlink := daemon.TrafficTotals(s.StartedService)
 +	return &TrafficTotal{Uplink: uplink, Downlink: downlink}
 +}
 diff --git a/experimental/libbox/command_server_traffic_lx_test.go b/experimental/libbox/command_server_traffic_lx_test.go
