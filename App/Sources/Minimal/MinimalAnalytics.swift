@@ -354,18 +354,28 @@ final class TimelineBarsView: UIView {
             let total = max(bucket.total > 0 ? 2 : 1.5, height * CGFloat(bucket.total) / CGFloat(peak))
             let down = bucket.total > 0 ? total * CGFloat(bucket.down) / CGFloat(bucket.total) : total
             let shape = CGRect(x: x, y: height - total, width: width, height: total)
+            let radius = min(width / 2, 4)
             context.saveGState()
-            UIBezierPath(roundedRect: shape, cornerRadius: min(width / 2, 4)).addClip()
-            context.setFillColor((bucket.total > 0 ? SpeedGraphView.downColor : UIColor.label.withAlphaComponent(0.1)).cgColor)
+            UIBezierPath(roundedRect: shape, cornerRadius: radius).addClip()
+            // 3.5.27 (the owner): the upload on top looked jagged — a sliver thinner
+            // than the corner was cut into a crescent. Now the upload is at least as
+            // tall as the corner, and a column too low for two parts is one colour
+            // (the larger part's).
+            let low = total < radius * 2 + 4
+            let upShare = bucket.total > 0 ? CGFloat(bucket.up) / CGFloat(bucket.total) : 0
+            let base: UIColor = bucket.total == 0 ? UIColor.label.withAlphaComponent(0.1)
+                : (low && upShare > 0.5 ? SpeedGraphView.upColor : SpeedGraphView.downColor)
+            context.setFillColor(base.cgColor)
             context.fill(shape)
-            if bucket.up > 0 {
-                let up = total - down
+            if bucket.up > 0, !low, upShare < 1 {
+                let up = min(total - radius - 2, max(radius + 1, total - down))
                 context.setFillColor(SpeedGraphView.upColor.cgColor)
                 context.fill(CGRect(x: x, y: height - total, width: width, height: up))
-                if up > 2, down > 2 {
-                    context.setFillColor(separator.cgColor)
-                    context.fill(CGRect(x: x, y: height - down - 0.75, width: width, height: 1.5))
-                }
+                context.setFillColor(separator.cgColor)
+                context.fill(CGRect(x: x, y: height - total + up - 0.75, width: width, height: 1.5))
+            } else if bucket.up > 0, !low {
+                context.setFillColor(SpeedGraphView.upColor.cgColor)
+                context.fill(shape)
             }
             context.restoreGState()
         }
@@ -1460,6 +1470,9 @@ final class ConnectionsViewController: UIViewController, UITableViewDataSource {
                 self.table.reloadData()
                 self.show(App.shared.core.connections.value)
             }, for: .valueChanged)
+            // 3.5.27 (the owner): three equal parts — «Все» was narrower than TCP and UDP.
+            kinds.apportionsSegmentWidthsByContent = false
+            for index in 0 ..< kinds.numberOfSegments { kinds.setWidth(72, forSegmentAt: index) }
             navigationItem.titleView = kinds
         }
         table.backgroundColor = .clear

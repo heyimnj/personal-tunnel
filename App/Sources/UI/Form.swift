@@ -95,7 +95,25 @@ class FormViewController: UITableViewController, UIColorPickerViewControllerDele
     var sections: [FormSection] = [] {
         didSet {
             (sections, infos) = Self.foldDescriptions(sections)
-            if isViewLoaded { tableView.reloadData() }
+            reloadAfterToggle()
+        }
+    }
+    /// 3.5.27 (the owner): a switch whose setting redraws the list (AMOLED, the
+    /// app lock) lost its glass press — the list was rebuilt under the finger and the
+    /// switch replaced mid-animation. The list now waits for the switch to settle.
+    private var toggledAt: Date?
+    private var reloadPending = false
+
+    private func reloadAfterToggle() {
+        guard isViewLoaded else { return }
+        let wait = 0.6 - Date().timeIntervalSince(toggledAt ?? .distantPast)
+        guard wait > 0 else { tableView.reloadData(); return }
+        guard !reloadPending else { return }
+        reloadPending = true
+        DispatchQueue.main.asyncAfter(deadline: .now() + wait) { [weak self] in
+            guard let self else { return }
+            self.reloadPending = false
+            self.tableView.reloadData()
         }
     }
     /// 3.5.23 (the owner): a setting's description is not under it any more — a
@@ -246,7 +264,10 @@ class FormViewController: UITableViewController, UIColorPickerViewControllerDele
             toggle.addTactileToggle()
             toggle.isOn = get()
             toggle.onTintColor = Theme.accent
-            toggle.addAction(UIAction { [weak toggle] _ in set(toggle?.isOn ?? false) }, for: .valueChanged)
+            toggle.addAction(UIAction { [weak self, weak toggle] _ in
+                self?.toggledAt = Date()
+                set(toggle?.isOn ?? false)
+            }, for: .valueChanged)
             cell.accessoryView = toggle
         case let .picker(title, options, get, set):
             content.text = title
