@@ -1449,6 +1449,34 @@ final class ConnectionsViewController: UIViewController, UITableViewDataSource {
     /// nil: both kinds (3.5.2: the columns open the list with a switch on top).
     private var udp: Bool?
     private let switchable: Bool
+    private weak var kinds: UISegmentedControl?
+
+    /// A swipe left: the next of «Все», TCP, UDP; right: the one before.
+    @objc private func swiped(_ gesture: UISwipeGestureRecognizer) {
+        guard let kinds else { return }
+        let step = gesture.direction == .left ? 1 : -1
+        let next = kinds.selectedSegmentIndex + step
+        guard next >= 0, next < kinds.numberOfSegments else { return }
+        Haptics.selection()
+        kinds.selectedSegmentIndex = next
+        choose(next, from: gesture.direction)
+    }
+
+    /// Shows «Все», TCP or UDP; from a swipe, the list slides in from that side.
+    private func choose(_ index: Int, from direction: UISwipeGestureRecognizer.Direction?) {
+        let choices: [Bool?] = [nil, false, true]
+        udp = choices[max(0, min(2, index))]
+        items = []
+        table.reloadData()
+        show(App.shared.core.connections.value)
+        guard let direction else { return }
+        let transition = CATransition()
+        transition.type = .push
+        transition.subtype = direction == .left ? .fromRight : .fromLeft
+        transition.duration = 0.25
+        transition.timingFunction = CAMediaTimingFunction(name: .easeOut)
+        table.layer.add(transition, forKey: "kind")
+    }
     private let table = UITableView(frame: .zero, style: .plain)
     private let empty = UILabel(L("Данные соединений пока недоступны"), font: Theme.font(.body), color: .secondaryLabel, lines: 0)
     private var items: [CoreConnection] = []
@@ -1480,12 +1508,15 @@ final class ConnectionsViewController: UIViewController, UITableViewDataSource {
             kinds.selectedSegmentIndex = 0
             kinds.addAction(UIAction { [weak self, weak kinds] _ in
                 guard let self, let kinds else { return }
-                let choices: [Bool?] = [nil, false, true]
-                self.udp = choices[max(0, min(2, kinds.selectedSegmentIndex))]
-                self.items = []
-                self.table.reloadData()
-                self.show(App.shared.core.connections.value)
+                self.choose(kinds.selectedSegmentIndex, from: nil)
             }, for: .valueChanged)
+            self.kinds = kinds
+            // 3.6 (the owner): a swipe left or right moves between «Все», TCP and UDP.
+            for direction in [UISwipeGestureRecognizer.Direction.left, .right] {
+                let swipe = UISwipeGestureRecognizer(target: self, action: #selector(swiped(_:)))
+                swipe.direction = direction
+                view.addGestureRecognizer(swipe)
+            }
             // 3.5.27 (the owner): three equal parts — «Все» was narrower than TCP and UDP.
             kinds.apportionsSegmentWidthsByContent = false
             for index in 0 ..< kinds.numberOfSegments { kinds.setWidth(72, forSegmentAt: index) }
