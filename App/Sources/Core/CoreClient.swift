@@ -162,7 +162,7 @@ final class CoreClient {
         disconnect()
         status.value = nil
         connections.value = CoreConnections()
-        parse.async { self.store = nil; self.sessionRoutes = [:]; self.counted = [:] }
+        parse.async { self.store = nil; self.sessionRoutes = [:]; self.counted = [:]; self.routeOf = [:] }
     }
 
     /// The core's totals at the last «Сбросить статистику» (3.1.6): the core keeps
@@ -181,7 +181,7 @@ final class CoreClient {
         history.value = TrafficHistory()
         samples.value = CoreSamples()
         connections.value = CoreConnections()
-        parse.async { self.store = nil; self.sessionRoutes = [:]; self.counted = [:] }
+        parse.async { self.store = nil; self.sessionRoutes = [:]; self.counted = [:]; self.routeOf = [:] }
     }
 
     /// A line from the app itself; the core's own lines arrive over the socket.
@@ -296,7 +296,7 @@ final class CoreClient {
         // A new tunnel starts its count again from zero; so does the base.
         if value.uplinkTotal < totalsBase.up || value.downlinkTotal < totalsBase.down { totalsBase = (0, 0) }
         // …and the routes of the last one go with it (3.5.14).
-        if value.uplinkTotal < rawTotals.up || value.downlinkTotal < rawTotals.down { parse.async { self.sessionRoutes = [:]; self.counted = [:] } }
+        if value.uplinkTotal < rawTotals.up || value.downlinkTotal < rawTotals.down { parse.async { self.sessionRoutes = [:]; self.counted = [:]; self.routeOf = [:] } }
         // 3.3 beta 4: a reload starts the core's counters again, and its first rate
         // came out negative: the graph drew far below its card.
         value.uplink = max(0, value.uplink)
@@ -347,7 +347,14 @@ final class CoreClient {
         if store == nil { store = LibboxNewConnections() }
         var result = CoreConnections()
         guard let store else { return result }
-        if let events { store.apply(events) }
+        // 3.5.21: the routes are counted from the events themselves, before the store
+        // applies them — the store drops connections closed over five minutes ago,
+        // and on every new stream (a return to the app) the core sends the session's
+        // closed connections again: those were lost to «Без разбивки».
+        if let events {
+            countRoutes(events)
+            store.apply(events)
+        }
         let list = parseListsConnections
         if let iterator = store.iterator() {
             while iterator.hasNext() {
@@ -355,11 +362,7 @@ final class CoreClient {
                 // The tunnel's DNS and (3.2.10) the app's own server tests through the
                 // kill switch's way out are not the device's connections; their bytes
                 // count in the session's routes under their own names (3.5.20).
-                let own = item.outboundType == "dns" ? CoreConnections.dns : (item.inbound == ProbeExit.inboundTag ? CoreConnections.probes : nil)
-                if let own {
-                    count(item, as: own)
-                    continue
-                }
+                if item.outboundType == "dns" || item.inbound == ProbeExit.inboundTag { continue }
                 if item.closedAt == 0 {
                     let udp = item.network == "udp"
                     if udp { result.udp += 1 } else { result.tcp += 1 }
@@ -377,21 +380,48 @@ final class CoreClient {
                         ))
                     }
                 }
-                count(item, as: item.outboundType == "direct" ? CoreConnections.direct : item.outbound)
             }
         }
         result.routes = sessionRoutes.filter { $0.value > 0 }
         return result
     }
 
-    /// On `parse`: what the connection moved since it was last counted, into its route.
-    private func count(_ item: LibboxConnection, as route: String) {
-        guard !route.isEmpty else { return }
-        let total = item.uplinkTotal + item.downlinkTotal
-        let delta = total - counted[item.id_, default: 0]
-        guard delta > 0 else { return }
-        counted[item.id_] = total
-        sessionRoutes[route, default: 0] += delta
+    /// Owned by `parse`: the route of each open connection, for its traffic updates.
+    private var routeOf: [String: String] = [:]
+
+    /// The route a connection's bytes count under: the tunnel's DNS and (3.2.10) the
+    /// app's own server tests through the kill switch's way out under their own names.
+    private static func route(of item: LibboxConnection) -> String {
+        if item.outboundType == "dns" { return CoreConnections.dns }
+        if item.inbound == ProbeExit.inboundTag { return CoreConnections.probes }
+        return item.outboundType == "direct" ? CoreConnections.direct : item.outbound
+    }
+
+    /// On `parse`: a connection that comes whole (new, closed, or again in a new
+    /// stream's snapshot) adds what it moved beyond what was counted for it; a
+    /// traffic update adds its bytes.
+    private func countRoutes(_ events: LibboxConnectionEvents) {
+        guard let iterator = events.iterator() else { return }
+        while iterator.hasNext() {
+            guard let event = iterator.next() else { continue }
+            let id = event.id_
+            if let item = event.connection {
+                let route = Self.route(of: item)
+                guard !route.isEmpty else { continue }
+                let total = item.uplinkTotal + item.downlinkTotal
+                let delta = total - counted[id, default: 0]
+                if delta > 0 {
+                    counted[id] = total
+                    sessionRoutes[route, default: 0] += delta
+                }
+                if item.closedAt == 0 { routeOf[id] = route } else { routeOf[id] = nil }
+            } else {
+                let delta = event.uplinkDelta + event.downlinkDelta
+                guard delta > 0, let route = routeOf[id] else { continue }
+                counted[id, default: 0] += delta
+                sessionRoutes[route, default: 0] += delta
+            }
+        }
     }
 
     private final class Handler: NSObject, LibboxCommandClientHandlerProtocol {
