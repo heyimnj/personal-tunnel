@@ -195,33 +195,19 @@ final class HoldMenuView: UIView {
         picture.frame = view.convert(rect, to: self)
         picture.isUserInteractionEnabled = false
         // 3.5.27 (the owner): a held subscription (a part of the sheet, not a card of
-        // its own) was hard to tell from the dimmed sheet around it. 3.5.28: the
-        // edge in both themes — light in the dark one, dark in the light one — drawn
-        // as a smooth line (the layer's border looked jagged on the snapshot).
-        let dark = traitCollection.userInterfaceStyle == .dark
-        let radius = view.layer.cornerRadius > 0 ? view.layer.cornerRadius : 18
-        picture.layer.cornerRadius = radius
-        picture.layer.cornerCurve = .continuous
-        picture.clipsToBounds = true
-        if dark {
+        // its own) was hard to tell from the dimmed sheet around it. 3.5.29 (the
+        // owner): no edge — the rest dims and what is held is lightened, its
+        // background with it (in the light theme it is light already).
+        if traitCollection.userInterfaceStyle == .dark {
+            picture.layer.cornerRadius = view.layer.cornerRadius > 0 ? view.layer.cornerRadius : 18
+            picture.layer.cornerCurve = .continuous
+            picture.clipsToBounds = true
             let glow = UIView(frame: picture.bounds)
             glow.autoresizingMask = [.flexibleWidth, .flexibleHeight]
-            glow.backgroundColor = UIColor.white.withAlphaComponent(0.05)
+            glow.backgroundColor = UIColor.white.withAlphaComponent(0.08)
             glow.isUserInteractionEnabled = false
             picture.addSubview(glow)
         }
-        let scale = window?.screen.scale ?? UIScreen.main.scale
-        let width: CGFloat = 1
-        let edge = CAShapeLayer()
-        edge.contentsScale = scale
-        edge.frame = picture.bounds
-        let inset = width / 2
-        edge.path = UIBezierPath(roundedRect: picture.bounds.insetBy(dx: inset, dy: inset), cornerRadius: max(0, radius - inset)).cgPath
-        edge.fillColor = nil
-        edge.strokeColor = (dark ? UIColor.white.withAlphaComponent(0.28) : UIColor.black.withAlphaComponent(0.16)).cgColor
-        edge.lineWidth = width
-        edge.allowsEdgeAntialiasing = true
-        picture.layer.addSublayer(edge)
         insertSubview(picture, aboveSubview: backdrop)
         lifted = picture
     }
