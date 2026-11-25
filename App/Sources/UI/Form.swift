@@ -392,7 +392,7 @@ class FormViewController: UITableViewController, UIColorPickerViewControllerDele
         // 3.5.23 (the owner: a row stayed dimmed all the way to the next page): the
         // shade goes the moment the finger lifts, as in iOS's own Settings.
         tableView.deselectRow(at: indexPath, animated: false)
-        if let info = infos[indexPath], let cell = tableView.cellForRow(at: indexPath) {
+        if let info = infos[indexPath], let cell = tableView.cellForRow(at: indexPath), !InfoBubble.isShown {
             Haptics.tap()
             InfoBubble.show(info, under: cell, in: view.window ?? view)
             return
@@ -435,6 +435,7 @@ class FormViewController: UITableViewController, UIColorPickerViewControllerDele
 /// there is no room), in the menus' even tone. Any touch closes it.
 final class InfoBubble: UIView {
     private static weak var current: InfoBubble?
+    static var isShown: Bool { current?.superview != nil }
     private let card = UIView()
     private let label = UILabel()
 
@@ -486,14 +487,22 @@ final class InfoBubble: UIView {
         card.accessibilityLabel = text
     }
 
+    /// 3.5.26 (the owner): any touch, anywhere, only closes it — the same row again
+    /// closes it rather than opening it once more, another row does not open its
+    /// own, and nothing under it is pressed.
     override func hitTest(_ point: CGPoint, with event: UIEvent?) -> UIView? {
-        // Any touch closes it; a touch outside the card still reaches what is under it.
+        guard superview != nil, isUserInteractionEnabled else { return nil }
+        return self
+    }
+
+    override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent?) {
         close()
-        return card.frame.contains(point) ? card : nil
     }
 
     func close() {
-        guard superview != nil, card.alpha > 0 else { return }
+        guard superview != nil, isUserInteractionEnabled else { return }
+        isUserInteractionEnabled = false
+        if Self.current === self { Self.current = nil }
         UIView.animate(withDuration: 0.2, delay: 0, options: [.beginFromCurrentState]) {
             self.card.alpha = 0
             self.card.transform = CGAffineTransform(scaleX: 0.96, y: 0.96)

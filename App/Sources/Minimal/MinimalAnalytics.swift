@@ -343,11 +343,7 @@ final class TimelineBarsView: UIView {
     override func draw(_: CGRect) {
         guard let context = UIGraphicsGetCurrentContext(), bounds.width > 4, bounds.height > 4 else { return }
         let height = bounds.height - 1
-        // Guides at half and full height, and the base line.
-        context.setFillColor(UIColor.label.withAlphaComponent(0.06).cgColor)
-        for level in [0.0, 0.5] as [CGFloat] { context.fill(CGRect(x: 0, y: (height * level).rounded(), width: bounds.width, height: 0.5)) }
-        context.setFillColor(UIColor.label.withAlphaComponent(0.12).cgColor)
-        context.fill(CGRect(x: 0, y: height, width: bounds.width, height: 0.5))
+        // 3.5.26 (the owner): no guide lines — as clean as the live graph.
         guard !buckets.isEmpty else { return }
         let peak = max(minimumPeak, buckets.map(\.total).max() ?? 1)
         let count = CGFloat(max(slots, buckets.count))
@@ -575,6 +571,12 @@ final class MinimalAnalyticsViewController: UIViewController, UIGestureRecognize
     private let graphPeak = UILabel(font: Theme.digits(Theme.font(.caption2).pointSize, .medium), color: .secondaryLabel)
     private let graphHint = UILabel(L("Данные появятся после подключения"), font: Theme.font(.caption1), color: .secondaryLabel)
     private let sessionRow = AnalyticsRow(L("Сеанс"))
+    /// 3.5.26 (the owner): the session under the page's title, small: «● Сеанс 00:39:22».
+    private let sessionLine = UILabel(font: Theme.digits(Theme.font(.footnote).pointSize, .regular), color: .secondaryLabel)
+    private let sessionDot = UIView()
+    /// 3.5.26: «● TCP 3   ● UDP 0» under the columns.
+    private let tcpCount = UILabel(font: Theme.digits(Theme.font(.subheadline).pointSize, .regular))
+    private let udpCount = UILabel(font: Theme.digits(Theme.font(.subheadline).pointSize, .regular))
     // 3.5: each measure drawn its own way — a ring, a gauge, rings, a line.
     private let trafficRing = RingChart()
     private let trafficTotal = UILabel(font: Theme.digits(Theme.font(.footnote).pointSize, .semibold))
@@ -740,9 +742,16 @@ final class MinimalAnalyticsViewController: UIViewController, UIGestureRecognize
             item.translatesAutoresizingMaskIntoConstraints = false
             header.addSubview(item)
         }
+        sessionDot.layer.cornerRadius = 3.5
+        sessionDot.translatesAutoresizingMaskIntoConstraints = false
+        NSLayoutConstraint.activate([sessionDot.widthAnchor.constraint(equalToConstant: 7), sessionDot.heightAnchor.constraint(equalToConstant: 7)])
+        let sessionStack = UIStackView(.horizontal, spacing: 6, alignment: .center, [sessionDot, sessionLine])
+        sessionStack.translatesAutoresizingMaskIntoConstraints = false
+        header.addSubview(sessionStack)
         NSLayoutConstraint.activate([
-            header.heightAnchor.constraint(equalToConstant: 48),
-            title.centerXAnchor.constraint(equalTo: header.centerXAnchor), title.centerYAnchor.constraint(equalTo: header.centerYAnchor),
+            header.heightAnchor.constraint(equalToConstant: 62),
+            title.centerXAnchor.constraint(equalTo: header.centerXAnchor), title.centerYAnchor.constraint(equalTo: header.centerYAnchor, constant: -9),
+            sessionStack.centerXAnchor.constraint(equalTo: header.centerXAnchor), sessionStack.topAnchor.constraint(equalTo: title.bottomAnchor, constant: 2),
             more.trailingAnchor.constraint(equalTo: header.trailingAnchor), more.centerYAnchor.constraint(equalTo: header.centerYAnchor),
             more.widthAnchor.constraint(equalToConstant: 44), more.heightAnchor.constraint(equalToConstant: 44),
             moreGlass.centerXAnchor.constraint(equalTo: more.centerXAnchor), moreGlass.centerYAnchor.constraint(equalTo: more.centerYAnchor),
@@ -825,22 +834,31 @@ final class MinimalAnalyticsViewController: UIViewController, UIGestureRecognize
         // opens its list. The highest column's count stands on the right.
         columns.lowerColor = Self.tcpColor
         columns.upperColor = Self.udpColor
-        columns.heightAnchor.constraint(equalToConstant: 48).isActive = true
+        columns.heightAnchor.constraint(equalToConstant: 40).isActive = true
         columnsPeak.textAlignment = .right
         columnsPeak.setContentHuggingPriority(.required, for: .horizontal)
-        let columnsCaption = UIStackView(.horizontal, spacing: 8, alignment: .center, [
-            UILabel(L("Открытые соединения за минуту"), font: Theme.font(.caption2), color: .secondaryLabel), UIView(), columnsPeak,
-        ])
-        let connections = AnalyticsGroup()
-        tcpRow = AnalyticsRow("TCP", dot: Self.tcpColor) { [weak self] in self?.present(ConnectionsViewController.wrapped(udp: false), animated: true) }
-        udpRow = AnalyticsRow("UDP", dot: Self.udpColor) { [weak self] in self?.present(ConnectionsViewController.wrapped(udp: true), animated: true) }
-        // 3.5.2 (the owner): the columns open the open connections too, both kinds.
-        let chart = pressable(Classic.padded(UIStackView(.vertical, spacing: 8, alignment: .fill, [columns, columnsCaption]), UIEdgeInsets(top: 11, left: 0, bottom: 11, right: 0)),
-                              label: L("Открытые соединения за минуту")) { [weak self] in
+        // 3.5.26 (the owner): one compact card — the title, the columns, «● TCP 3  ● UDP 0 ›»;
+        // a tap opens the open connections.
+        func count(_ color: UIColor, _ label: UILabel) -> UIView {
+            let dot = UIView()
+            dot.backgroundColor = color
+            dot.layer.cornerRadius = 4
+            dot.translatesAutoresizingMaskIntoConstraints = false
+            NSLayoutConstraint.activate([dot.widthAnchor.constraint(equalToConstant: 8), dot.heightAnchor.constraint(equalToConstant: 8)])
+            return UIStackView(.horizontal, spacing: 7, alignment: .center, [dot, label])
+        }
+        let chevron = UIImageView(image: UIImage(systemName: "chevron.right", withConfiguration: UIImage.SymbolConfiguration(font: Theme.font(.footnote, .semibold))))
+        chevron.tintColor = .tertiaryLabel
+        let countsRow = UIStackView(.horizontal, spacing: 18, alignment: .center, [count(Self.tcpColor, tcpCount), count(Self.udpColor, udpCount), UIView(), chevron])
+        let connectionsHead = UIStackView(.horizontal, spacing: 8, alignment: .center, [small(L("Соединения")), UIView(), columnsPeak])
+        let connectionsCard = AnalyticsCard(insets: UIEdgeInsets(top: 14, left: 14, bottom: 12, right: 14))
+        connectionsCard.stack.alignment = .fill
+        connectionsCard.stack.spacing = 10
+        for item in [connectionsHead, columns, countsRow] as [UIView] { connectionsCard.stack.addArrangedSubview(item) }
+        let connections = pressable(connectionsCard, label: L("Открытые соединения")) { [weak self] in
             self?.present(ConnectionsViewController.wrapped(udp: nil), animated: true)
         }
-        chart.pressScale = 0.98
-        connections.add([chart, tcpRow, udpRow])
+        connections.pressScale = 0.98
 
         // Routes (4:2): the rings on the left, the largest routes beside them.
         let routes = AnalyticsCard(insets: UIEdgeInsets(top: 14, left: 14, bottom: 14, right: 14))
@@ -856,7 +874,23 @@ final class MinimalAnalyticsViewController: UIViewController, UIGestureRecognize
         let legendColumn = UIStackView(.vertical, spacing: 0, alignment: .fill, [above, routeLegend, below])
         above.heightAnchor.constraint(equalTo: below.heightAnchor).isActive = true
         let routesBody = UIStackView(.horizontal, spacing: 16, alignment: .fill, [routeRings, legendColumn])
-        for item in [small(L("Маршруты за сеанс")), routesBody] as [UIView] { routes.stack.addArrangedSubview(item) }
+        // 3.5.26 (the owner): the routes' note opens from the ⓘ by the title.
+        let routesTitle = UIButton(type: .system)
+        routesTitle.setAttributedTitle({
+            let text = NSMutableAttributedString(string: L("Маршруты за сеанс") + " ", attributes: [.font: Theme.font(.footnote, .medium), .foregroundColor: UIColor.secondaryLabel])
+            if let mark = UIImage(systemName: "info.circle", withConfiguration: UIImage.SymbolConfiguration(pointSize: 11))?.withTintColor(.tertiaryLabel, renderingMode: .alwaysOriginal) {
+                text.append(NSAttributedString(attachment: NSTextAttachment(image: mark)))
+            }
+            return text
+        }(), for: .normal)
+        routesTitle.contentHorizontalAlignment = .leading
+        routesTitle.addAction(UIAction { [weak self, weak routesTitle] _ in
+            guard let self, let routesTitle else { return }
+            Haptics.tap()
+            InfoBubble.show(L("Маршруты — куда ушёл трафик сеанса: через какой сервер или напрямую. «Без разбивки» — трафик, пока приложение было закрыто: ядро сохраняет только последние соединения."),
+                            under: routesTitle, in: self.view.window ?? self.view)
+        }, for: .touchUpInside)
+        for item in [routesTitle, routesBody] as [UIView] { routes.stack.addArrangedSubview(item) }
 
         // The core's memory (4:2): the figure, then its line over two minutes,
         // drawn to whatever room the card leaves (scaled inside its own box).
@@ -874,10 +908,12 @@ final class MinimalAnalyticsViewController: UIViewController, UIGestureRecognize
         let memory = AnalyticsCard(insets: UIEdgeInsets(top: 14, left: 14, bottom: 12, right: 14))
         memory.stack.alignment = .fill
         memory.stack.spacing = 4
-        let memoryHead = UIStackView(.horizontal, spacing: 8, alignment: .center, [small(L("Память ядра")), UIView(), memoryDetail])
-        for item in [memoryHead, memoryValue, memoryLine, memoryNote] as [UIView] { memory.stack.addArrangedSubview(item) }
-        memory.stack.setCustomSpacing(8, after: memoryValue)
-        memory.stack.setCustomSpacing(6, after: memoryLine)
+        // 3.5.26 (the owner): one line — «Память ядра   31.0 MB · 49 goroutines».
+        memoryValue.font = Theme.digits(Theme.font(.subheadline).pointSize, .regular)
+        memoryValue.textColor = .secondaryLabel
+        _ = memoryNote
+        let memoryRow = UIStackView(.horizontal, spacing: 6, alignment: .firstBaseline, [UILabel(L("Память ядра"), font: Theme.font(.subheadline)), UIView(), memoryValue, memoryDetail])
+        memory.stack.addArrangedSubview(memoryRow)
 
         let routesNote = Classic.padded(UILabel(L("Маршруты — куда ушёл трафик сеанса: через какой сервер или напрямую. «Без разбивки» — трафик, пока приложение было закрыто: ядро сохраняет только последние соединения."), font: Theme.font(.caption2), color: .secondaryLabel, lines: 0),
                                         UIEdgeInsets(top: 0, left: 6, bottom: 0, right: 6))
@@ -890,23 +926,20 @@ final class MinimalAnalyticsViewController: UIViewController, UIGestureRecognize
             self?.navigationController?.pushViewController(ServiceLogViewController(), animated: true)
         })
 
+        _ = session
+        _ = routesNote
         let content = UIStackView(.vertical, spacing: 8, alignment: .fill, [
-            header, hero,
-            AnalyticsGroup.caption(L("Сеанс")), session, tiles,
-            routes, AnalyticsGroup.caption(L("Соединения")), connections, memory, routesNote,
+            header, hero, tiles,
+            routes, connections, memory,
             links,
         ])
         // 4:2 — as tall as the square tiles. Only now: the views must already share
         // a parent (3.5 (271) tied two of them earlier and crashed at launch).
         routes.heightAnchor.constraint(equalTo: traffic.heightAnchor).isActive = true
-        memory.heightAnchor.constraint(equalTo: traffic.heightAnchor).isActive = true
-        content.setCustomSpacing(6, after: header)
-        content.setCustomSpacing(12, after: session)
-        content.setCustomSpacing(12, after: tiles)
-        content.setCustomSpacing(18, after: routes)
-        content.setCustomSpacing(12, after: connections)
-        content.setCustomSpacing(10, after: memory)
-        for view in [hero, routesNote] { content.setCustomSpacing(18, after: view) }
+        // 3.5.26 (the owner): the session line close to the cards; even gaps between them.
+        content.setCustomSpacing(4, after: header)
+        for view in [hero, tiles, routes, connections] { content.setCustomSpacing(12, after: view) }
+        content.setCustomSpacing(12, after: memory)
         scroll.addSubview(content)
         content.translatesAutoresizingMaskIntoConstraints = false
         NSLayoutConstraint.activate([
@@ -1147,6 +1180,10 @@ final class MinimalAnalyticsViewController: UIViewController, UIGestureRecognize
         let since = App.shared.tunnel.connectedSince.value
         let text = Format.duration(since.map { Int(Date().timeIntervalSince($0)) } ?? 0)
         if sessionRow.value.text != text { sessionRow.value.text = text }
+        sessionLine.showText(L("Сеанс") + " " + text)
+        let on = since != nil
+        let dotColor: UIColor = on ? .systemGreen : .tertiaryLabel
+        if sessionDot.backgroundColor != dotColor { sessionDot.backgroundColor = dotColor }
     }
 
     /// «130 KB/с» → «130», «KB/с».
@@ -1234,7 +1271,7 @@ final class MinimalAnalyticsViewController: UIViewController, UIGestureRecognize
         trafficTotal.showText(status == nil ? "—" : Format.bytes(downBytes + upBytes))
         trafficRing.parts = [(value: Double(downBytes), color: SpeedGraphView.downColor), (value: Double(upBytes), color: SpeedGraphView.upColor)]
         memoryValue.showText(status.map { Format.bytes($0.memory) } ?? "—")
-        memoryDetail.showText(status.map { "\($0.goroutines) goroutines" } ?? L("Ядро не запущено"))
+        memoryDetail.showText(status.map { "· \($0.goroutines) goroutines" } ?? "")
         if graphHint.isHidden != (status != nil) { graphHint.isHidden = status != nil }
     }
 
@@ -1244,8 +1281,8 @@ final class MinimalAnalyticsViewController: UIViewController, UIGestureRecognize
 
     private func show(_ connections: CoreConnections) {
         let tcpText = "\(connections.tcp)", udpText = "\(connections.udp)"
-        if tcpRow.value.text != tcpText { tcpRow.value.text = tcpText }
-        if udpRow.value.text != udpText { udpRow.value.text = udpText }
+        tcpCount.showText("TCP " + tcpText)
+        udpCount.showText("UDP " + udpText)
         // 3.5.14: the session's routes, «direct» by name; what the app could not
         // attribute (connections it never saw) makes up the session's total.
         func title(_ key: String) -> String {
