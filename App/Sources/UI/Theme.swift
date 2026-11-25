@@ -415,8 +415,8 @@ class TapControl: UIControl {
     }
 
     /// 3.5.26 (the owner): a stone into water. Under the finger a soft dimple grows
-    /// and stays while it holds; three rings run out from it one after another,
-    /// slowing as they go and fading by the edges (about a second in all).
+    /// and stays while it holds; one ring runs out from it, slowing as it goes and
+    /// fading by the edges (about a second).
     private func spread(from point: CGPoint) {
         let clip: UIView
         if let rippleClip { clip = rippleClip } else {
@@ -461,8 +461,8 @@ class TapControl: UIControl {
         shade.add(appear, forKey: "appear")
         self.shade = shade
 
-        // The rings.
-        for index in 0 ..< 3 {
+        // 3.5.25 (the owner): one ring, not several.
+        for index in 0 ..< 1 {
             let ring = CAShapeLayer()
             ring.fillColor = UIColor.clear.cgColor
             ring.strokeColor = ink.withAlphaComponent(0.16 - CGFloat(index) * 0.035).cgColor
