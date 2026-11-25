@@ -51,7 +51,7 @@ final class MinimalSettingsViewController: FormViewController {
 /// right (it shows while something is changed); «Сбросить всё» at the bottom. The
 /// card background's density is under «Фон»; the background is a colour, not a switch.
 final class AppearanceViewController: ColorsViewController {
-    init() { super.init(title: L("Внешний вид"), background: true) }
+    override init() { super.init(title: L("Внешний вид"), background: true) }
 
     override func build() -> [FormSection] {
         [
