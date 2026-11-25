@@ -630,7 +630,8 @@ final class ServerRowView: SwipeRow {
         // 3.5.19 (the owner: a tap meant for the ping chose the server): the button
         // reaches the card's right edge and is wider; the figure stays where it was.
         latency.pin(to: pingButton, insets: UIEdgeInsets(top: 0, left: 8, bottom: 0, right: 16))
-        pingButton.widthAnchor.constraint(greaterThanOrEqualToConstant: 96).isActive = true
+        pingWidth = pingButton.widthAnchor.constraint(greaterThanOrEqualToConstant: 96)
+        pingWidth?.isActive = true
         pingButton.setContentHuggingPriority(.required, for: .horizontal)
         pingButton.setContentCompressionResistancePriority(.required, for: .horizontal)
         mark.contentMode = .center
@@ -646,9 +647,14 @@ final class ServerRowView: SwipeRow {
 
     func bind(_ subscription: Int64, _ node: String) { key = (subscription, node) }
 
-    /// nil: not selecting; otherwise whether this row is selected.
+    private var pingWidth: NSLayoutConstraint?
+
+    /// nil: not selecting; otherwise whether this row is selected. 3.5.21: while
+    /// selecting the ping column gives up its extra tap room to the circle, so
+    /// the name keeps its width (it shrank at the end of the way in).
     func setMark(_ selected: Bool?) {
         SelectionMark.apply(selected, to: mark)
+        pingWidth?.constant = selected != nil ? 60 : 96
     }
 
     func setHeld(_ held: Bool) {
@@ -704,6 +710,8 @@ final class SubscriptionHeaderView: SwipeRow {
         mark.setContentHuggingPriority(.required, for: .horizontal)
         let row = UIStackView(.horizontal, spacing: 8, alignment: .center, [mark, title, pin, UIView(), spinner, count, chevron])
         row.setCustomSpacing(12, after: count)
+        row.setCustomSpacing(6, after: mark)
+        headRow = row
         row.isUserInteractionEnabled = false
         sliding.addSubview(row)
         row.pin(to: sliding, insets: UIEdgeInsets(top: 0, left: 20, bottom: 0, right: 20))
@@ -718,8 +726,15 @@ final class SubscriptionHeaderView: SwipeRow {
         ])
     }
 
+    private weak var headRow: UIStackView?
+
+    /// 3.5.21 (the owner: the name shrank at the end of the way into a selection):
+    /// while selecting the chevron gives its room to the circle — a tap selects
+    /// there, it does not open — so the name keeps its width.
     func setMark(_ selected: Bool?) {
         SelectionMark.apply(selected, to: mark)
+        chevron.isHidden = selected != nil
+        headRow?.setCustomSpacing(selected != nil ? 0 : 12, after: count)
     }
 
     /// `alpha`: the open head's own card (0 hides it); `clipped`: the head keeps

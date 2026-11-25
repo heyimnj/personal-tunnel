@@ -638,12 +638,13 @@ final class MinimalServersViewController: UIViewController, UIScrollViewDelegate
         } else {
             items.append(HoldMenuItem(title: L("Закрепить текущий сервер"), symbol: "pin") { [weak self] in self?.pinCurrentServer() })
         }
-        // 3.5.20 (the owner): only while at least one subscription is open.
+        items.append(HoldMenuItem(title: L("Обновить подписки"), symbol: "arrow.clockwise") { App.shared.refreshAll() })
+        // 3.5.20 (the owner): only while at least one subscription is open; 3.5.21:
+        // last, at the edge, where an item that comes and goes is seen.
         let open = App.shared.library.subscriptions.filter { !$0.isStandalone && list.isOpen($0.id) }.map(\.id)
         if !open.isEmpty {
             items.append(HoldMenuItem(title: L("Свернуть все подписки"), symbol: "rectangle.compress.vertical") { [weak self] in self?.collapse(open) })
         }
-        items.append(HoldMenuItem(title: L("Обновить подписки"), symbol: "arrow.clockwise") { App.shared.refreshAll() })
         return items
     }
 
@@ -1289,14 +1290,15 @@ final class MinimalServersViewController: UIViewController, UIScrollViewDelegate
         if let tag, let node = subscription.node(tag) {
             title = App.shared.store.label(of: node, in: subscription).text
             pinKey = subscription.isStandalone ? Arrangement.subscription(id) : Arrangement.server(id, tag)
+            // 3.5.21 (the owner): ping, edit, copy, then the page; the rest as it was.
             items = [
-                HoldMenuItem(title: L("Ссылка, QR и JSON"), symbol: "info.circle") { [weak self] in self?.inspect(tag, in: id) },
+                HoldMenuItem(title: L("Проверить пинг"), symbol: "waveform.path.ecg") { App.shared.ping(node: node, in: subscription) },
+                HoldMenuItem(title: L("Редактировать"), symbol: "pencil") { [weak self] in self?.edit(node: tag, in: id) },
                 // 3.5.20 (the owner): copy without opening the page; JSON when there is no link.
                 HoldMenuItem(title: node.link != nil ? L("Скопировать ссылку") : L("Скопировать JSON"), symbol: "doc.on.doc") { [weak self] in
                     self?.copyServer(node)
                 },
-                HoldMenuItem(title: L("Проверить пинг"), symbol: "waveform.path.ecg") { App.shared.ping(node: node, in: subscription) },
-                HoldMenuItem(title: L("Редактировать"), symbol: "pencil") { [weak self] in self?.edit(node: tag, in: id) },
+                HoldMenuItem(title: L("Ссылка, QR и JSON"), symbol: "info.circle") { [weak self] in self?.inspect(tag, in: id) },
             ]
             if subscription.isStandalone, subscription.isRemote {
                 items.append(HoldMenuItem(title: L("Обновить"), symbol: "arrow.clockwise") { App.shared.refresh(id) })
@@ -1309,8 +1311,9 @@ final class MinimalServersViewController: UIViewController, UIScrollViewDelegate
                 HoldMenuItem(title: L("Редактировать"), symbol: "pencil") { [weak self] in self?.editSubscription(id) },
             ]
             if subscription.isRemote {
-                items.append(HoldMenuItem(title: L("Обновить"), symbol: "arrow.clockwise") { App.shared.refresh(id) })
+                // 3.5.21 (the owner): copy first, then update.
                 items.append(HoldMenuItem(title: L("Скопировать ссылку"), symbol: "doc.on.doc") { [weak self] in self?.copy(subscription.url) })
+                items.append(HoldMenuItem(title: L("Обновить"), symbol: "arrow.clockwise") { App.shared.refresh(id) })
             }
         }
         let pinned = Prefs.arrangement.isPinned(pinKey)
