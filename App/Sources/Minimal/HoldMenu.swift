@@ -204,7 +204,7 @@ final class HoldMenuView: UIView {
             picture.clipsToBounds = true
             let glow = UIView(frame: picture.bounds)
             glow.autoresizingMask = [.flexibleWidth, .flexibleHeight]
-            glow.backgroundColor = UIColor.white.withAlphaComponent(0.08)
+            glow.backgroundColor = UIColor.white.withAlphaComponent(0.04)  // 3.6.1 (the owner): 0.08 was too bright
             glow.isUserInteractionEnabled = false
             picture.addSubview(glow)
         }
