@@ -9,6 +9,8 @@ enum FormRow {
     case button(title: String, destructive: Bool, action: () -> Void)
     case value(title: String, detail: () -> String)
     case color(title: String, get: () -> UIColor, set: (UIColor) -> Void)
+    /// 3.5.24: a page with a small picture of its value beside the title (the background).
+    case swatch(title: String, image: () -> UIImage, action: () -> Void)
     /// 3.5.23: a colour whose panel has «Сбросить» for this part (`reset`).
     case paint(title: String, get: () -> UIColor, set: (UIColor) -> Void, reset: () -> Void)
     case check(title: String, selected: () -> Bool, action: () -> Void)
@@ -294,6 +296,15 @@ class FormViewController: UITableViewController, UIColorPickerViewControllerDele
             content.text = title
             content.secondaryText = detail()
             content.secondaryTextProperties.font = Theme.font(15)
+        case let .swatch(title, image, _):
+            content.text = title
+            let picture = UIImageView(image: image())
+            let chevron = UIImageView(image: UIImage(systemName: "chevron.right", withConfiguration: UIImage.SymbolConfiguration(pointSize: 13, weight: .semibold)))
+            chevron.tintColor = .tertiaryLabel
+            let accessory = UIStackView(.horizontal, spacing: 10, alignment: .center, [picture, chevron])
+            accessory.frame = CGRect(origin: .zero, size: accessory.systemLayoutSizeFitting(UIView.layoutFittingCompressedSize))
+            cell.accessoryView = accessory
+            cell.selectionStyle = .default
         case let .color(title, get, _), let .paint(title, get, _, _):
             content.text = title
             let well = UIView(frame: CGRect(x: 0, y: 0, width: 28, height: 28))
@@ -388,7 +399,7 @@ class FormViewController: UITableViewController, UIColorPickerViewControllerDele
         }
         // 3.5.13 (the owner): the settings' buttons answer to the touch.
         switch sections[indexPath.section].rows[indexPath.row].bare {
-        case let .link(_, _, action), let .button(_, _, action):
+        case let .link(_, _, action), let .button(_, _, action), let .swatch(_, _, action):
             Haptics.tap()
             action()
         case let .check(_, _, action):

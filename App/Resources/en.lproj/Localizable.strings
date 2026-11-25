@@ -769,3 +769,16 @@
 "Вернуть исходный цвет" = "Return to the original colour";
 "Цвета, фон, шрифт, стекло и прозрачность вернутся к исходным." = "Colours, background, font, glass and transparency go back to how they were.";
 "Фон главной и аналитики в тёмной теме: чёрный, а без AMOLED — тёмно-серый. Свой цвет фона задаётся в «Цветах»." = "Home and analytics background in the dark theme: black, or dark grey without AMOLED. A colour of your own is set in «Colours».";
+
+/* 3.5.24: background page */
+"Другое" = "Other";
+"Цвет" = "Colour";
+"Сверху" = "Top";
+"Снизу" = "Bottom";
+"Сверху слева" = "Top left";
+"Сверху справа" = "Top right";
+"Снизу слева" = "Bottom left";
+"Снизу справа" = "Bottom right";
+"Сбросить фон" = "Reset background";
+"Как будет выглядеть фон" = "How the background will look";
+"Два цвета: сверху и снизу. Три: два сверху и один снизу. Четыре: по углам." = "Two colours: top and bottom. Three: two on top and one at the bottom. Four: one in each corner.";

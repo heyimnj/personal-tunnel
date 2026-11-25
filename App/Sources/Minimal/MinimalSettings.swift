@@ -65,6 +65,11 @@ final class AppearanceViewController: ColorsViewController {
             ]),
             FormSection(L("Цвета"), colorRows()),
             FormSection(L("Фон"), [
+                // 3.5.24 (the owner): the background — one colour or a gradient — on its own page with a preview.
+                .swatch(title: L("Цвет фона"), image: { [weak self] in self?.backgroundSwatch() ?? UIImage() }) { [weak self] in
+                    guard let self else { return }
+                    self.navigationController?.pushViewController(BackgroundViewController(owner: self), animated: true)
+                },
                 .toggle(title: L("AMOLED — чёрный фон в тёмной теме"), get: { Prefs.amoled }, set: { Prefs.amoled = $0 }),
                 .note(L("Фон главной и аналитики в тёмной теме: чёрный, а без AMOLED — тёмно-серый. Свой цвет фона задаётся в «Цветах».")),
                 // 3.5 beta 2 (the owner): how solid the analytics cards are.
@@ -78,6 +83,9 @@ final class AppearanceViewController: ColorsViewController {
             ]),
             FormSection([
                 .link(symbol: "drop", title: L("Стекло и прозрачность")) { [weak self] in self?.navigationController?.pushViewController(GlassSettingsViewController(), animated: true) },
+            ]),
+            // 3.5.24 (the owner): apart from the glass.
+            FormSection(L("Другое"), [
                 .toggle(title: L("Только иконки вкладок"), get: { Prefs.hideTabLabels }, set: { Prefs.hideTabLabels = $0 }),
                 .toggle(title: L("Акцентная активная точка"), get: { Prefs.accentDots }, set: { Prefs.accentDots = $0 }),
             ]),
@@ -122,7 +130,6 @@ final class GlassSettingsViewController: FormViewController {
         return [
             FormSection([
                 .picker(title: L("Стекло"), options: [("clear", L("Чистое")), ("regular", L("Блюр")), ("tinted", "Tinted")], get: { Prefs.glassStyle }, set: { Prefs.glassStyle = $0 }),
-                .toggle(title: L("Непрозрачные панели настроек"), get: { Prefs.solidSettings }, set: { Prefs.solidSettings = $0 }),
             ]),
             FormSection(L("Прозрачность стекла"), [
                 slider(L("Весь интерфейс"), Prefs.glassOpacityKey),
@@ -246,10 +253,10 @@ final class NetworkSettingsViewController: FormViewController {
 /// something waits — and the colour panel has «Сбросить» for its own part.
 class ColorsViewController: FormViewController {
     enum Part: Hashable { case accent, background, text, panel, cards }
-    enum Change { case color(UIColor), reset }
+    enum Change { case color(UIColor), reset, colors([String]) }
 
     private let withBackground: Bool
-    private var pending: [Part: Change] = [:] { didSet { showSave() } }
+    private(set) var pending: [Part: Change] = [:] { didSet { showSave() } }
     private lazy var saveItem: UIBarButtonItem = {
         var config = UIButton.Configuration.filled()
         config.image = UIImage(systemName: "checkmark", withConfiguration: UIImage.SymbolConfiguration(pointSize: 15, weight: .bold))
@@ -272,6 +279,13 @@ class ColorsViewController: FormViewController {
         super.init(title: title)
     }
 
+    /// Back from «Цвет фона»: its picture and the ✓ as they are now.
+    override func viewWillAppear(_ animated: Bool) {
+        super.viewWillAppear(animated)
+        rebuild()
+        showSave()
+    }
+
     override func build() -> [FormSection] {
         [FormSection(L("Цвета"), colorRows() + [
             .toggle(title: L("AMOLED — чёрный фон в тёмной теме"), get: { Prefs.amoled }, set: { Prefs.amoled = $0 }),
@@ -280,8 +294,8 @@ class ColorsViewController: FormViewController {
 
     /// One row a part; a tap opens the colour panel with «Сбросить».
     func colorRows() -> [FormRow] {
+        // 3.5.24: the background has its own page (under «Фон»).
         var parts: [(Part, String)] = [(.accent, L("Акцентный цвет"))]
-        if withBackground { parts.append((.background, L("Цвет фона"))) }
         parts += [(.text, L("Цвет текста")), (.panel, L("Цвет панелей"))]
         if withBackground { parts.append((.cards, L("Цвет карточек аналитики"))) }
         return parts.map { part, title in
@@ -295,6 +309,7 @@ class ColorsViewController: FormViewController {
         switch pending[part] {
         case let .color(color)?: return color
         case .reset?: return Self.standard(part, traits: traitCollection)
+        case let .colors(hexes)?: return UIColor(hex: hexes.first) ?? Self.standard(part, traits: traitCollection)
         case nil: return Self.stored(part, traits: traitCollection)
         }
     }
@@ -309,7 +324,35 @@ class ColorsViewController: FormViewController {
         }
     }
 
-    private static func standard(_ part: Part, traits: UITraitCollection) -> UIColor {
+    /// The background's colours as they would be saved; empty: the plain background.
+    var backgroundDraft: [String] {
+        get {
+            switch pending[.background] {
+            case let .colors(hexes)?: return hexes
+            case .reset?: return []
+            default: return Prefs.customBackground ? Prefs.backgroundColors : []
+            }
+        }
+        set { pending[.background] = .colors(newValue) }
+    }
+
+    /// The background as a small picture: the gradient, or the plain colour.
+    func backgroundSwatch(size: CGSize = CGSize(width: 44, height: 28)) -> UIImage {
+        let hexes = backgroundDraft
+        let source = hexes.isEmpty ? nil : Wallpaper.image(hexes)
+        let plain = Theme.background.resolvedColor(with: traitCollection)
+        return UIGraphicsImageRenderer(size: size).image { _ in
+            let frame = CGRect(origin: .zero, size: size)
+            let path = UIBezierPath(roundedRect: frame.insetBy(dx: 0.5, dy: 0.5), cornerRadius: min(8, size.height / 3))
+            path.addClip()
+            if let source { source.draw(in: frame) } else { plain.setFill(); UIRectFill(frame) }
+            UIColor.label.withAlphaComponent(0.15).setStroke()
+            path.lineWidth = 1
+            path.stroke()
+        }
+    }
+
+    static func standard(_ part: Part, traits: UITraitCollection) -> UIColor {
         switch part {
         case .accent: return UIColor(hex: Prefs.style == .classic ? "3478F6" : "FA243C") ?? .systemRed
         case .background: return Theme.background.resolvedColor(with: traits)
@@ -325,7 +368,7 @@ class ColorsViewController: FormViewController {
         navigationItem.setRightBarButtonItems(items, animated: true)
     }
 
-    private func save() {
+    func save() {
         Haptics.result(true)
         let changes = pending
         pending = [:]
@@ -334,8 +377,9 @@ class ColorsViewController: FormViewController {
             switch part {
             case .accent: Prefs.setAccentHex(hex)
             case .background:
-                if let hex { Prefs.backgroundColors = [hex] }
-                Prefs.customBackground = hex != nil
+                let hexes: [String] = { if case let .colors(list) = change { return list }; return hex.map { [$0] } ?? [] }()
+                if !hexes.isEmpty { Prefs.backgroundColors = hexes }
+                Prefs.customBackground = !hexes.isEmpty
             case .text: Prefs.textHex = hex
             case .panel: Prefs.panelHex = hex
             case .cards: Prefs.cardHex = hex
@@ -364,6 +408,125 @@ class ColorsViewController: FormViewController {
 
     private func importFont() {
         FontImporter.shared.present(from: self) { [weak self] in self?.rebuild() }
+    }
+}
+
+/// 3.5.24 (the owner): «Цвет фона» — the Home and analytics background: a big
+/// preview, then its one to four colours by where they stand, «Добавить цвет»,
+/// «Убрать последний цвет» and «Сбросить фон». Saved by the ✓ with the rest of
+/// «Внешний вид».
+final class BackgroundViewController: FormViewController {
+    private weak var owner: ColorsViewController?
+    private let preview = UIImageView()
+    private lazy var saveItem: UIBarButtonItem = {
+        var config = UIButton.Configuration.filled()
+        config.image = UIImage(systemName: "checkmark", withConfiguration: UIImage.SymbolConfiguration(pointSize: 15, weight: .bold))
+        config.baseBackgroundColor = Theme.accent
+        config.baseForegroundColor = .white
+        config.cornerStyle = .capsule
+        let button = UIButton(configuration: config, primaryAction: UIAction { [weak self] _ in
+            self?.owner?.save()
+            self?.rebuild()
+        })
+        button.accessibilityLabel = L("Сохранить")
+        button.frame = CGRect(x: 0, y: 0, width: 36, height: 36)
+        return UIBarButtonItem(customView: button)
+    }()
+
+    init(owner: ColorsViewController) {
+        self.owner = owner
+        super.init(title: L("Цвет фона"))
+    }
+
+    override func viewDidLoad() {
+        super.viewDidLoad()
+        let header = UIView(frame: CGRect(x: 0, y: 0, width: 320, height: 300))
+        preview.layer.cornerRadius = 28
+        preview.layer.cornerCurve = .continuous
+        preview.layer.borderWidth = 1
+        preview.layer.borderColor = UIColor.label.withAlphaComponent(0.12).cgColor
+        preview.clipsToBounds = true
+        preview.contentMode = .scaleToFill
+        preview.isAccessibilityElement = true
+        preview.accessibilityLabel = L("Как будет выглядеть фон")
+        header.addSubview(preview)
+        preview.translatesAutoresizingMaskIntoConstraints = false
+        NSLayoutConstraint.activate([
+            preview.topAnchor.constraint(equalTo: header.topAnchor, constant: 12),
+            preview.bottomAnchor.constraint(equalTo: header.bottomAnchor, constant: -12),
+            preview.centerXAnchor.constraint(equalTo: header.centerXAnchor),
+            preview.widthAnchor.constraint(equalTo: preview.heightAnchor, multiplier: 0.48),
+        ])
+        tableView.tableHeaderView = header
+    }
+
+    private var draft: [String] {
+        get { owner?.backgroundDraft ?? [] }
+        set { owner?.backgroundDraft = newValue }
+    }
+
+    /// Where each colour stands, as the background lays them out.
+    private static func place(_ index: Int, of count: Int) -> String {
+        switch count {
+        case 1: return L("Цвет")
+        case 2: return [L("Сверху"), L("Снизу")][index]
+        case 3: return [L("Сверху слева"), L("Сверху справа"), L("Снизу")][index]
+        default: return [L("Сверху слева"), L("Сверху справа"), L("Снизу слева"), L("Снизу справа")][min(index, 3)]
+        }
+    }
+
+    override func build() -> [FormSection] {
+        let plain = Theme.background.resolvedColor(with: traitCollection).hexString
+        let colors = draft.isEmpty ? [plain] : draft
+        var rows: [FormRow] = colors.indices.map { index in
+            .paint(title: Self.place(index, of: colors.count), get: { UIColor(hex: colors[index]) ?? .black },
+                   set: { [weak self] color in
+                       var next = colors
+                       next[index] = color.hexString
+                       self?.draft = next
+                   },
+                   reset: { [weak self] in
+                       var next = colors
+                       next[index] = plain
+                       self?.draft = next.count == 1 ? [] : next
+                   })
+        }
+        if colors.count < Prefs.maxBackgroundColors {
+            rows.append(.button(title: L("Добавить цвет"), destructive: false) { [weak self] in
+                var next = colors
+                next.append(next.count.isMultiple(of: 2) ? "BFBFBF" : "404040")
+                self?.draft = next
+                self?.rebuild()
+            })
+        }
+        if colors.count > 1 {
+            rows.append(.button(title: L("Убрать последний цвет"), destructive: false) { [weak self] in
+                self?.draft = Array(colors.dropLast())
+                self?.rebuild()
+            })
+        }
+        var sections = [FormSection(L("Цвета"), footer: L("Два цвета: сверху и снизу. Три: два сверху и один снизу. Четыре: по углам."), rows)]
+        if !draft.isEmpty {
+            sections.append(FormSection([.button(title: L("Сбросить фон"), destructive: true) { [weak self] in
+                self?.draft = []
+                self?.rebuild()
+            }]))
+        }
+        return sections
+    }
+
+    override func rebuild() {
+        super.rebuild()
+        guard isViewLoaded else { return }
+        let hexes = draft
+        if hexes.isEmpty {
+            preview.image = nil
+            preview.backgroundColor = Theme.background
+        } else {
+            preview.image = Wallpaper.image(hexes)
+        }
+        let waiting = !(owner?.pending.isEmpty ?? true)
+        navigationItem.setRightBarButton(waiting ? saveItem : nil, animated: true)
     }
 }
 
