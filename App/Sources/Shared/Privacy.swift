@@ -24,6 +24,8 @@ final class PrivacyViewController: FormViewController {
                 App.setSendsDeviceData(value, for: id)
             }))
         }
+        // 3.5.23: the HWID is shown here (it was on «Сетевая активность», now gone).
+        device.append(.value(title: "HWID", detail: { let id = DeviceIdentity.hwid; return id.count > 8 ? String(id.prefix(4)) + "…" + String(id.suffix(4)) : id }))
         return [
             FormSection(L("Что приложение не собирает"), [
                 .note(L("Нет аналитики, телеметрии, рекламы и учётных записей. У приложения нет своего сервера: разработчик ничего не получает.")),

@@ -17,30 +17,29 @@ final class MinimalSettingsViewController: FormViewController {
     override func build() -> [FormSection] {
         // 3.5 (the owner's choice): grouped by what they do; the network page
         // («Сеть и безопасность») is split into its parts.
-        [
+        // 3.5.23 (the owner): «Язык» is in «Внешний вид»; «Обновление подписок» in
+        // «Управление подписками»; «Сетевая активность» is gone (HWID went to
+        // «Конфиденциальность», the rest is said there); «Подключение» and
+        // «Резервные копии» together; «Конфиденциальность» between the log and
+        // «О приложении»; the app lock is gone (shown only while it is on, to turn it off).
+        var security: [FormRow] = []
+        if Prefs.appLock {
+            security.append(.symbol("lock", .toggle(title: L("Блокировка приложения"), get: { Prefs.appLock }, set: { [weak self] in Prefs.appLock = $0; self?.rebuild() })))
+        }
+        return [
             FormSection([
                 .link(symbol: "paintpalette", title: L("Внешний вид")) { [weak self] in self?.push(AppearanceViewController()) },
-                .link(symbol: "globe", title: L("Язык")) { [weak self] in self?.push(LanguageViewController()) },
             ]),
-            // 3.5 (the owner's choice): «Подписки и серверы», «Порядок серверов» and
-            // «Проверка соединения» are gone from here — Home reaches all three (the
-            // server capsule, the servers' «…», the bottom of analytics).
             FormSection([
                 .link(symbol: "folder", title: L("Управление подписками")) { [weak self] in self?.push(SubscriptionsViewController()) },
-                .link(symbol: "arrow.clockwise", title: L("Обновление подписок")) { [weak self] in self?.push(NetworkSettingsViewController(.updates)) },
             ]),
-            // 3.5 beta 2 (the owner): «Маршрутизация и DNS» and «Пинг» are inside «Подключение».
-            FormSection([
+            FormSection(security + [
                 .link(symbol: "wifi", title: L("Подключение")) { [weak self] in self?.push(NetworkSettingsViewController(.connection)) },
-            ]),
-            FormSection([
-                .symbol("lock", .toggle(title: L("Блокировка приложения"), get: { Prefs.appLock }, set: { Prefs.appLock = $0 })),
                 .link(symbol: "externaldrive.badge.icloud", title: L("Резервные копии")) { [weak self] in self?.push(BackupViewController()) },
-                .link(symbol: "hand.raised", title: L("Конфиденциальность")) { [weak self] in self?.push(PrivacyViewController()) },
-                .link(symbol: "eye", title: L("Сетевая активность приложения")) { [weak self] in self?.push(NetworkActivityViewController()) },
             ]),
             FormSection(footer: AboutViewController.version, [
                 .link(symbol: "doc.text.magnifyingglass", title: L("Журнал службы")) { [weak self] in self?.push(ServiceLogViewController()) },
+                .link(symbol: "hand.raised", title: L("Конфиденциальность")) { [weak self] in self?.push(PrivacyViewController()) },
                 .link(symbol: "info.circle", title: L("О приложении")) { [weak self] in self?.push(AboutViewController()) },
             ]),
         ]
@@ -59,6 +58,9 @@ final class AppearanceViewController: ColorsViewController {
                 .picker(title: L("Интерфейс"), options: [("modern", L("Современный")), ("classic", L("Классика"))], get: { Prefs.style.rawValue },
                         set: { Prefs.style = InterfaceStyle(rawValue: $0) ?? .minimal }),
                 .picker(title: L("Оформление"), options: [("system", L("Системная")), ("light", L("Светлая")), ("dark", L("Тёмная"))], get: { Prefs.theme }, set: { Prefs.theme = $0 }),
+                // 3.5.23 (the owner): the language is here, not a page of its own.
+                .picker(title: L("Язык"), options: [("system", L("Системный")), ("ru", "Русский"), ("en", "English")], get: { Prefs.language }, set: { Prefs.language = $0 }),
+                .note(L("Системный — язык устройства: русский на русском iPhone, иначе английский.")),
             ]),
         ] + colorSections(background: true) + [
             // 3.5 beta 3 (the owner): three layouts of the servers sheet.
@@ -160,9 +162,7 @@ final class NetworkSettingsViewController: FormViewController {
             ] + (Prefs.autoPingAvailable ? [
                 .toggle(title: L("Автопинг"), get: { Prefs.autoPing }, set: { Prefs.autoPing = $0 }),
                 .note(L("Задержка серверов проверяется сама при открытии приложения и после обновления подписки.")),
-            ] : []) + [
-                .note(L("Тест только показывает задержку и не меняет выбранный сервер. Его можно остановить в любой момент.")),
-            ]),
+            ] : [])),
         ]
     }
 
@@ -176,12 +176,15 @@ final class NetworkSettingsViewController: FormViewController {
                 .toggle(title: L("Без QUIC через VPN"), get: { Prefs.blockQUIC }, set: { Prefs.blockQUIC = $0; changed() }),
                 .note(L("Видео и сайты, которые идут через VPN, грузятся по обычному HTTPS вместо QUIC: так туннель тратит заметно меньше батареи. Звонки, игры и сайты мимо VPN не затрагиваются.")),
                 .toggle(title: L("Защищённый DNS"), get: { Prefs.secureDNS }, set: { Prefs.secureDNS = $0; App.shared.tunnel.applySettings() }),
+                // 3.5.23 (the owner did not remember what it is for).
+                .note(L("iOS не даёт приложениям обойти VPN для адресов, которые идут через туннель: например, отправить DNS-запрос напрямую в сеть Wi-Fi или оператора. Защищает от утечек DNS. С Kill switch и так всё идёт через VPN. Действует со следующего подключения.")),
                 .toggle(title: L("Локальная сеть"), get: { Prefs.localNetwork }, set: { Prefs.localNetwork = $0; changed() }),
-                .note(L("Серверы DNS берутся из конфигурации. После изменения системных маршрутов переподключите VPN.")),
+                .note(L("Принтеры, AirPlay, роутер и другие устройства домашней сети доступны мимо VPN. После изменения переподключите VPN.")),
             ]),
-            FormSection(L("DNS вне туннеля"), footer: L("Адреса серверов находятся вне туннеля, по DNS over HTTPS через выбранные резолверы, а если сеть его не пропускает — обычным DNS через них же. Российские сайты при обходе — через Яндекс."), [
+            FormSection(L("DNS вне туннеля"), [
                 .picker(title: L("Резолверы"), options: DirectResolvers.presets.map { preset -> (value: String, title: String) in (preset.id, Prefs.resolverTitle(preset.id)) },
                         get: { Prefs.directResolvers }, set: { Prefs.directResolvers = $0; changed() }),
+                .note(L("Адреса серверов находятся вне туннеля, по DNS over HTTPS через выбранные резолверы, а если сеть его не пропускает — обычным DNS через них же. Российские сайты при обходе — через Яндекс.")),
             ]),
         ]
     }
@@ -203,8 +206,8 @@ final class NetworkSettingsViewController: FormViewController {
         case .connection: return [
             FormSection([
                 .toggle(title: L("Автоподключение в неизвестных Wi-Fi"), get: { Prefs.autoConnect }, set: { Prefs.autoConnect = $0; App.shared.tunnel.applySettings() }),
-                .link(symbol: nil, title: L("Мои сети")) { [weak self] in self?.navigationController?.pushViewController(TrustedNetworksViewController(), animated: true) },
                 .note(L("VPN включается сам при подключении к Wi-Fi не из «Моих сетей». В своих сетях и по сотовой связи сам не включается. Выключили VPN кнопкой в неизвестной сети — в ней он не включится сам, пока вы снова не включите его.")),
+                .link(symbol: nil, title: L("Мои сети")) { [weak self] in self?.navigationController?.pushViewController(TrustedNetworksViewController(), animated: true) },
                 .toggle(title: L("Kill switch"), get: { Prefs.killSwitch }, set: { Prefs.killSwitch = $0; App.shared.tunnel.applySettings() }),
                 .note(L("Пока VPN включён, но не подключён (переподключение, сбой), приложения не выходят в интернет напрямую. Исключения iOS: push-уведомления Apple и службы оператора (звонки, SMS) iOS может пускать мимо VPN. При большом трафике (видео) тратит больше батареи: каждый пакет обрабатывает ядро туннеля. Действует со следующего подключения.")),
             ]),

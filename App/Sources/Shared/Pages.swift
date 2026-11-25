@@ -955,6 +955,11 @@ final class SubscriptionsViewController: FormViewController {
                 if let self { AddServerFlow.present(from: self) }
             },
             .button(title: L("Обновить подписки"), destructive: false) { App.shared.refreshAll() },
+            // 3.5.23 (the owner): the automatic update is here, beside «Обновить подписки».
+            .toggle(title: L("Автообновление подписок"), get: { Prefs.autoUpdateSubscriptions }, set: { Prefs.autoUpdateSubscriptions = $0 }),
+            .note(L("Подписки обновляются сами раз в 24 часа или каждый день в выбранное время — при первом открытии приложения после него (и пока оно открыто). Выключено — только вручную.")),
+            .picker(title: L("Время обновления"), options: Prefs.subscriptionUpdateOptions,
+                    get: { String(Prefs.subscriptionUpdateHour) }, set: { Prefs.subscriptionUpdateHour = Int($0) ?? SubscriptionSchedule.everyDay }),
         ])]
         // Subscriptions without servers are not shown (1.x left empty placeholders behind).
         for subscription in App.shared.library.subscriptions where !subscription.nodes.isEmpty {

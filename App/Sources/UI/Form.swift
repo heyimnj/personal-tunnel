@@ -88,7 +88,15 @@ struct FormSection {
 
 /// Grouped settings list used by the Minimal interface and by shared pages.
 class FormViewController: UITableViewController, UIColorPickerViewControllerDelegate {
-    var sections: [FormSection] = [] { didSet { if isViewLoaded { tableView.reloadData() } } }
+    var sections: [FormSection] = [] {
+        didSet {
+            (sections, infos) = Self.foldDescriptions(sections)
+            if isViewLoaded { tableView.reloadData() }
+        }
+    }
+    /// 3.5.23 (the owner): a setting's description is not under it any more — a
+    /// tap on the setting (not on its switch or its menu) shows it.
+    private var infos: [IndexPath: String] = [:]
     private var colorSetter: ((UIColor) -> Void)?
     var largeTitle = false
 
@@ -104,6 +112,46 @@ class FormViewController: UITableViewController, UIColorPickerViewControllerDele
     func build() -> [FormSection] { [] }
 
     func rebuild() { sections = build() }
+
+    /// The notes after a switch or a menu describe it: they go with it (several
+    /// join), as does the footer of a section that has one switch or menu. Notes
+    /// before any (a page of text) stay where they are.
+    static func foldDescriptions(_ sections: [FormSection]) -> ([FormSection], [IndexPath: String]) {
+        var infos: [IndexPath: String] = [:]
+        var result: [FormSection] = []
+        for (sectionIndex, section) in sections.enumerated() {
+            var rows: [FormRow] = []
+            var owner: Int?
+            for row in section.rows {
+                switch row.bare {
+                case .toggle, .picker:
+                    rows.append(row)
+                    owner = rows.count - 1
+                case let .note(text):
+                    if let owner {
+                        let path = IndexPath(row: owner, section: sectionIndex)
+                        infos[path] = infos[path].map { $0 + "\n\n" + text } ?? text
+                    } else {
+                        rows.append(row)
+                    }
+                default:
+                    rows.append(row)
+                }
+            }
+            var folded = section
+            folded.rows = rows
+            let described = rows.indices.filter { index in
+                switch rows[index].bare { case .toggle, .picker: return true; default: return false }
+            }
+            if let footer = section.footer, described.count == 1, !rows.contains(where: { if case .note = $0.bare { return true }; return false }) {
+                let path = IndexPath(row: described[0], section: sectionIndex)
+                infos[path] = infos[path].map { $0 + "\n\n" + footer } ?? footer
+                folded.footer = nil
+            }
+            result.append(folded)
+        }
+        return (result, infos)
+    }
 
     override func viewDidLoad() {
         super.viewDidLoad()
@@ -296,8 +344,17 @@ class FormViewController: UITableViewController, UIColorPickerViewControllerDele
         return cell
     }
 
+    override func tableView(_ tableView: UITableView, willDisplay cell: UITableViewCell, forRowAt indexPath: IndexPath) {
+        if infos[indexPath] != nil { cell.selectionStyle = .default }
+    }
+
     override func tableView(_ tableView: UITableView, didSelectRowAt indexPath: IndexPath) {
         tableView.deselectRow(at: indexPath, animated: true)
+        if let info = infos[indexPath], let cell = tableView.cellForRow(at: indexPath) {
+            Haptics.tap()
+            InfoBubble.show(info, under: cell, in: view.window ?? view)
+            return
+        }
         // 3.5.13 (the owner): the settings' buttons answer to the touch.
         switch sections[indexPath.section].rows[indexPath.row].bare {
         case let .link(_, _, action), let .button(_, _, action):
@@ -323,5 +380,76 @@ class FormViewController: UITableViewController, UIColorPickerViewControllerDele
         colorSetter?(viewController.selectedColor)
         colorSetter = nil
         rebuild()
+    }
+}
+
+
+/// 3.5.23: a setting's description, a card under the setting (above it when
+/// there is no room), in the menus' even tone. Any touch closes it.
+final class InfoBubble: UIView {
+    private static weak var current: InfoBubble?
+    private let card = UIView()
+    private let label = UILabel()
+
+    static func show(_ text: String, under anchor: UIView, in host: UIView) {
+        current?.close()
+        let bubble = InfoBubble(frame: host.bounds)
+        bubble.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+        host.addSubview(bubble)
+        bubble.overrideUserInterfaceStyle = anchor.traitCollection.userInterfaceStyle
+        bubble.build(text)
+        let row = anchor.convert(anchor.bounds, to: bubble)
+        let safe = host.safeAreaInsets
+        let width = min(host.bounds.width - 32, 520)
+        let size = bubble.card.systemLayoutSizeFitting(CGSize(width: width, height: UIView.layoutFittingCompressedSize.height),
+                                                       withHorizontalFittingPriority: .required, verticalFittingPriority: .fittingSizeLevel)
+        let below = row.maxY + 6, above = row.minY - 6 - size.height
+        let y = below + size.height <= host.bounds.height - safe.bottom - 90 ? below : max(safe.top + 8, above)
+        bubble.card.frame = CGRect(x: (host.bounds.width - width) / 2, y: y, width: width, height: size.height)
+        let down = y == below
+        bubble.card.layer.anchorPoint = CGPoint(x: 0.5, y: down ? 0 : 1)
+        bubble.card.frame = CGRect(x: (host.bounds.width - width) / 2, y: y, width: width, height: size.height)
+        bubble.card.alpha = 0
+        bubble.card.transform = CGAffineTransform(scaleX: 0.92, y: 0.92)
+        UIView.animate(withDuration: 0.38, delay: 0, usingSpringWithDamping: 0.82, initialSpringVelocity: 0, options: [.allowUserInteraction]) {
+            bubble.card.alpha = 1
+            bubble.card.transform = .identity
+        }
+        UIAccessibility.post(notification: .announcement, argument: text)
+        current = bubble
+    }
+
+    private func build(_ text: String) {
+        backgroundColor = .clear
+        card.backgroundColor = HoldMenuView.fill
+        card.layer.cornerRadius = 20
+        card.layer.cornerCurve = .continuous
+        card.layer.shadowColor = UIColor.black.cgColor
+        card.layer.shadowOpacity = traitCollection.userInterfaceStyle == .dark ? 0.4 : 0.14
+        card.layer.shadowRadius = 18
+        card.layer.shadowOffset = CGSize(width: 0, height: 6)
+        label.text = text
+        label.font = Theme.font(15)
+        label.textColor = .label
+        label.numberOfLines = 0
+        card.addSubview(label)
+        label.pin(to: card, insets: UIEdgeInsets(top: 14, left: 16, bottom: 14, right: 16))
+        addSubview(card)
+        card.isAccessibilityElement = true
+        card.accessibilityLabel = text
+    }
+
+    override func hitTest(_ point: CGPoint, with event: UIEvent?) -> UIView? {
+        // Any touch closes it; a touch outside the card still reaches what is under it.
+        close()
+        return card.frame.contains(point) ? card : nil
+    }
+
+    func close() {
+        guard superview != nil, card.alpha > 0 else { return }
+        UIView.animate(withDuration: 0.2, delay: 0, options: [.beginFromCurrentState]) {
+            self.card.alpha = 0
+            self.card.transform = CGAffineTransform(scaleX: 0.96, y: 0.96)
+        } completion: { _ in self.removeFromSuperview() }
     }
 }
