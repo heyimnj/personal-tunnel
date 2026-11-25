@@ -1098,7 +1098,15 @@ final class MinimalAnalyticsViewController: UIViewController, UIGestureRecognize
         if udpRow.value.text != udpText { udpRow.value.text = udpText }
         // 3.5.14: the session's routes, «direct» by name; what the app could not
         // attribute (connections it never saw) makes up the session's total.
-        var routes = connections.routes.map { (key: $0.key == CoreConnections.direct ? L("Напрямую") : $0.key, value: $0.value) }
+        func title(_ key: String) -> String {
+            switch key {
+            case CoreConnections.direct: return L("Напрямую")
+            case CoreConnections.probes: return L("Проверки серверов")
+            case CoreConnections.dns: return "DNS"
+            default: return key
+            }
+        }
+        var routes = connections.routes.map { (key: title($0.key), value: $0.value) }
             .sorted { $0.value > $1.value }
         if routes.count > Self.routesShown {
             let rest = routes[(Self.routesShown - 1)...].reduce(0) { $0 + $1.value }

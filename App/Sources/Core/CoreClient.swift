@@ -20,6 +20,11 @@ struct CoreConnections: Equatable {
     /// are the session's total less their sum.
     var routes: [String: Int64] = [:]
     static let direct = "\u{1}direct"
+    /// 3.5.20: the app's own server tests through the tunnel's way out (kill
+    /// switch) and the tunnel's DNS — counted in the session's total, so shown too
+    /// (they were «Без разбивки»: 2.6 of 3.8 MB after a ping of every server).
+    static let probes = "\u{1}probes"
+    static let dns = "\u{1}dns"
     /// The open connections themselves, filled only while a screen lists them.
     var open: [CoreConnection] = []
 }
@@ -347,11 +352,14 @@ final class CoreClient {
         if let iterator = store.iterator() {
             while iterator.hasNext() {
                 guard let item = iterator.next() else { continue }
-                if item.outboundType == "dns" { continue }
-                // 3.2.10: the app's own server tests (the kill switch's way out) are
-                // not the device's traffic: right after connecting they were all the
-                // open connections, and the routes card stayed empty.
-                if item.inbound == ProbeExit.inboundTag { continue }
+                // The tunnel's DNS and (3.2.10) the app's own server tests through the
+                // kill switch's way out are not the device's connections; their bytes
+                // count in the session's routes under their own names (3.5.20).
+                let own = item.outboundType == "dns" ? CoreConnections.dns : (item.inbound == ProbeExit.inboundTag ? CoreConnections.probes : nil)
+                if let own {
+                    count(item, as: own)
+                    continue
+                }
                 if item.closedAt == 0 {
                     let udp = item.network == "udp"
                     if udp { result.udp += 1 } else { result.tcp += 1 }
@@ -369,19 +377,21 @@ final class CoreClient {
                         ))
                     }
                 }
-                let route = item.outboundType == "direct" ? CoreConnections.direct : item.outbound
-                if !route.isEmpty {
-                    let total = item.uplinkTotal + item.downlinkTotal
-                    let delta = total - counted[item.id_, default: 0]
-                    if delta > 0 {
-                        counted[item.id_] = total
-                        sessionRoutes[route, default: 0] += delta
-                    }
-                }
+                count(item, as: item.outboundType == "direct" ? CoreConnections.direct : item.outbound)
             }
         }
         result.routes = sessionRoutes.filter { $0.value > 0 }
         return result
+    }
+
+    /// On `parse`: what the connection moved since it was last counted, into its route.
+    private func count(_ item: LibboxConnection, as route: String) {
+        guard !route.isEmpty else { return }
+        let total = item.uplinkTotal + item.downlinkTotal
+        let delta = total - counted[item.id_, default: 0]
+        guard delta > 0 else { return }
+        counted[item.id_] = total
+        sessionRoutes[route, default: 0] += delta
     }
 
     private final class Handler: NSObject, LibboxCommandClientHandlerProtocol {
