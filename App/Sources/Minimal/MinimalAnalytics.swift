@@ -356,10 +356,12 @@ final class SparklineView: UIView {
 /// upload on it, one shape with one rounding (the owner: the two parts must meet,
 /// not stand apart), a thin line of the card's tone between them.
 final class TimelineBarsView: UIView {
-    /// 3.6 (the owner, variant 5): the session's columns in light blue and lilac —
-    /// the ring below keeps the blue and red.
-    static let downColor = UIColor(red: 0.49, green: 0.77, blue: 1, alpha: 1)
-    static let upColor = UIColor(red: 0.71, green: 0.64, blue: 1, alpha: 1)
+    /// 3.6.1 (the owner, variant 6): the session's columns grey with the upload in
+    /// the app's accent — nothing else on the page uses them; the ring below keeps
+    /// the blue and red.
+    static let downColor = UIColor { $0.userInterfaceStyle == .dark
+        ? UIColor(red: 0.29, green: 0.29, blue: 0.32, alpha: 1) : UIColor(red: 0.78, green: 0.78, blue: 0.8, alpha: 1) }
+    static var upColor: UIColor { Theme.accent }
     var buckets: [TrafficTimeline.Bucket] = [] { didSet { if buckets != oldValue { setNeedsDisplay() } } }
     /// 3.5.25: columns the card has room for — the session fills them from the left
     /// (one column at the start of a session no longer took the whole card).
@@ -378,6 +380,11 @@ final class TimelineBarsView: UIView {
 
     @available(*, unavailable)
     required init?(coder _: NSCoder) { fatalError() }
+
+    override func traitCollectionDidChange(_ previous: UITraitCollection?) {
+        super.traitCollectionDidChange(previous)
+        setNeedsDisplay()
+    }
 
     override func draw(_: CGRect) {
         guard let context = UIGraphicsGetCurrentContext(), bounds.width > 4, bounds.height > 4 else { return }
@@ -412,14 +419,14 @@ final class TimelineBarsView: UIView {
             let low = total < radius * 2 + 4
             let upShare = bucket.total > 0 ? CGFloat(bucket.up) / CGFloat(bucket.total) : 0
             let base: UIColor = bucket.total == 0 ? UIColor.label.withAlphaComponent(0.1)
-                : (low && upShare > 0.5 ? Self.upColor : Self.downColor)
+                : (low && upShare > 0.5 ? Self.upColor : Self.downColor).resolvedColor(with: traitCollection)
             context.setFillColor(base.cgColor)
             context.addPath(UIBezierPath(roundedRect: shape, cornerRadius: radius).cgPath)
             context.fillPath()
             if bucket.up > 0, !low {
                 let up = upShare >= 1 ? total : snap(min(total - radius - 2, max(radius + 1, total * upShare)))
                 context.setBlendMode(.sourceAtop)
-                context.setFillColor(Self.upColor.cgColor)
+                context.setFillColor(Self.upColor.resolvedColor(with: traitCollection).cgColor)
                 context.fill(CGRect(x: left - 1, y: top - 1, width: barWidth + 2, height: up + 1))
             }
             context.endTransparencyLayer()
