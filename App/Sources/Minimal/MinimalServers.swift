@@ -299,6 +299,7 @@ final class MinimalServersViewController: UIViewController, UIScrollViewDelegate
         panel.contentView.addSubview(row)
         row.pin(to: panel.contentView, insets: UIEdgeInsets(top: 0, left: 6, bottom: 0, right: 6))
         view.addSubview(panel)
+        animatedBar = panel
         stylePlus(size: 58)
         view.addSubview(plusButton)
         panel.translatesAutoresizingMaskIntoConstraints = false
@@ -316,6 +317,7 @@ final class MinimalServersViewController: UIViewController, UIScrollViewDelegate
     /// it and «+» beside; the order in segments under them.
     private func buildHeaderC() {
         let bar = addBar()
+        animatedBar = bar
         pingDial.addTarget(self, action: #selector(pingTapped), for: .touchUpInside)
         let more = UIButton(type: .system)
         more.setImage(UIImage(systemName: "ellipsis", withConfiguration: UIImage.SymbolConfiguration(pointSize: 17, weight: .bold)), for: .normal)
@@ -399,6 +401,7 @@ final class MinimalServersViewController: UIViewController, UIScrollViewDelegate
         // The page's own tone, so the first card does not run into the bar.
         bar.backgroundColor = .systemGroupedBackground
         view.addSubview(bar)
+        animatedBar = bar
         bar.translatesAutoresizingMaskIntoConstraints = false
         // The sheet closes with a pull down (and the edge swipe): a grabber says so,
         // where the ✕ was.
@@ -516,8 +519,42 @@ final class MinimalServersViewController: UIViewController, UIScrollViewDelegate
         return parts.joined(separator: " · ")
     }
 
-    /// The capsules: ping and the order, or (selecting) delete and copy.
+    /// Whether the bar last showed a selection; the bar the change cross-fades.
+    private var barSelecting = false
+    private weak var animatedBar: UIView?
+
+    /// The capsules: ping and the order, or (selecting) delete and copy. 3.5.19 (the
+    /// owner: the buttons swapped at once, with a jerk): going into or out of a
+    /// selection the bar cross-fades and the ＋ turns a quarter into ✕.
     private func showBar() {
+        let changed = barSelecting != selecting
+        barSelecting = selecting
+        guard changed, viewIfLoaded?.window != nil else {
+            showBarNow()
+            setPlus(closing: selecting)
+            return
+        }
+        if let bar = animatedBar {
+            UIView.transition(with: bar, duration: 0.3, options: [.transitionCrossDissolve, .allowUserInteraction, .beginFromCurrentState], animations: { self.showBarNow() })
+        } else {
+            showBarNow()
+        }
+        UIView.animate(withDuration: 0.45, delay: 0, usingSpringWithDamping: 0.78, initialSpringVelocity: 0, options: [.allowUserInteraction, .beginFromCurrentState]) {
+            self.setPlus(closing: self.selecting)
+        }
+    }
+
+    /// ＋ to add, or (selecting) the same ＋ turned into ✕ on a quiet plate.
+    private func setPlus(closing: Bool) {
+        plusButton.transform = closing ? CGAffineTransform(rotationAngle: .pi / 4) : .identity
+        guard var config = plusButton.configuration else { return }
+        config.baseBackgroundColor = closing ? UIColor.tertiarySystemFill : Theme.accent
+        config.baseForegroundColor = closing ? .label : .white
+        plusButton.configuration = config
+        plusButton.accessibilityLabel = closing ? L("Отменить выбор") : L("Добавить")
+    }
+
+    private func showBarNow() {
         if selecting {
             pingButton.show(symbol: "trash", title: L("Удалить"), tint: .systemRed, detail: nil, progress: nil)
             pingButton.accessibilityLabel = L("Удалить выбранное")
@@ -525,10 +562,8 @@ final class MinimalServersViewController: UIViewController, UIScrollViewDelegate
             sortButton.accessibilityLabel = L("Скопировать выбранные ссылки")
             pingButton.isEnabled = !selectionEmpty
             sortButton.isEnabled = !selectionEmpty
-            plusButton.isHidden = true
             subtitle.text = Lf("Выбрано: %@", "\(selectedSubscriptions.count + selectedNodes.count)")
         } else {
-            plusButton.isHidden = false
             pingButton.isEnabled = true
             sortButton.isEnabled = true
             sortButton.show(symbol: "arrow.up.arrow.down", title: Self.title(sort), tint: .label, detail: nil, progress: nil)
@@ -593,7 +628,7 @@ final class MinimalServersViewController: UIViewController, UIScrollViewDelegate
             },
         ] + (selecting ? selectionItems() : [currentServerPin()]) + [
             UIAction(title: L("Обновить подписки")) { _ in App.shared.refreshAll() },
-        ] + (selecting ? [UIAction(title: L("Отменить выбор")) { [weak self] _ in self?.endSelection() }] : [])
+        ]
     }
 
     private func currentServerPin() -> UIMenuElement {
@@ -860,8 +895,9 @@ final class MinimalServersViewController: UIViewController, UIScrollViewDelegate
     }
 
     @objc private func addTapped() {
+        // 3.5.19 (the owner): in a selection the ＋ is turned into ✕ and ends it.
         if selecting {
-            copySelected()
+            endSelection()
             return
         }
         AddServerFlow.present(from: self, source: plusButton)
@@ -895,7 +931,16 @@ final class MinimalServersViewController: UIViewController, UIScrollViewDelegate
 
     private func selectionChanged(actions: Bool = false) {
         showBar()
-        list.reconfigureRows()
+        if actions, viewIfLoaded?.window != nil {
+            // 3.5.19: the selection circles come in (and go) with the bar, not at once.
+            UIView.animate(withDuration: 0.32, delay: 0, usingSpringWithDamping: 0.9, initialSpringVelocity: 0, options: [.allowUserInteraction, .beginFromCurrentState]) {
+                self.list.reconfigureRows()
+                self.list.reconfigureHeaders()
+                self.list.layoutIfNeeded()
+            }
+        } else {
+            list.reconfigureRows()
+        }
         if actions { list.reloadActions() } else { list.reconfigureHeaders() }
     }
 
@@ -1003,13 +1048,9 @@ final class MinimalServersViewController: UIViewController, UIScrollViewDelegate
         list.actionsForRow = { [weak self] id, tag in
             if self?.selecting == true { return [] }
             return [SwipeAction(symbol: "pencil", color: .systemOrange, title: L("Изменить")) { self?.edit(node: tag, in: id) },
-             // 3.5.15 (the owner): pin in place of ping (ping is the row's own button).
-             { () -> SwipeAction in
-                 let standalone = App.shared.library.subscription(id)?.isStandalone == true
-                 let key = standalone ? Arrangement.subscription(id) : Arrangement.server(id, tag)
-                 let pinned = Prefs.arrangement.isPinned(key)
-                 return SwipeAction(symbol: pinned ? "pin.slash" : "pin", color: .systemBlue, title: pinned ? L("Открепить") : L("Закрепить")) { self?.togglePin(key) }
-             }(),
+             // 3.5.19 (the owner): «Выбрать» in place of the pin — the selection
+             // opens with this server chosen (pinning stays in the hold menu).
+             SwipeAction(symbol: "checkmark.circle", color: .systemBlue, title: L("Выбрать")) { self?.beginSelection(subscription: id, node: tag) },
              SwipeAction(symbol: "trash", color: .systemRed, title: L("Удалить")) { self?.confirmDelete(node: tag, in: id) }]
         }
         list.onFilter = { [weak self] id, tag in self?.pickFilter(id, tag) }

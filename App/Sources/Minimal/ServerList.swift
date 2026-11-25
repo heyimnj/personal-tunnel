@@ -627,8 +627,10 @@ final class ServerRowView: SwipeRow {
         let latency = UIStackView(.horizontal, spacing: 0, alignment: .center, [ping, spinner])
         latency.isUserInteractionEnabled = false
         pingButton.addSubview(latency)
-        latency.pin(to: pingButton, insets: UIEdgeInsets(top: 0, left: 8, bottom: 0, right: 0))
-        pingButton.widthAnchor.constraint(greaterThanOrEqualToConstant: 58).isActive = true
+        // 3.5.19 (the owner: a tap meant for the ping chose the server): the button
+        // reaches the card's right edge and is wider; the figure stays where it was.
+        latency.pin(to: pingButton, insets: UIEdgeInsets(top: 0, left: 8, bottom: 0, right: 16))
+        pingButton.widthAnchor.constraint(greaterThanOrEqualToConstant: 96).isActive = true
         pingButton.setContentHuggingPriority(.required, for: .horizontal)
         pingButton.setContentCompressionResistancePriority(.required, for: .horizontal)
         mark.contentMode = .center
@@ -638,7 +640,7 @@ final class ServerRowView: SwipeRow {
         text.isUserInteractionEnabled = false
         leading.isUserInteractionEnabled = false
         sliding.addSubview(row)
-        row.pin(to: sliding, insets: UIEdgeInsets(top: 0, left: 14, bottom: 0, right: 16))
+        row.pin(to: sliding, insets: UIEdgeInsets(top: 0, left: 14, bottom: 0, right: 0))
         NSLayoutConstraint.activate([pingButton.heightAnchor.constraint(equalTo: row.heightAnchor)])
     }
 
