@@ -1,0 +1,205 @@
+diff --git a/common/trafficcontrol/manager.go b/common/trafficcontrol/manager.go
+index 1b88b4e..ae0c7cd 100644
+--- a/common/trafficcontrol/manager.go
++++ b/common/trafficcontrol/manager.go
+@@ -42,6 +42,7 @@ type Manager struct {
+ 	closedConnections       list.List[TrackerMetadata]
+ 	closedUploadTotal       int64
+ 	closedDownloadTotal     int64
++	evictedLx               map[string]*EvictedRouteLx // lx: Personal Tunnel, see manager_evicted_lx.go
+ 
+ 	eventSubscriber *observable.Subscriber[ConnectionEvent]
+ 	eventObserver   *observable.Observer[ConnectionEvent]
+@@ -103,6 +104,7 @@ func (m *Manager) leave(tracker Tracker) {
+ 		evicted := m.closedConnections.PopFront()
+ 		m.closedUploadTotal += evicted.Upload.Load()
+ 		m.closedDownloadTotal += evicted.Download.Load()
++		m.noteEvictedLx(&evicted)
+ 	}
+ 	m.closedConnections.PushBack(metadataCopy)
+ 	m.closedConnectionsAccess.Unlock()
+@@ -180,6 +182,7 @@ func (m *Manager) Clear() {
+ 	for element := m.closedConnections.Front(); element != nil; element = element.Next() {
+ 		m.closedUploadTotal += element.Value.Upload.Load()
+ 		m.closedDownloadTotal += element.Value.Download.Load()
++		m.noteEvictedLx(&element.Value)
+ 	}
+ 	m.closedConnections.Init()
+ }
+diff --git a/common/trafficcontrol/manager_evicted_lx.go b/common/trafficcontrol/manager_evicted_lx.go
+new file mode 100644
+index 0000000..4cd8e67
+--- /dev/null
++++ b/common/trafficcontrol/manager_evicted_lx.go
+@@ -0,0 +1,53 @@
++package trafficcontrol
++
++import "sort"
++
++// EvictedRouteLx is the traffic of closed connections the manager no longer
++// lists (pushed out past closedConnectionsLimit, or cleared to free memory), by
++// route: Personal Tunnel counts its session's routes from the connections a new
++// stream lists, and these were lost to «Без разбивки» after a while in the
++// background.
++type EvictedRouteLx struct {
++	Inbound      string
++	Outbound     string
++	OutboundType string
++	Upload       int64
++	Download     int64
++}
++
++// noteEvictedLx is called with closedConnectionsAccess held.
++func (m *Manager) noteEvictedLx(metadata *TrackerMetadata) {
++	key := metadata.Metadata.Inbound + "\x00" + metadata.OutboundType + "\x00" + metadata.Outbound
++	if m.evictedLx == nil {
++		m.evictedLx = make(map[string]*EvictedRouteLx)
++	}
++	route := m.evictedLx[key]
++	if route == nil {
++		route = &EvictedRouteLx{Inbound: metadata.Metadata.Inbound, Outbound: metadata.Outbound, OutboundType: metadata.OutboundType}
++		m.evictedLx[key] = route
++	}
++	route.Upload += metadata.Upload.Load()
++	route.Download += metadata.Download.Load()
++}
++
++// EvictedRoutesLx is the traffic of the connections no longer listed, by route,
++// in a stable order.
++func (m *Manager) EvictedRoutesLx() []EvictedRouteLx {
++	m.closedConnectionsAccess.Lock()
++	routes := make([]EvictedRouteLx, 0, len(m.evictedLx))
++	for _, route := range m.evictedLx {
++		routes = append(routes, *route)
++	}
++	m.closedConnectionsAccess.Unlock()
++	sort.Slice(routes, func(i, j int) bool {
++		a, b := routes[i], routes[j]
++		if a.Inbound != b.Inbound {
++			return a.Inbound < b.Inbound
++		}
++		if a.OutboundType != b.OutboundType {
++			return a.OutboundType < b.OutboundType
++		}
++		return a.Outbound < b.Outbound
++	})
++	return routes
++}
+diff --git a/common/trafficcontrol/manager_evicted_lx_test.go b/common/trafficcontrol/manager_evicted_lx_test.go
+new file mode 100644
+index 0000000..bf190f9
+--- /dev/null
++++ b/common/trafficcontrol/manager_evicted_lx_test.go
+@@ -0,0 +1,54 @@
++package trafficcontrol
++
++import (
++	"sync/atomic"
++	"testing"
++
++	"github.com/sagernet/sing-box/adapter"
++
++	"github.com/gofrs/uuid/v5"
++)
++
++type testTrackerLx struct{ metadata *TrackerMetadata }
++
++func (t *testTrackerLx) Metadata() *TrackerMetadata { return t.metadata }
++func (t *testTrackerLx) Close() error               { return nil }
++
++func newTestTrackerLx(outbound string, up, down int64) *testTrackerLx {
++	upload, download := new(atomic.Int64), new(atomic.Int64)
++	upload.Store(up)
++	download.Store(down)
++	return &testTrackerLx{&TrackerMetadata{
++		ID: uuid.Must(uuid.NewV4()), Metadata: adapter.InboundContext{Inbound: "tun-in"},
++		Upload: upload, Download: download, Outbound: outbound, OutboundType: "vless",
++	}}
++}
++
++// Personal Tunnel: what leaves the closed list is kept by route, so the listed
++// connections and these together are the whole session.
++func TestEvictedRoutesLX(t *testing.T) {
++	m := NewManager()
++	for i := 0; i < closedConnectionsLimit+3; i++ {
++		outbound := "a"
++		if i%2 == 1 {
++			outbound = "b"
++		}
++		tracker := newTestTrackerLx(outbound, 1, 10)
++		m.join(tracker)
++		m.leave(tracker)
++	}
++	routes := m.EvictedRoutesLx()
++	if len(routes) != 2 || routes[0].Outbound != "a" || routes[0].Upload != 2 || routes[0].Download != 20 || routes[1].Upload != 1 {
++		t.Fatalf("after eviction: %+v", routes)
++	}
++	m.Clear()
++	var up, down int64
++	for _, route := range m.EvictedRoutesLx() {
++		up += route.Upload
++		down += route.Download
++	}
++	totalUp, totalDown := m.Total()
++	if up != closedConnectionsLimit+3 || down != 10*(closedConnectionsLimit+3) || up != totalUp || down != totalDown {
++		t.Fatalf("after clear: %d/%d, total %d/%d", up, down, totalUp, totalDown)
++	}
++}
+diff --git a/daemon/connections_evicted_lx.go b/daemon/connections_evicted_lx.go
+new file mode 100644
+index 0000000..8802720
+--- /dev/null
++++ b/daemon/connections_evicted_lx.go
+@@ -0,0 +1,40 @@
++package daemon
++
++import (
++	"time"
++
++	"github.com/sagernet/sing-box/common/trafficcontrol"
++)
++
++// EvictedConnectionPrefixLx starts the id of a closed "connection" in a stream's
++// first snapshot that stands for the traffic of connections no longer listed, one
++// per route (Personal Tunnel). With them the snapshot is the whole session, so
++// the app can count its routes from it again after a while in the background.
++const EvictedConnectionPrefixLx = "lx-evicted:"
++
++func evictedRouteEventsLx(manager *trafficcontrol.Manager) []*ConnectionEvent {
++	routes := manager.EvictedRoutesLx()
++	if len(routes) == 0 {
++		return nil
++	}
++	now := time.Now().UnixMilli()
++	events := make([]*ConnectionEvent, 0, len(routes))
++	for _, route := range routes {
++		id := EvictedConnectionPrefixLx + route.Inbound + "/" + route.OutboundType + "/" + route.Outbound
++		events = append(events, &ConnectionEvent{
++			Type: ConnectionEventType_CONNECTION_EVENT_NEW,
++			Id:   id,
++			Connection: &Connection{
++				Id:            id,
++				Inbound:       route.Inbound,
++				Outbound:      route.Outbound,
++				OutboundType:  route.OutboundType,
++				CreatedAt:     now,
++				ClosedAt:      now,
++				UplinkTotal:   route.Upload,
++				DownlinkTotal: route.Download,
++			},
++		})
++	}
++	return events
++}
+diff --git a/daemon/started_service.go b/daemon/started_service.go
+index 8bb9b29..e60560e 100644
+--- a/daemon/started_service.go
++++ b/daemon/started_service.go
+@@ -934,6 +934,7 @@ func (s *StartedService) buildInitialConnectionState(manager *trafficcontrol.Man
+ 		})
+ 	}
+ 
++	events = append(events, evictedRouteEventsLx(manager)...) // lx: Personal Tunnel
+ 	return events
+ }
+ 

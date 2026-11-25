@@ -158,7 +158,7 @@ final class HoldMenuView: UIView {
     private func build(_ list: [HoldMenuItem]) {
         backdrop.addTarget(self, action: #selector(backdropTouched), for: .touchDown)
         // Clear when it does not dim: it still takes the touch that closes the menu.
-        backdrop.backgroundColor = dims ? UIColor.black.withAlphaComponent(traitCollection.userInterfaceStyle == .dark ? 0.4 : 0.16) : UIColor.black.withAlphaComponent(0.001)
+        backdrop.backgroundColor = dims ? UIColor.black.withAlphaComponent(traitCollection.userInterfaceStyle == .dark ? 0.55 : 0.16) : UIColor.black.withAlphaComponent(0.001)
         backdrop.alpha = 0
         addSubview(backdrop)
         backdrop.pin(to: self)
@@ -194,6 +194,21 @@ final class HoldMenuView: UIView {
               let picture = view.resizableSnapshotView(from: rect, afterScreenUpdates: false, withCapInsets: .zero) else { return }
         picture.frame = view.convert(rect, to: self)
         picture.isUserInteractionEnabled = false
+        // 3.5.27 (the owner): in the dark theme a held subscription (a part of the
+        // sheet, not a card of its own) was hard to tell from the dimmed sheet
+        // around it — black on near black. What is lifted gets a light edge there.
+        if traitCollection.userInterfaceStyle == .dark {
+            picture.layer.cornerRadius = view.layer.cornerRadius > 0 ? view.layer.cornerRadius : 18
+            picture.layer.cornerCurve = .continuous
+            picture.clipsToBounds = true
+            picture.layer.borderWidth = 1
+            picture.layer.borderColor = UIColor.white.withAlphaComponent(0.16).cgColor
+            let glow = UIView(frame: picture.bounds)
+            glow.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+            glow.backgroundColor = UIColor.white.withAlphaComponent(0.06)
+            glow.isUserInteractionEnabled = false
+            picture.addSubview(glow)
+        }
         insertSubview(picture, aboveSubview: backdrop)
         lifted = picture
     }
