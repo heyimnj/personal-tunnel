@@ -438,6 +438,7 @@ final class MinimalHomeViewController: UIViewController, UIScrollViewDelegate, U
     @objc private func touchDown(_ press: UILongPressGestureRecognizer) {
         switch press.state {
         case .began:
+            if page == 0 { analytics.aboutToShow() }
             guard pageAnimator != nil else { return }
             stopPageAnimator()
             caughtPage = true

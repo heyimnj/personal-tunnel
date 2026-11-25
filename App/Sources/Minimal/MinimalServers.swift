@@ -1001,9 +1001,13 @@ final class MinimalServersViewController: UIViewController, UIScrollViewDelegate
         list.actionsForRow = { [weak self] id, tag in
             if self?.selecting == true { return [] }
             return [SwipeAction(symbol: "pencil", color: .systemOrange, title: L("Изменить")) { self?.edit(node: tag, in: id) },
-             SwipeAction(symbol: "waveform.path.ecg", color: .systemBlue, title: L("Пинг")) {
-                 if let subscription = App.shared.library.subscription(id), let node = subscription.node(tag) { App.shared.ping(node: node, in: subscription) }
-             },
+             // 3.5.15 (the owner): pin in place of ping (ping is the row's own button).
+             { () -> SwipeAction in
+                 let standalone = App.shared.library.subscription(id)?.isStandalone == true
+                 let key = standalone ? Arrangement.subscription(id) : Arrangement.server(id, tag)
+                 let pinned = Prefs.arrangement.isPinned(key)
+                 return SwipeAction(symbol: pinned ? "pin.slash" : "pin", color: .systemBlue, title: pinned ? L("Открепить") : L("Закрепить")) { self?.togglePin(key) }
+             }(),
              SwipeAction(symbol: "trash", color: .systemRed, title: L("Удалить")) { self?.confirmDelete(node: tag, in: id) }]
         }
         list.onFilter = { [weak self] id, tag in self?.pickFilter(id, tag) }
@@ -1014,6 +1018,7 @@ final class MinimalServersViewController: UIViewController, UIScrollViewDelegate
         list.onSelect = { [weak self] id, tag in
             guard let self else { return }
             if self.selecting { self.toggleSelected(node: tag, in: id); return }
+            Haptics.item()
             App.shared.select(node: tag, in: id)
             // «Недавние»: the chosen server goes up at once, with the VPN off as well.
             if Prefs.sortByRecent { self.reload() }
@@ -1218,8 +1223,7 @@ final class MinimalServersViewController: UIViewController, UIScrollViewDelegate
         let open = !list.isOpen(id)
         if open { expanded.insert(id) } else { expanded.remove(id) }
         Prefs.expandedSubscriptions = expanded
-        // 3.5.13 (the owner): weak.
-        Haptics.soft(open ? 0.3 : 0.22)
+        Haptics.item()
         list.setOpen(id, open)
     }
 
@@ -1270,6 +1274,7 @@ final class MinimalServersViewController: UIViewController, UIScrollViewDelegate
         next.togglePin(key)
         Prefs.arrangement = next
         reload()
+        list.reloadActions()
     }
 
     private func copy(_ text: String?) {

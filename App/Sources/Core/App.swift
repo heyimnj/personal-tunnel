@@ -699,6 +699,9 @@ enum Haptics {
         light.prepare()
         softGenerator.prepare()
     }
+    /// 3.5.14 (the owner): servers, subscriptions and the tab bar — lighter than
+    /// the settings' `tap`, yet clearly felt (3.5.13's soft 0.3 was barely there).
+    static func item() { if Prefs.hapticsEnabled { light.impactOccurred(intensity: 0.65) } }
     static func soft(_ intensity: CGFloat = 0.6) { if Prefs.hapticsEnabled { softGenerator.impactOccurred(intensity: intensity) } }
     static func selection() { if Prefs.hapticsEnabled { picker.selectionChanged() } }
     static func result(_ ok: Bool) {

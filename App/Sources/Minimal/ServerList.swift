@@ -888,9 +888,6 @@ final class SurfaceView: UIView {
     let header = SubscriptionHeaderView()
     let info = SubscriptionInfoStrip()
     let filters = FilterBar()
-    /// 3.2.4: the press shade of the whole head — its title, the provider's line
-    /// and the filters — under them, so the text stays as it is.
-    let pressShade = UIView()
     private let swipeClip = UIView()
     private let swipeCard = UIView()
 
@@ -929,9 +926,6 @@ final class SurfaceView: UIView {
         plate.isUserInteractionEnabled = false
         plate.layer.cornerCurve = .continuous
         addSubview(plate)
-        pressShade.isUserInteractionEnabled = false
-        pressShade.layer.cornerCurve = .continuous
-        addSubview(pressShade)
         // 3.5.3: an open head swiped lights as a card from its title to the
         // provider's line (not the filters), clipped at the surface's edge.
         swipeClip.isUserInteractionEnabled = false
@@ -1095,8 +1089,8 @@ final class ServerListView: UIScrollView {
     var onSelect: ((Int64, String) -> Void)?
     var onPing: ((Int64, String) -> Void)?
     /// What a long press lifts above the dim under the menu: a view, the pressed
-    /// part (the menu is placed by it) and the part kept bright. `.null` for a
-    /// subscription: nothing dims, its own card darkens instead (3.5).
+    /// part (the menu is placed by it) and the part kept bright (`.null`: nothing
+    /// dims). A subscription keeps its whole card bright (3.5.14).
     typealias HoldSource = (view: UIView, rect: CGRect, lift: CGRect)
     /// A long press: the subscription, the server (nil for the head), the pressed
     /// row and how to undo the highlight.
@@ -1298,23 +1292,6 @@ final class ServerListView: UIScrollView {
     }
 
     func row(for subscription: Int64, node: String) -> ServerRowView? { rows[Self.key(subscription, node)] }
-
-    /// The press shade takes the card's own shape: all corners round when closed,
-    /// only the top ones when the subscription is open under it. 3.2.4: open, it
-    /// covers the whole head — the provider's line and the filters too, not only
-    /// the title.
-    func headerHeld(_ id: Int64, _ held: Bool) {
-        guard let surface = surfaces[id] else { return }
-        let shade = surface.pressShade
-        if held {
-            // 3.5.3 (the owner): the title and the provider's line, as a card of
-            // their own (all corners round) — not the filters, not the whole card.
-            shade.frame = CGRect(x: 0, y: 0, width: surface.bounds.width, height: isOpen(id) ? surface.headLightHeight : Self.headerHeight)
-            shade.layer.cornerRadius = isOpen(id) ? 22 : 24
-            shade.layer.maskedCorners = [.layerMinXMinYCorner, .layerMaxXMinYCorner, .layerMinXMaxYCorner, .layerMaxXMaxYCorner]
-        }
-        UIView.animate(withDuration: 0.18) { shade.backgroundColor = held ? UIColor.label.withAlphaComponent(0.08) : .clear }
-    }
 
     /// The subscription's head in its surface: the title, and when open the
     /// provider's line and the filters under it.
@@ -1651,18 +1628,20 @@ final class ServerListView: UIScrollView {
                 row.setHeld(true)
                 onHold?(section.id, node, point, (view: surface as UIView, rect: head, lift: head)) { [weak row] in row?.setHeld(false) }
             } else if local.y < head.maxY {
-                // 3.5 (owner): a held subscription darkens its own card — the whole
-                // of it, open or closed, under its servers (they stay as they are) —
-                // and nothing else dims (3.5 beta 1–4 dimmed the rest of the sheet
-                // and kept the card bright: the wrong way round).
-                headerHeld(section.id, true)
+                // 3.5.14 (the owner): as in 3.5 beta 1–4 — the rest of the sheet
+                // dims and the subscription stays bright above it, the whole card,
+                // open with its servers or closed (3.5–3.5.13 darkened the card itself).
+                // Only the part on screen, below the sheet's bar, is lifted.
+                let visible = convert(bounds.inset(by: UIEdgeInsets(top: max(0, contentInset.top - 6), left: 0, bottom: 0, right: 0)), to: surface)
+                var lift = surface.bounds.intersection(visible)
+                if lift.isNull || lift.height < 1 { lift = head }
                 // 3.5.2 (the owner: a little higher): the menu hangs under the title
                 // and the provider's line, over the filters.
                 var place = head
                 if isOpen(section.id), !section.tags.isEmpty, surface.filters.frame.height > 1 {
                     place.size.height = max(Self.headerHeight, surface.filters.frame.minY)
                 }
-                onHold?(section.id, nil, point, (view: surface as UIView, rect: place, lift: CGRect.null)) { [weak self] in self?.headerHeld(section.id, false) }
+                onHold?(section.id, nil, point, (view: surface as UIView, rect: place, lift: lift)) {}
             } else if let row = rows.values.first(where: { $0.superview === surface && $0.frame.contains(local) }) {
                 row.setHeld(true)
                 onHold?(section.id, row.key.node, point, (view: row.card as UIView, rect: row.card.bounds, lift: row.card.bounds)) { [weak row] in row?.setHeld(false) }

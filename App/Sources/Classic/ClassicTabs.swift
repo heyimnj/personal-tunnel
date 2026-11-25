@@ -268,6 +268,7 @@ final class ClassicServersViewController: UIViewController, UITableViewDataSourc
 
     func tableView(_ tableView: UITableView, didSelectRowAt indexPath: IndexPath) {
         guard let subscription else { return }
+        Haptics.item()
         App.shared.select(node: rows[indexPath.row].id, in: subscription.id)
     }
 }
@@ -332,7 +333,7 @@ final class ClassicManageViewController: ClassicPage {
             let head = ClassicRow(UIStackView(.horizontal, spacing: 10, alignment: .center, [name, chevron, UIView()])) { [weak self] in
                 guard let self else { return }
                 if self.expanded.contains(id) { self.expanded.remove(id) } else { self.expanded.insert(id) }
-                Haptics.soft(0.5)
+                Haptics.item()
                 self.rebuild()
             }
             let more = UIButton(type: .system)
