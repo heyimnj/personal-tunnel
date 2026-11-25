@@ -193,7 +193,11 @@ final class ServiceLogViewController: UIViewController, UITableViewDataSource, U
                 ])
             },
         ])
-        let bar = UIStackView(.horizontal, spacing: 6, alignment: .center, [dot, live, UIView(), tool("doc.on.doc", #selector(copyAll)), tool("magnifyingglass", #selector(toggleSearch)), pause, filter])
+        // 3.5.24 (the owner): «Проверка соединения» is here, first of the tools (it
+        // was a row at the bottom of analytics).
+        let check = tool("stethoscope", #selector(openCheck))
+        check.accessibilityLabel = L("Проверка соединения")
+        let bar = UIStackView(.horizontal, spacing: 6, alignment: .center, [dot, live, UIView(), check, tool("doc.on.doc", #selector(copyAll)), tool("magnifyingglass", #selector(toggleSearch)), pause, filter])
         bar.setCustomSpacing(6, after: dot)
         let panel = UIView()
         panel.backgroundColor = FormViewController.cellColor
@@ -263,6 +267,18 @@ final class ServiceLogViewController: UIViewController, UITableViewDataSource, U
 
     /// Every line of the log, and the extension's own short log (memory, starts,
     /// stops), which outlives the extension. Addresses and keys are removed.
+    @objc private func openCheck() {
+        Haptics.tap()
+        let page = DiagnosticsViewController()
+        if let navigation = navigationController {
+            navigation.pushViewController(page, animated: true)
+        } else {
+            let navigation = UINavigationController(rootViewController: page)
+            navigation.overrideUserInterfaceStyle = Theme.userInterfaceStyle
+            present(navigation, animated: true)
+        }
+    }
+
     @objc private func copyAll() {
         let levels = ServiceLogViewController.levels
         var text = ["\(TunnelController.appName) \(AboutViewController.version), " + L("ядро туннеля") + ": \(CoreInfo.tunnelCore)",

@@ -895,9 +895,7 @@ final class MinimalAnalyticsViewController: UIViewController, UIGestureRecognize
         let links = AnalyticsCard(insets: UIEdgeInsets(top: 0, left: 18, bottom: 0, right: 18))
         links.stack.alignment = .fill
         links.stack.spacing = 0
-        links.stack.addArrangedSubview(link("stethoscope", L("Проверка соединения")) { [weak self] in
-            self?.navigationController?.pushViewController(DiagnosticsViewController(), animated: true)
-        })
+        // 3.5.24 (the owner): «Проверка соединения» moved to the log's tools.
         links.stack.addArrangedSubview(link("doc.text.magnifyingglass", L("Журнал службы")) { [weak self] in
             self?.navigationController?.pushViewController(ServiceLogViewController(), animated: true)
         })
