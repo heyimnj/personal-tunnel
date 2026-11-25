@@ -198,23 +198,35 @@ final class RingChart: UIView {
         let center = CGPoint(x: bounds.midX, y: bounds.midY)
         context.setLineWidth(lineWidth)
         context.setLineCap(.round)
-        context.setStrokeColor(UIColor.label.withAlphaComponent(0.07).cgColor)
-        context.addArc(center: center, radius: radius, startAngle: 0, endAngle: .pi * 2, clockwise: false)
-        context.strokePath()
         let shown = parts.filter { $0.value > 0 }
         let total = shown.reduce(0) { $0 + $1.value }
-        guard total > 0 else { return }
-        // 3.5.11 (the owner: the gaps between download and upload looked like
-        // something missing): the parts meet edge to edge, square where they join.
-        context.setLineCap(.butt)
-        var angle = -CGFloat.pi / 2
-        for part in shown {
-            let sweep = CGFloat(part.value / total) * .pi * 2
-            context.setStrokeColor(part.color.cgColor)
-            context.addArc(center: center, radius: radius, startAngle: angle, endAngle: angle + sweep, clockwise: false)
+        guard total > 0, let first = shown.first else {
+            context.setStrokeColor(UIColor.label.withAlphaComponent(0.07).cgColor)
+            context.addArc(center: center, radius: radius, startAngle: 0, endAngle: .pi * 2, clockwise: false)
             context.strokePath()
+            return
+        }
+        // 3.5.11 (the owner): the parts meet edge to edge. 3.6 (the owner: a thin
+        // line at the join): the ring is drawn once, whole, and the other parts are
+        // painted into it — so nothing of the background shows through where two
+        // parts meet, and every part has the same edges.
+        context.beginTransparencyLayer(auxiliaryInfo: nil)
+        context.setStrokeColor(first.color.cgColor)
+        context.addArc(center: center, radius: radius, startAngle: 0, endAngle: .pi * 2, clockwise: false)
+        context.strokePath()
+        context.setBlendMode(.sourceAtop)
+        var angle = -CGFloat.pi / 2 + CGFloat(first.value / total) * .pi * 2
+        let reach = radius + lineWidth
+        for part in shown.dropFirst() {
+            let sweep = CGFloat(part.value / total) * .pi * 2
+            context.setFillColor(part.color.cgColor)
+            context.move(to: center)
+            context.addArc(center: center, radius: reach, startAngle: angle, endAngle: angle + sweep, clockwise: false)
+            context.closePath()
+            context.fillPath()
             angle += sweep
         }
+        context.endTransparencyLayer()
     }
 }
 
@@ -387,7 +399,10 @@ final class TimelineBarsView: UIView {
             let shape = CGRect(x: left, y: top, width: barWidth, height: total)
             let radius = min(barWidth / 2, 4)
             context.saveGState()
-            UIBezierPath(roundedRect: shape, cornerRadius: radius).addClip()
+            // 3.6 (the owner: the red top looked wider than the blue): the column is
+            // drawn once and the upload painted into it, so both parts share one edge
+            // (a fill over a fill doubled the edge's soft pixels under the red).
+            context.beginTransparencyLayer(auxiliaryInfo: nil)
             // The upload is at least as tall as the corner (a thinner sliver was cut into
             // a crescent), and a column too low for two parts is one colour.
             let low = total < radius * 2 + 4
@@ -395,12 +410,15 @@ final class TimelineBarsView: UIView {
             let base: UIColor = bucket.total == 0 ? UIColor.label.withAlphaComponent(0.1)
                 : (low && upShare > 0.5 ? SpeedGraphView.upColor : SpeedGraphView.downColor)
             context.setFillColor(base.cgColor)
-            context.fill(shape)
+            context.addPath(UIBezierPath(roundedRect: shape, cornerRadius: radius).cgPath)
+            context.fillPath()
             if bucket.up > 0, !low {
                 let up = upShare >= 1 ? total : snap(min(total - radius - 2, max(radius + 1, total * upShare)))
+                context.setBlendMode(.sourceAtop)
                 context.setFillColor(SpeedGraphView.upColor.cgColor)
-                context.fill(CGRect(x: left, y: top, width: barWidth, height: up))
+                context.fill(CGRect(x: left - 1, y: top - 1, width: barWidth + 2, height: up + 1))
             }
+            context.endTransparencyLayer()
             context.restoreGState()
         }
     }
