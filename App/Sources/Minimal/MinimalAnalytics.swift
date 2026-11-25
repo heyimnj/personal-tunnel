@@ -46,6 +46,11 @@ final class SpeedGraphView: UIView {
     private let upDot = CAShapeLayer()
     static let downColor = UIColor(red: 0.33, green: 0.75, blue: 0.91, alpha: 1)
     static let upColor = UIColor(red: 0.93, green: 0.26, blue: 0.36, alpha: 1)
+    /// 3.5.28 (the owner): the line «сейчас» under the session's columns is neutral —
+    /// the download in the text's colour, the upload grey and dashed — so the
+    /// columns above keep the blue and red to themselves.
+    static let liveDownColor = UIColor.label
+    static let liveUpColor = UIColor.secondaryLabel
     var history = TrafficHistory() { didSet { drawnSize = nil; setNeedsLayout() } }
     /// 3.5.10: the size the lines were last built for; a layout pass that changes
     /// nothing (the page moving, its insets settling) builds nothing.
@@ -55,32 +60,49 @@ final class SpeedGraphView: UIView {
 
     override init(frame: CGRect) {
         super.init(frame: frame)
-        let washes: [(CAGradientLayer, CAShapeLayer, UIColor, CGFloat)] = [(downWash, downWashShape, Self.downColor, 0.32), (upWash, upWashShape, Self.upColor, 0.22)]
-        for (wash, shape, color, strength) in washes {
-            wash.colors = [color.withAlphaComponent(strength).cgColor, color.withAlphaComponent(0).cgColor]
+        for (wash, shape) in [(downWash, downWashShape), (upWash, upWashShape)] {
             wash.mask = shape
             layer.addSublayer(wash)
         }
-        for (line, color) in [(down, Self.downColor), (up, Self.upColor)] {
+        for line in [down, up] {
             line.fillColor = nil
-            line.strokeColor = color.cgColor
-            line.lineWidth = 2.2
+            line.lineWidth = 1.8
             line.lineJoin = .round
             line.lineCap = .round
             layer.addSublayer(line)
         }
-        for (dot, color) in [(downDot, Self.downColor), (upDot, Self.upColor)] {
-            dot.fillColor = color.cgColor
-            dot.strokeColor = UIColor.white.withAlphaComponent(0.9).cgColor
+        up.lineDashPattern = [4, 3]
+        for dot in [downDot, upDot] {
             dot.lineWidth = 1.5
             layer.addSublayer(dot)
         }
+        paint()
         // Nothing is drawn outside the graph's own box.
         layer.masksToBounds = true
     }
 
     @available(*, unavailable)
     required init?(coder _: NSCoder) { fatalError() }
+
+    /// The neutral colours follow the theme (layers keep a resolved colour).
+    private func paint() {
+        let downColor = Self.liveDownColor.resolvedColor(with: traitCollection)
+        let upColor = Self.liveUpColor.resolvedColor(with: traitCollection)
+        downWash.colors = [downColor.withAlphaComponent(0.12).cgColor, downColor.withAlphaComponent(0).cgColor]
+        upWash.colors = [upColor.withAlphaComponent(0).cgColor, upColor.withAlphaComponent(0).cgColor]
+        down.strokeColor = downColor.cgColor
+        up.strokeColor = upColor.cgColor
+        downDot.fillColor = downColor.cgColor
+        upDot.fillColor = upColor.cgColor
+        let ring = (traitCollection.userInterfaceStyle == .dark ? UIColor.black : UIColor.white).withAlphaComponent(0.9)
+        downDot.strokeColor = ring.cgColor
+        upDot.strokeColor = ring.cgColor
+    }
+
+    override func traitCollectionDidChange(_ previous: UITraitCollection?) {
+        super.traitCollectionDidChange(previous)
+        if traitCollection.hasDifferentColorAppearance(comparedTo: previous) { paint() }
+    }
 
     override func layoutSubviews() {
         super.layoutSubviews()
@@ -233,7 +255,8 @@ final class GaugeView: UIView {
         for zone in zones {
             let end = min(zone.upTo, maximum)
             guard end > start else { continue }
-            context.setStrokeColor(zone.color.withAlphaComponent(0.16).cgColor)
+            // 3.5.28 (the owner): the three zones are seen on the track (0.16 was lost).
+            context.setStrokeColor(zone.color.withAlphaComponent(0.38).cgColor)
             context.setLineCap(.butt)
             context.addArc(center: center, radius: radius, startAngle: angle(start), endAngle: angle(end), clockwise: false)
             context.strokePath()
@@ -573,10 +596,12 @@ final class MinimalAnalyticsViewController: UIViewController, UIGestureRecognize
     private let scroll = HandoffScrollView()
     // 3.5 beta 2 (the owner: the page was larger than the rest of the app): smaller
     // figures, charts and rows throughout.
-    private let downSpeed = UILabel(font: Theme.digits(28, .semibold))
-    private let downUnit = UILabel(font: Theme.font(13, .medium), color: .secondaryLabel)
-    private let upSpeed = UILabel(font: Theme.digits(28, .semibold))
-    private let upUnit = UILabel(font: Theme.font(13, .medium), color: .secondaryLabel)
+    // 3.5.28 (the owner): the speed now is the small part under the session's
+    // columns.
+    private let downSpeed = UILabel(font: Theme.digits(20, .semibold), color: SpeedGraphView.liveDownColor)
+    private let downUnit = UILabel(font: Theme.font(12, .medium), color: .secondaryLabel)
+    private let upSpeed = UILabel(font: Theme.digits(20, .semibold), color: SpeedGraphView.liveUpColor)
+    private let upUnit = UILabel(font: Theme.font(12, .medium), color: .secondaryLabel)
     private let graph = SpeedGraphView()
     private let graphPeak = UILabel(font: Theme.digits(Theme.font(.caption2).pointSize, .medium), color: .secondaryLabel)
     private let graphHint = UILabel(L("Данные появятся после подключения"), font: Theme.font(.caption1), color: .secondaryLabel)
@@ -605,14 +630,10 @@ final class MinimalAnalyticsViewController: UIViewController, UIGestureRecognize
     private let routeRings = RouteRingsView()
     /// 3.5.23: «Трафик по времени».
     private let timelineBars = TimelineBarsView()
-    /// 3.5.25 (the owner): «Сейчас | Сеанс» in the speed card — the live graph or the
-    /// session's columns under the same figures.
-    private let heroMode = UISegmentedControl(items: [L("Сейчас"), L("Сеанс")])
+    /// 3.5.28 (the owner: the «Сейчас | Сеанс» switch did not fit): one card, the
+    /// session's columns large above, the speed now small below — no switch.
     private let timelineBox = UIStackView(.vertical, spacing: 4, alignment: .fill, [])
-    private var sessionMode: Bool {
-        get { UserDefaults.standard.bool(forKey: "pt.analytics.sessionGraph") }
-        set { UserDefaults.standard.set(newValue, forKey: "pt.analytics.sessionGraph") }
-    }
+    private let sessionPeak = UILabel(font: Theme.digits(Theme.font(.caption2).pointSize, .medium), color: .secondaryLabel)
     private let timelineAxis = [UILabel(font: Theme.digits(Theme.font(.caption2).pointSize, .regular), color: .secondaryLabel),
                                 UILabel(font: Theme.digits(Theme.font(.caption2).pointSize, .regular), color: .secondaryLabel),
                                 UILabel(font: Theme.digits(Theme.font(.caption2).pointSize, .regular), color: .secondaryLabel)]
@@ -624,7 +645,10 @@ final class MinimalAnalyticsViewController: UIViewController, UIGestureRecognize
 
     static let tcpColor = UIColor.systemIndigo
     static let udpColor = UIColor.systemOrange
-    static let routeColors: [UIColor] = [SpeedGraphView.downColor, UIColor(red: 0.37, green: 0.33, blue: 0.91, alpha: 1), .systemGreen, .systemOrange, .systemPink]
+    /// 3.5.28 (the owner: too much blue and red): the servers in turquoise and the
+    /// colours after it; the rest by what they are.
+    static let serverColors: [UIColor] = [UIColor(red: 0.25, green: 0.82, blue: 0.72, alpha: 1), .systemGreen, .systemYellow, .systemTeal]
+    static let directColor = UIColor(red: 0.43, green: 0.39, blue: 0.94, alpha: 1)
     /// The extension's limit, about 50 MiB: the memory line shows it when near.
     private static let memoryLimit: Double = 50 * 1024 * 1024
     /// Routes in the card: a ring and a line of the legend each.
@@ -1059,69 +1083,62 @@ final class MinimalAnalyticsViewController: UIViewController, UIGestureRecognize
         layoutPasses += 1
     }
 
-    /// The speed now, large, over the last two minutes: the graph runs from edge
-    /// to edge of the card's lower part, under the figures.
+    /// 3.5.28 (the owner): the session's columns large at the top; under a thin rule
+    /// the speed now, small — figures and the last two minutes' line.
     private func makeHero() -> UIView {
-        func speed(_ number: UILabel, _ unit: UILabel, _ symbol: String, _ caption: String, _ color: UIColor) -> UIView {
+        func speed(_ number: UILabel, _ unit: UILabel, _ symbol: String, _ color: UIColor) -> UIView {
             number.adjustsFontSizeToFitWidth = true
             number.minimumScaleFactor = 0.6
-            let figure = UIStackView(.horizontal, spacing: 4, alignment: .firstBaseline, [number, unit])
             let icon = UIImageView(image: UIImage(systemName: symbol, withConfiguration: UIImage.SymbolConfiguration(font: Theme.font(.footnote, .semibold))))
             icon.tintColor = color
-            let label = UIStackView(.horizontal, spacing: 4, alignment: .center, [icon, UILabel(caption, font: Theme.font(.footnote, .medium), color: color)])
-            return UIStackView(.vertical, spacing: 2, alignment: .leading, [figure, label])
+            let figure = UIStackView(.horizontal, spacing: 3, alignment: .firstBaseline, [number, unit])
+            let row = UIStackView(.horizontal, spacing: 4, alignment: .center, [icon, figure])
+            row.setContentHuggingPriority(.required, for: .horizontal)
+            row.setContentCompressionResistancePriority(.required, for: .horizontal)
+            return row
         }
-        heroMode.selectedSegmentIndex = sessionMode ? 1 : 0
-        heroMode.setTitleTextAttributes([.font: Theme.font(.caption1, .medium)], for: .normal)
-        heroMode.setTitleTextAttributes([.font: Theme.font(.caption1, .semibold)], for: .selected)
-        heroMode.setContentHuggingPriority(.required, for: .horizontal)
-        heroMode.addAction(UIAction { [weak self] _ in self?.switchHero() }, for: .valueChanged)
-        graphPeak.textAlignment = .right
-        graphPeak.adjustsFontSizeToFitWidth = true
-        graphPeak.minimumScaleFactor = 0.7
-        let top = UIStackView(.horizontal, spacing: 8, alignment: .center, [heroMode, UIView(), graphPeak])
-        let speeds = UIStackView(.horizontal, spacing: 28, alignment: .top, [
-            speed(downSpeed, downUnit, "arrow.down", L("Загрузка"), SpeedGraphView.downColor),
-            speed(upSpeed, upUnit, "arrow.up", L("Отдача"), SpeedGraphView.upColor), UIView(),
-        ])
-        let room = UIView()
-        room.heightAnchor.constraint(equalToConstant: 100).isActive = true
-        let hero = AnalyticsCard(insets: UIEdgeInsets(top: 14, left: 16, bottom: 0, right: 16))
-        hero.stack.alignment = .fill
-        hero.stack.spacing = 6
-        for item in [top, speeds, room] as [UIView] { hero.stack.addArrangedSubview(item) }
-        hero.stack.setCustomSpacing(6, after: speeds)
-        // The card's rounded corners cut the graph's lower edge.
-        hero.clipsToBounds = true
-        graph.translatesAutoresizingMaskIntoConstraints = false
-        hero.addSubview(graph)
-        // The session's columns over the same room, with their time axis.
+        func caption(_ text: String) -> UILabel { UILabel(text, font: Theme.font(.caption1, .medium), color: .secondaryLabel) }
+        func small(_ text: String) -> UILabel { UILabel(text, font: Theme.font(.footnote, .medium), color: .secondaryLabel) }
+        for label in [sessionPeak, graphPeak] {
+            label.textAlignment = .right
+            label.adjustsFontSizeToFitWidth = true
+            label.minimumScaleFactor = 0.7
+        }
+        let top = UIStackView(.horizontal, spacing: 8, alignment: .center, [small(L("Трафик по времени")), UIView(), sessionPeak])
+        // The session's columns with their time axis.
         timelineBars.separator = Theme.card
+        timelineBars.heightAnchor.constraint(equalToConstant: 92).isActive = true
         timelineAxis[1].textAlignment = .center
         timelineAxis[2].textAlignment = .right
         let axis = UIStackView(.horizontal, spacing: 0, alignment: .fill, timelineAxis)
         axis.distribution = .fillEqually
         timelineBox.addArrangedSubview(timelineBars)
         timelineBox.addArrangedSubview(axis)
-        timelineBox.translatesAutoresizingMaskIntoConstraints = false
-        hero.addSubview(timelineBox)
-        NSLayoutConstraint.activate([
-            timelineBox.topAnchor.constraint(equalTo: room.topAnchor, constant: 4), timelineBox.bottomAnchor.constraint(equalTo: hero.bottomAnchor, constant: -10),
-            timelineBox.leadingAnchor.constraint(equalTo: hero.leadingAnchor, constant: 16), timelineBox.trailingAnchor.constraint(equalTo: hero.trailingAnchor, constant: -16),
+        let rule = UIView()
+        rule.backgroundColor = UIColor.separator.withAlphaComponent(0.35)
+        rule.heightAnchor.constraint(equalToConstant: 1 / UIScreen.main.scale).isActive = true
+        let nowTop = UIStackView(.horizontal, spacing: 8, alignment: .center, [caption(L("сейчас")), UIView(), graphPeak])
+        graph.translatesAutoresizingMaskIntoConstraints = false
+        graph.heightAnchor.constraint(equalToConstant: 38).isActive = true
+        let now = UIStackView(.horizontal, spacing: 16, alignment: .bottom, [
+            speed(downSpeed, downUnit, "arrow.down", SpeedGraphView.liveDownColor),
+            speed(upSpeed, upUnit, "arrow.up", SpeedGraphView.liveUpColor), graph,
         ])
-        graph.alpha = sessionMode ? 0 : 1
-        timelineBox.alpha = sessionMode ? 1 : 0
+        let hero = AnalyticsCard(insets: UIEdgeInsets(top: 14, left: 16, bottom: 14, right: 16))
+        hero.stack.alignment = .fill
+        hero.stack.spacing = 10
+        for item in [top, timelineBox, rule, nowTop, now] as [UIView] { hero.stack.addArrangedSubview(item) }
+        hero.stack.setCustomSpacing(12, after: timelineBox)
+        hero.stack.setCustomSpacing(12, after: rule)
+        hero.stack.setCustomSpacing(6, after: nowTop)
+        graph.widthAnchor.constraint(greaterThanOrEqualTo: now.widthAnchor, multiplier: 0.36).isActive = true
         graphHint.textAlignment = .center
         graphHint.numberOfLines = 0
         graphHint.translatesAutoresizingMaskIntoConstraints = false
         hero.addSubview(graphHint)
         NSLayoutConstraint.activate([
-            // 3.5.3 (the owner's screenshot): inside the card's rounded corners, not
-            // under them — edge to edge, the corners cut the lines' ends and the dot.
-            graph.topAnchor.constraint(equalTo: room.topAnchor), graph.bottomAnchor.constraint(equalTo: hero.bottomAnchor, constant: -14),
-            graph.leadingAnchor.constraint(equalTo: hero.leadingAnchor, constant: 16), graph.trailingAnchor.constraint(equalTo: hero.trailingAnchor, constant: -16),
-            graphHint.centerYAnchor.constraint(equalTo: room.centerYAnchor),
-            graphHint.leadingAnchor.constraint(equalTo: room.leadingAnchor), graphHint.trailingAnchor.constraint(equalTo: room.trailingAnchor),
+            graphHint.centerYAnchor.constraint(equalTo: timelineBars.centerYAnchor),
+            graphHint.leadingAnchor.constraint(equalTo: timelineBars.leadingAnchor), graphHint.trailingAnchor.constraint(equalTo: timelineBars.trailingAnchor),
         ])
         return hero
     }
@@ -1192,20 +1209,8 @@ final class MinimalAnalyticsViewController: UIViewController, UIGestureRecognize
     private func showGraph(_ history: TrafficHistory) {
         graph.history = history
         let peak = max(0, (history.down + history.up).max() ?? 0)
-        guard !sessionMode else { return }
-        let text = peak > 0 ? Lf("пик сейчас %@", Format.speed(peak)) : ""  // 3.5.23: the last two minutes, not the session
+        let text = peak > 0 ? Lf("пик %@", Format.speed(peak)) : ""  // the last two minutes, not the session
         if graphPeak.text != text { graphPeak.text = text }
-    }
-
-    private func switchHero() {
-        Haptics.selection()
-        sessionMode = heroMode.selectedSegmentIndex == 1
-        timelineShownAt = nil
-        if sessionMode { showTimeline() } else { showGraph(App.shared.core.history.value) }
-        UIView.animate(withDuration: 0.25) {
-            self.graph.alpha = self.sessionMode ? 0 : 1
-            self.timelineBox.alpha = self.sessionMode ? 1 : 0
-        }
     }
 
     /// «Трафик по времени»: the extension's points (stored with its memory sample,
@@ -1217,7 +1222,7 @@ final class MinimalAnalyticsViewController: UIViewController, UIGestureRecognize
         guard let since = App.shared.tunnel.connectedSince.value, App.shared.core.status.value != nil else {
             timelineBars.buckets = []
             for label in timelineAxis { label.showText("") }
-            if sessionMode { graphPeak.showText("") }
+            sessionPeak.showText("")
             return
         }
         let timeline = AppGroup.defaults.data(forKey: SharedKey.trafficTimeline).flatMap(TrafficTimeline.init(encoded:)) ?? TrafficTimeline()
@@ -1242,13 +1247,12 @@ final class MinimalAnalyticsViewController: UIViewController, UIGestureRecognize
         timelineAxis[0].showText(times[0])
         timelineAxis[1].showText(Lf("столбик = %@", minutes))
         timelineAxis[2].showText(times[2])
-        guard sessionMode else { return }
         if let busiest = buckets.max(by: { $0.total < $1.total }), busiest.total > 0 {
             let at = clock.string(from: Date(timeIntervalSince1970: TimeInterval(busiest.start)))
             // 3.5.25: how much, not a speed rounded down to «≈0 KB/s».
-            graphPeak.showText(Lf("больше всего %@", at + " · " + Format.bytes(busiest.total)))
+            sessionPeak.showText(Lf("больше всего %@", at + " · " + Format.bytes(busiest.total)))
         } else {
-            graphPeak.showText(L("Трафика пока нет"))
+            sessionPeak.showText(L("Трафика пока нет"))
         }
     }
 
@@ -1309,9 +1313,20 @@ final class MinimalAnalyticsViewController: UIViewController, UIGestureRecognize
             }
         }
         let top = routes
-        routeRings.parts = top.enumerated().map { index, route in
-            (value: Double(route.value), color: Self.routeColors[index % Self.routeColors.count])
+        var servers = 0
+        let colors: [UIColor] = top.map { route in
+            switch route.key {
+            case L("Напрямую"): return Self.directColor
+            case "DNS": return .systemPink
+            case L("Проверки серверов"): return .systemOrange
+            case L("Без разбивки"): return .systemGray
+            case L("Остальные"): return .systemGray2
+            default:
+                defer { servers += 1 }
+                return Self.serverColors[servers % Self.serverColors.count]
+            }
         }
+        routeRings.parts = zip(top, colors).map { route, color in (value: Double(route.value), color: color) }
         let names = top.map(\.key)
         if names == routeNames, !routeValues.isEmpty || names.isEmpty {
             for (label, route) in zip(routeValues, top) {
@@ -1326,7 +1341,7 @@ final class MinimalAnalyticsViewController: UIViewController, UIGestureRecognize
         routeValues = []
         for (index, route) in top.enumerated() {
             let dot = UIView()
-            dot.backgroundColor = Self.routeColors[index % Self.routeColors.count]
+            dot.backgroundColor = colors[index]
             dot.layer.cornerRadius = 4
             dot.translatesAutoresizingMaskIntoConstraints = false
             NSLayoutConstraint.activate([dot.widthAnchor.constraint(equalToConstant: 8), dot.heightAnchor.constraint(equalToConstant: 8)])
