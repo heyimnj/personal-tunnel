@@ -519,7 +519,7 @@ final class ClassicSettingsViewController: ClassicPage {
             Classic.body(L("Российские сайты открываются мимо VPN, с вашим настоящим IP. Сайт, который подгружает что-то с российского адреса, может увидеть настоящий IP рядом с IP VPN."), 12, .regular, .secondaryLabel, lines: 0),
             toggle(L("Без QUIC через VPN"), Prefs.blockQUIC) { Prefs.blockQUIC = $0; changed() },
             Classic.body(L("Видео и сайты, которые идут через VPN, грузятся по обычному HTTPS вместо QUIC: так туннель тратит заметно меньше батареи. Звонки, игры и сайты мимо VPN не затрагиваются."), 12, .regular, .secondaryLabel, lines: 0),
-            toggle(L("Защищённый DNS"), Prefs.secureDNS) { Prefs.secureDNS = $0; App.shared.tunnel.applySettings() },
+            toggle(L("Не пускать мимо VPN"), Prefs.secureDNS) { Prefs.secureDNS = $0; App.shared.tunnel.applySettings() },
             toggle(L("Локальная сеть"), Prefs.localNetwork) { Prefs.localNetwork = $0; changed() },
             Classic.body(L("Серверы DNS берутся из конфигурации. После изменения системных маршрутов переподключите VPN."), 12, .regular, .secondaryLabel, lines: 0),
         ], spacing: 14))

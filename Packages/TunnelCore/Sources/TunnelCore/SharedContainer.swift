@@ -113,6 +113,9 @@ public enum SharedKey {
     /// 3.5.4: the app stopped the tunnel itself (seconds since 1970); it has set
     /// On Demand as it should be, so the extension's stop does not touch it.
     public static let stopRequestedByApp = "pt.tunnel.stopByApp"
+    /// 3.5.23: the session's traffic over time (`TrafficTimeline`, 24 bytes a point),
+    /// stored with the memory sample.
+    public static let trafficTimeline = "pt.tunnel.traffic"
 }
 
 /// Start options and messages the app sends to the packet tunnel.

@@ -48,6 +48,9 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
     private var memoryLogged: MemorySample?
     private var memoryFreedAt: Date?
     private var memoryStartedAt: Date?
+    /// 3.5.23: the session's traffic over time, noted on the memory timer and
+    /// stored with the memory sample (no wake-up or write of its own).
+    private var traffic = TrafficTimeline()
 
     // MARK: Lifecycle
 
@@ -415,6 +418,8 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
 
     private func startMemoryLog() {
         memoryTimer?.cancel()
+        traffic = TrafficTimeline()
+        AppGroup.defaults.removeObject(forKey: SharedKey.trafficTimeline)
         memoryPeak = 0
         memoryLogged = nil
         memoryStored = nil
@@ -460,12 +465,14 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
         memoryPeak = max(memoryPeak, used, Double(info.ledger_phys_footprint_peak) / mib)
         let available = Double(os_proc_available_memory()) / mib
         let sample = MemorySample(used: used, peak: memoryPeak, available: available)
+        noteTraffic()
         // Kept for the app: if the system ends the extension, the last one says
         // how close to the limit it was. 3.2.9: written only when it changed (by
         // 1 MiB, or 10 minutes on), not at every sample — a write to the shared
         // settings file every minute, all day.
         if memoryStored.map({ sample.differs(from: $0) }) ?? true {
             AppGroup.defaults.set(sample.encoded(), forKey: SharedKey.tunnelMemory)
+            AppGroup.defaults.set(traffic.encoded, forKey: SharedKey.trafficTimeline)
             memoryStored = sample
         }
         // 3.1.6: memory is handed back to the system before the limit is near
@@ -486,6 +493,12 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
         // well: a line for every megabyte crowded it out (analytics shows the memory;
         // near the limit `relieveMemory` still writes a warning there).
         event(sample.line)
+    }
+
+    /// The core's running totals, read in this process (core/patches/0008).
+    private func noteTraffic() {
+        guard let total = commandServer?.trafficTotal() else { return }
+        traffic.append(.init(time: Int64(Date().timeIntervalSince1970), up: total.uplink, down: total.downlink))
     }
 
     /// Close to the limit: the core returns what it can to the system at once,

@@ -175,7 +175,7 @@ final class NetworkSettingsViewController: FormViewController {
                 .note(L("Российские сайты открываются мимо VPN, с вашим настоящим IP. Сайт, который подгружает что-то с российского адреса, может увидеть настоящий IP рядом с IP VPN.")),
                 .toggle(title: L("Без QUIC через VPN"), get: { Prefs.blockQUIC }, set: { Prefs.blockQUIC = $0; changed() }),
                 .note(L("Видео и сайты, которые идут через VPN, грузятся по обычному HTTPS вместо QUIC: так туннель тратит заметно меньше батареи. Звонки, игры и сайты мимо VPN не затрагиваются.")),
-                .toggle(title: L("Защищённый DNS"), get: { Prefs.secureDNS }, set: { Prefs.secureDNS = $0; App.shared.tunnel.applySettings() }),
+                .toggle(title: L("Не пускать мимо VPN"), get: { Prefs.secureDNS }, set: { Prefs.secureDNS = $0; App.shared.tunnel.applySettings() }),
                 // 3.5.23 (the owner did not remember what it is for).
                 .note(L("iOS не даёт приложениям обойти VPN для адресов, которые идут через туннель: например, отправить DNS-запрос напрямую в сеть Wi-Fi или оператора. Защищает от утечек DNS. С Kill switch и так всё идёт через VPN. Действует со следующего подключения.")),
                 .toggle(title: L("Локальная сеть"), get: { Prefs.localNetwork }, set: { Prefs.localNetwork = $0; changed() }),

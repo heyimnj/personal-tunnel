@@ -1,0 +1,60 @@
+diff --git a/daemon/traffic_total_lx.go b/daemon/traffic_total_lx.go
+new file mode 100644
+index 0000000..90e799f
+--- /dev/null
++++ b/daemon/traffic_total_lx.go
+@@ -0,0 +1,14 @@
++package daemon
++
++// TrafficTotals is the running service's traffic so far (uplink, downlink), read
++// in the same process — Personal Tunnel's extension keeps the session's history
++// with it on the timer it already has, without a stream of its own.
++func (s *StartedService) TrafficTotals() (uplink int64, downlink int64) {
++	s.serviceAccess.RLock()
++	instance := s.instance
++	s.serviceAccess.RUnlock()
++	if instance == nil || instance.trafficManager == nil {
++		return 0, 0
++	}
++	return instance.trafficManager.Total()
++}
+diff --git a/experimental/libbox/command_server_traffic_lx.go b/experimental/libbox/command_server_traffic_lx.go
+new file mode 100644
+index 0000000..9992438
+--- /dev/null
++++ b/experimental/libbox/command_server_traffic_lx.go
+@@ -0,0 +1,17 @@
++package libbox
++
++// TrafficTotal is the running service's traffic so far, in bytes (Personal Tunnel).
++type TrafficTotal struct {
++	Uplink   int64
++	Downlink int64
++}
++
++// TrafficTotal reads the service's traffic so far in the same process: no
++// command socket, no stream. Zero while no service runs.
++func (s *CommandServer) TrafficTotal() *TrafficTotal {
++	if s.StartedService == nil {
++		return &TrafficTotal{}
++	}
++	uplink, downlink := s.StartedService.TrafficTotals()
++	return &TrafficTotal{Uplink: uplink, Downlink: downlink}
++}
+diff --git a/experimental/libbox/command_server_traffic_lx_test.go b/experimental/libbox/command_server_traffic_lx_test.go
+new file mode 100644
+index 0000000..35bf73e
+--- /dev/null
++++ b/experimental/libbox/command_server_traffic_lx_test.go
+@@ -0,0 +1,11 @@
++package libbox
++
++import "testing"
++
++// Personal Tunnel: without a service the totals are zero, not a crash.
++func TestTrafficTotalWithoutServiceLX(t *testing.T) {
++	total := (&CommandServer{}).TrafficTotal()
++	if total.Uplink != 0 || total.Downlink != 0 {
++		t.Fatalf("got %+v", total)
++	}
++}

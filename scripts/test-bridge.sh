@@ -12,6 +12,8 @@ fetch_xray
 (cd "$CORE_CHECKOUT" && go test -count=1 -trimpath -tags "$CHECK_TAGS" -ldflags "-checklinkname=0" -run 'CertificateSHA256' ./common/tls/)
 # The DNS group's `ordered` mode (0006): HTTPS first, plain DNS while it fails.
 (cd "$CORE_CHECKOUT" && go test -count=1 -trimpath -tags "$CHECK_TAGS" -ldflags "-checklinkname=0" -run 'Ordered' ./dns/transport/group/)
+# The service's traffic read in process (0008), for the extension's session history.
+(cd "$CORE_CHECKOUT" && go test -count=1 -trimpath -tags "$CHECK_TAGS" -ldflags "-checklinkname=0" -run 'TrafficTotalWithoutServiceLX' ./experimental/libbox/)
 # A query in a WebSocket/HTTP path reaches the server as the query (0007).
 (cd "$CORE_CHECKOUT" && go test -count=1 -trimpath -tags "$CHECK_TAGS" -ldflags "-checklinkname=0" -run 'PathQueryLX' ./transport/v2raywebsocket/)
 cd "$BRIDGE_DIR"

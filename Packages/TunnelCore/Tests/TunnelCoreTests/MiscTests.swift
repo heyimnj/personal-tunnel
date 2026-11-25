@@ -371,3 +371,40 @@ final class ServerExportTests: XCTestCase {
         XCTAssertNil(ServerExport.text([]))
     }
 }
+
+/// 3.5.23: the session's traffic over time.
+final class TrafficTimelineTests: XCTestCase {
+    func testEncodingRoundTrips() {
+        var timeline = TrafficTimeline()
+        timeline.append(.init(time: 1_000, up: 5, down: 7))
+        timeline.append(.init(time: 1_120, up: 1 << 40, down: 3))
+        XCTAssertEqual(TrafficTimeline(encoded: timeline.encoded), timeline)
+        XCTAssertNil(TrafficTimeline(encoded: Data([1, 2, 3])))
+    }
+
+    func testDeltasFallIntoTheirColumnsAndSpreadOverSleep() {
+        let timeline = TrafficTimeline(samples: [
+            .init(time: 120, up: 10, down: 100), // first column
+            .init(time: 600, up: 10, down: 500), // 400 over four columns asleep
+        ])
+        let buckets = timeline.buckets(from: 0)
+        XCTAssertEqual(buckets.map(\.down), [100, 100, 100, 100, 100])
+        XCTAssertEqual(buckets.map(\.up), [10, 0, 0, 0, 0])
+        XCTAssertEqual(buckets.reduce(0) { $0 + $1.total }, 510)
+    }
+
+    func testTheAppsLatestTotalsAndACoreRestartCount() {
+        let timeline = TrafficTimeline(samples: [.init(time: 120, up: 0, down: 1_000)])
+        // The core started again: 300 since then; the app's own totals come last.
+        let buckets = timeline.buckets(from: 0, now: .init(time: 240, up: 0, down: 300))
+        XCTAssertEqual(buckets.map(\.down), [1_000, 300])
+    }
+
+    func testLongSessionsAreJoined() {
+        let buckets = (0 ..< 720).map { TrafficTimeline.Bucket(start: Int64($0) * 120, up: 1, down: 1) }
+        let joined = TrafficTimeline.coarsened(buckets, width: 120, limit: 60)
+        XCTAssertEqual(joined.width, 120 * 15)
+        XCTAssertEqual(joined.buckets.count, 48)
+        XCTAssertEqual(joined.buckets.reduce(0) { $0 + $1.total }, 1_440)
+    }
+}

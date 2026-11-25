@@ -747,3 +747,13 @@
 /* 3.5.23: settings descriptions */
 "iOS не даёт приложениям обойти VPN для адресов, которые идут через туннель: например, отправить DNS-запрос напрямую в сеть Wi-Fi или оператора. Защищает от утечек DNS. С Kill switch и так всё идёт через VPN. Действует со следующего подключения." = "iOS does not let apps go around the VPN for addresses that go through the tunnel: for example, send a DNS query straight to the Wi-Fi or carrier network. Protects against DNS leaks. With the kill switch everything already goes through the VPN. Takes effect from the next connection.";
 "Принтеры, AirPlay, роутер и другие устройства домашней сети доступны мимо VPN. После изменения переподключите VPN." = "Printers, AirPlay, the router and other home network devices are reached outside the VPN. Reconnect the VPN after changing this.";
+"Не пускать мимо VPN" = "Never around the VPN";
+
+/* 3.5.23: traffic over time */
+"Трафик по времени" = "Traffic over time";
+"%@ мин" = "%@ min";
+"столбик = %@" = "bar = %@";
+"Появится, когда VPN подключён" = "Shows once the VPN is connected";
+"самые загруженные %@" = "busiest %@";
+"Трафика пока нет" = "No traffic yet";
+"пик сейчас %@" = "peak now %@";

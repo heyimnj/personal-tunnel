@@ -170,6 +170,9 @@ final class CoreClient {
     private var totalsBase: (up: Int64, down: Int64) = (0, 0)
     /// The core's own totals, as they last came.
     private var rawTotals: (up: Int64, down: Int64) = (0, 0)
+    /// 3.5.23: the core's own running totals (not after «Сбросить статистику»), the
+    /// same counters the extension's timeline notes.
+    var coreTotals: (up: Int64, down: Int64) { rawTotals }
 
     func resetStatistics() {
         totalsBase = rawTotals

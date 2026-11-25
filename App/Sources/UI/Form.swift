@@ -194,7 +194,12 @@ class FormViewController: UITableViewController, UIColorPickerViewControllerDele
     }
 
     override func tableView(_ tableView: UITableView, cellForRowAt indexPath: IndexPath) -> UITableViewCell {
-        makeCell(sections[indexPath.section].rows[indexPath.row], symbol: nil)
+        let cell = makeCell(sections[indexPath.section].rows[indexPath.row], symbol: nil)
+        if infos[indexPath] != nil, var content = cell.contentConfiguration as? UIListContentConfiguration, let title = content.text {
+            content.attributedText = Self.titleWithInfo(title)
+            cell.contentConfiguration = content
+        }
+        return cell
     }
 
     /// The symbol in front of a hand-built row (fields), as `content.image` is for the rest.
@@ -346,6 +351,19 @@ class FormViewController: UITableViewController, UIColorPickerViewControllerDele
 
     override func tableView(_ tableView: UITableView, willDisplay cell: UITableViewCell, forRowAt indexPath: IndexPath) {
         if infos[indexPath] != nil { cell.selectionStyle = .default }
+    }
+
+    /// 3.5.23 (the owner): a small ⓘ after the title of a setting that has a description.
+    static func titleWithInfo(_ title: String) -> NSAttributedString {
+        let text = NSMutableAttributedString(string: title + " ", attributes: [.font: Theme.font(17), .foregroundColor: Theme.text])
+        if let mark = UIImage(systemName: "info.circle", withConfiguration: UIImage.SymbolConfiguration(pointSize: 13, weight: .regular))?
+            .withTintColor(.tertiaryLabel, renderingMode: .alwaysOriginal) {
+            let attachment = NSTextAttachment(image: mark)
+            let font = Theme.font(17)
+            attachment.bounds = CGRect(x: 0, y: (font.capHeight - mark.size.height) / 2, width: mark.size.width, height: mark.size.height)
+            text.append(NSAttributedString(attachment: attachment))
+        }
+        return text
     }
 
     override func tableView(_ tableView: UITableView, didSelectRowAt indexPath: IndexPath) {
