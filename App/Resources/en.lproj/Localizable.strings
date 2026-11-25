@@ -739,3 +739,7 @@
 "Выбрать" = "Select";
 "Свернуть все подписки" = "Collapse all subscriptions";
 "Проверки серверов" = "Server checks";
+"У этого сервера нет исходной ссылки: он добавлен из файла или из подписки в формате JSON. Копируется его JSON для импорта." = "This server has no original link: it was added from a file or a JSON subscription. Its JSON is copied for import.";
+"Скопировать JSON сервера" = "Copy server JSON";
+"JSON сервера скопирован." = "Server JSON copied.";
+"Скопировать JSON" = "Copy JSON";

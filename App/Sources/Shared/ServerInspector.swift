@@ -63,13 +63,20 @@ final class ServerInspectorViewController: FormViewController {
         jsonRows.append(.button(title: L("Скопировать JSON без секретов"), destructive: false) { [weak self] in
             self?.copy(ServerInspection.safeJSON(node), done: L("JSON скопирован."))
         })
+        let copyRow: FormRow
+        if link != nil {
+            copyRow = .button(title: L("Скопировать ссылку на сервер"), destructive: false) { [weak self] in self?.copy(link, done: L("Ссылка скопирована.")) }
+        } else {
+            copyRow = .button(title: L("Скопировать JSON сервера"), destructive: false) { [weak self] in self?.copy(ServerExport.text([node])?.text, done: L("JSON сервера скопирован.")) }
+        }
         return [
             FormSection(name, facts + [
                 .button(title: L("Проверить пинг этого узла"), destructive: false) { App.shared.ping(node: node, in: subscription) },
             ]),
         ] + failure + [
-            FormSection(L("Ссылка"), footer: link == nil ? L("У этого сервера нет исходной ссылки: он добавлен из файла или из подписки в формате JSON.") : nil, [
-                .button(title: L("Скопировать ссылку на сервер"), destructive: false) { [weak self] in self?.copy(link, done: L("Ссылка скопирована.")) },
+            FormSection(L("Ссылка"), footer: link == nil ? L("У этого сервера нет исходной ссылки: он добавлен из файла или из подписки в формате JSON. Копируется его JSON для импорта.") : nil, [
+                // 3.5.20: a server without a link copies its JSON (it imports again).
+                copyRow,
                 .button(title: L("QR-код сервера"), destructive: false) { [weak self] in self?.showQR(link, name: name) },
             ]),
             FormSection("JSON", footer: L("Пароли, UUID и ключи заменены на ***."), jsonRows),

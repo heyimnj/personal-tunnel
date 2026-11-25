@@ -240,8 +240,12 @@ final class MinimalServersViewController: UIViewController, UIScrollViewDelegate
         NSLayoutConstraint.activate([plusButton.widthAnchor.constraint(equalToConstant: size), plusButton.heightAnchor.constraint(equalToConstant: size)])
     }
 
-    private func moreMenu() -> UIMenu {
-        UIMenu(children: [UIDeferredMenuElement.uncached { [weak self] done in done(self?.moreItems() ?? []) }])
+    /// 3.5.20 (the owner): «…» opens the hold menu's card — the cards' own even
+    /// tone, not the system's glass menu — under the button, nothing dimmed.
+    @objc private func moreTapped(_ sender: UIView) {
+        Haptics.item()
+        let point = sender.convert(CGPoint(x: sender.bounds.midX, y: sender.bounds.midY), to: view)
+        HoldMenuView.show(in: view, at: point, title: L("Ещё"), items: moreHoldItems(), source: (sender, sender.bounds, .null))
     }
 
     /// The four orders, with a check at the current one.
@@ -285,8 +289,7 @@ final class MinimalServersViewController: UIViewController, UIScrollViewDelegate
         refreshItem.show(symbol: "arrow.clockwise", title: L("Обновить"), tint: .label)
         refreshItem.addTarget(self, action: #selector(refreshTapped), for: .touchUpInside)
         moreItem.show(symbol: "ellipsis", title: L("Ещё"), tint: .label)
-        moreItem.menu = moreMenu()
-        moreItem.showsMenuAsPrimaryAction = true
+        moreItem.addTarget(self, action: #selector(moreTapped(_:)), for: .touchUpInside)
         let room = UIView()
         room.isUserInteractionEnabled = false
         let row = UIStackView(.horizontal, spacing: 0, alignment: .fill, [pingItem, sortItem, room, refreshItem, moreItem])
@@ -323,8 +326,7 @@ final class MinimalServersViewController: UIViewController, UIScrollViewDelegate
         more.setImage(UIImage(systemName: "ellipsis", withConfiguration: UIImage.SymbolConfiguration(pointSize: 17, weight: .bold)), for: .normal)
         more.tintColor = .secondaryLabel
         more.accessibilityLabel = L("Ещё")
-        more.menu = moreMenu()
-        more.showsMenuAsPrimaryAction = true
+        more.addTarget(self, action: #selector(moreTapped(_:)), for: .touchUpInside)
         let accessory = UIStackView(.horizontal, spacing: 0, alignment: .center, [pingDial, more])
         NSLayoutConstraint.activate([more.widthAnchor.constraint(equalToConstant: 44), more.heightAnchor.constraint(equalToConstant: 44)])
         // 3.5.4 (the owner: the ping did nothing here): the buttons lie over the
@@ -346,8 +348,7 @@ final class MinimalServersViewController: UIViewController, UIScrollViewDelegate
         more2.setImage(UIImage(systemName: "ellipsis", withConfiguration: UIImage.SymbolConfiguration(pointSize: 17, weight: .bold)), for: .normal)
         more2.tintColor = .label
         more2.accessibilityLabel = L("Ещё")
-        more2.menu = moreMenu()
-        more2.showsMenuAsPrimaryAction = true
+        more2.addTarget(self, action: #selector(moreTapped(_:)), for: .touchUpInside)
         let moreCapsule = SolidCapsule()
         moreCapsule.contentView.addSubview(more2)
         more2.pin(to: moreCapsule.contentView)
@@ -432,8 +433,7 @@ final class MinimalServersViewController: UIViewController, UIScrollViewDelegate
         more.setImage(UIImage(systemName: "ellipsis", withConfiguration: UIImage.SymbolConfiguration(pointSize: 19, weight: .bold)), for: .normal)
         more.tintColor = .label
         more.accessibilityLabel = L("Ещё")
-        more.showsMenuAsPrimaryAction = true
-        more.menu = UIMenu(children: [UIDeferredMenuElement.uncached { [weak self] done in done(self?.moreItems() ?? []) }])
+        more.addTarget(self, action: #selector(moreTapped(_:)), for: .touchUpInside)
         let moreGlass = SolidCapsule()
         moreGlass.contentView.addSubview(more)
         more.pin(to: moreGlass.contentView)
@@ -619,41 +619,42 @@ final class MinimalServersViewController: UIViewController, UIScrollViewDelegate
         }
     }
 
-    private func moreItems() -> [UIMenuElement] {
-        // 3.5: the order is the bar's own capsule now.
-        return [
-            UIAction(title: L("Порядок серверов"), image: UIImage(systemName: "list.number")) { [weak self] _ in
-                // 3.5 beta 2: the Modern page of its own (cards, as in this sheet).
-                self?.present(ModernServerOrderViewController.wrapped(), animated: true)
-            },
-        ] + (selecting ? selectionItems() : [currentServerPin()]) + collapseAllItem() + [
-            UIAction(title: L("Обновить подписки")) { _ in App.shared.refreshAll() },
-        ]
-    }
-
-    private func currentServerPin() -> UIMenuElement {
-        UIAction(title: L("Закрепить текущий сервер")) { [weak self] _ in
-            let library = App.shared.library
-            guard let subscription = library.activeSubscription, let node = library.activeNode else { return }
-            var next = Prefs.arrangement
-            let key = subscription.isStandalone ? Arrangement.subscription(subscription.id) : Arrangement.server(subscription.id, node.id)
-            if !next.isPinned(key) { next.togglePin(key) }
-            Prefs.arrangement = next
-            self?.reload()
+    private func moreHoldItems() -> [HoldMenuItem] {
+        var items = [HoldMenuItem(title: L("Порядок серверов"), symbol: "list.number") { [weak self] in
+            // 3.5 beta 2: the Modern page of its own (cards, as in this sheet).
+            self?.present(ModernServerOrderViewController.wrapped(), animated: true)
+        }]
+        if selecting {
+            if !selectionEmpty {
+                items.append(HoldMenuItem(title: L("Закрепить выбранное"), symbol: "pin") { [weak self] in self?.pinSelected(true) })
+                items.append(HoldMenuItem(title: L("Открепить выбранное"), symbol: "pin.slash") { [weak self] in self?.pinSelected(false) })
+            }
+            if !selectedNodes.isEmpty {
+                items.append(HoldMenuItem(title: L("Проверить выбранные узлы"), symbol: "waveform.path.ecg") { [weak self] in self?.pingSelected() })
+            }
+            if selectedNodes.count == 1, let only = selectedNodes.first.flatMap(Self.split) {
+                items.append(HoldMenuItem(title: L("Ссылка, QR и JSON"), symbol: "info.circle") { [weak self] in self?.inspect(only.1, in: only.0) })
+            }
+        } else {
+            items.append(HoldMenuItem(title: L("Закрепить текущий сервер"), symbol: "pin") { [weak self] in self?.pinCurrentServer() })
         }
-    }
-
-    private func selectionItems() -> [UIMenuElement] {
-        let empty = selectionEmpty
-        var items: [UIMenuElement] = [
-            UIAction(title: L("Закрепить выбранное"), attributes: empty ? .disabled : []) { [weak self] _ in self?.pinSelected(true) },
-            UIAction(title: L("Открепить выбранное"), attributes: empty ? .disabled : []) { [weak self] _ in self?.pinSelected(false) },
-            UIAction(title: L("Проверить выбранные узлы"), attributes: selectedNodes.isEmpty ? .disabled : []) { [weak self] _ in self?.pingSelected() },
-        ]
-        if selectedNodes.count == 1, let only = selectedNodes.first.flatMap(Self.split) {
-            items.append(UIAction(title: L("Ссылка, QR и JSON")) { [weak self] _ in self?.inspect(only.1, in: only.0) })
+        // 3.5.20 (the owner): only while at least one subscription is open.
+        let open = App.shared.library.subscriptions.filter { !$0.isStandalone && list.isOpen($0.id) }.map(\.id)
+        if !open.isEmpty {
+            items.append(HoldMenuItem(title: L("Свернуть все подписки"), symbol: "rectangle.compress.vertical") { [weak self] in self?.collapse(open) })
         }
+        items.append(HoldMenuItem(title: L("Обновить подписки"), symbol: "arrow.clockwise") { App.shared.refreshAll() })
         return items
+    }
+
+    private func pinCurrentServer() {
+        let library = App.shared.library
+        guard let subscription = library.activeSubscription, let node = library.activeNode else { return }
+        var next = Prefs.arrangement
+        let key = subscription.isStandalone ? Arrangement.subscription(subscription.id) : Arrangement.server(subscription.id, node.id)
+        if !next.isPinned(key) { next.togglePin(key) }
+        Prefs.arrangement = next
+        reload()
     }
 
     override func traitCollectionDidChange(_ previous: UITraitCollection?) {
@@ -1262,15 +1263,6 @@ final class MinimalServersViewController: UIViewController, UIScrollViewDelegate
         list.reconfigureRows { id, tag in keys.contains(LatencyService.key(id, tag)) }
     }
 
-    /// 3.5.20 (the owner): «Свернуть все подписки», only while at least one is open.
-    private func collapseAllItem() -> [UIMenuElement] {
-        let open = App.shared.library.subscriptions.filter { !$0.isStandalone && list.isOpen($0.id) }.map(\.id)
-        guard !open.isEmpty else { return [] }
-        return [UIAction(title: L("Свернуть все подписки"), image: UIImage(systemName: "rectangle.compress.vertical")) { [weak self] _ in
-            self?.collapse(open)
-        }]
-    }
-
     private func collapse(_ ids: [Int64]) {
         for id in ids { expanded.remove(id) }
         Prefs.expandedSubscriptions = expanded
@@ -1299,6 +1291,10 @@ final class MinimalServersViewController: UIViewController, UIScrollViewDelegate
             pinKey = subscription.isStandalone ? Arrangement.subscription(id) : Arrangement.server(id, tag)
             items = [
                 HoldMenuItem(title: L("Ссылка, QR и JSON"), symbol: "info.circle") { [weak self] in self?.inspect(tag, in: id) },
+                // 3.5.20 (the owner): copy without opening the page; JSON when there is no link.
+                HoldMenuItem(title: node.link != nil ? L("Скопировать ссылку") : L("Скопировать JSON"), symbol: "doc.on.doc") { [weak self] in
+                    self?.copyServer(node)
+                },
                 HoldMenuItem(title: L("Проверить пинг"), symbol: "waveform.path.ecg") { App.shared.ping(node: node, in: subscription) },
                 HoldMenuItem(title: L("Редактировать"), symbol: "pencil") { [weak self] in self?.edit(node: tag, in: id) },
             ]
@@ -1334,6 +1330,13 @@ final class MinimalServersViewController: UIViewController, UIScrollViewDelegate
         Prefs.arrangement = next
         reload()
         list.reloadActions()
+    }
+
+    private func copyServer(_ node: ServerNode) {
+        guard let result = ServerExport.text([node]) else { return }
+        Clipboard.copySecret(result.text)
+        Haptics.result(true)
+        App.shared.notice.value = result.links > 0 ? L("Ссылка скопирована.") : L("JSON сервера скопирован.")
     }
 
     private func copy(_ text: String?) {
