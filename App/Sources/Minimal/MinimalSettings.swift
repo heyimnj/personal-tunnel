@@ -337,18 +337,22 @@ class ColorsViewController: FormViewController {
     }
 
     /// The background as a small picture: the gradient, or the plain colour.
-    func backgroundSwatch(size: CGSize = CGSize(width: 44, height: 28)) -> UIImage {
+    /// 3.5.28 (the owner): a circle like the other colours' (the wide tile stood out).
+    func backgroundSwatch(size: CGSize = CGSize(width: 28, height: 28)) -> UIImage {
         let hexes = backgroundDraft
         let source = hexes.isEmpty ? nil : Wallpaper.image(hexes)
         let plain = Theme.background.resolvedColor(with: traitCollection)
+        let ring = UIColor.systemGray4.resolvedColor(with: traitCollection)
         return UIGraphicsImageRenderer(size: size).image { _ in
             let frame = CGRect(origin: .zero, size: size)
-            let path = UIBezierPath(roundedRect: frame.insetBy(dx: 0.5, dy: 0.5), cornerRadius: min(8, size.height / 3))
-            path.addClip()
+            let circle = UIBezierPath(ovalIn: frame)
+            circle.addClip()
             if let source { source.draw(in: frame) } else { plain.setFill(); UIRectFill(frame) }
-            UIColor.label.withAlphaComponent(0.15).setStroke()
-            path.lineWidth = 1
-            path.stroke()
+            // The same 3 pt edge as the colour wells beside it.
+            ring.setStroke()
+            let edge = UIBezierPath(ovalIn: frame.insetBy(dx: 1.5, dy: 1.5))
+            edge.lineWidth = 3
+            edge.stroke()
         }
     }
 

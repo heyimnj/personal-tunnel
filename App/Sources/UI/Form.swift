@@ -319,12 +319,10 @@ class FormViewController: UITableViewController, UIColorPickerViewControllerDele
             content.secondaryTextProperties.font = Theme.font(15)
         case let .swatch(title, image, _):
             content.text = title
+            // 3.5.28 (the owner): just the circle, as the colour rows show theirs.
             let picture = UIImageView(image: image())
-            let chevron = UIImageView(image: UIImage(systemName: "chevron.right", withConfiguration: UIImage.SymbolConfiguration(pointSize: 13, weight: .semibold)))
-            chevron.tintColor = .tertiaryLabel
-            let accessory = UIStackView(.horizontal, spacing: 10, alignment: .center, [picture, chevron])
-            accessory.frame = CGRect(origin: .zero, size: accessory.systemLayoutSizeFitting(UIView.layoutFittingCompressedSize))
-            cell.accessoryView = accessory
+            picture.frame = CGRect(origin: .zero, size: picture.image?.size ?? CGSize(width: 28, height: 28))
+            cell.accessoryView = picture
             cell.selectionStyle = .default
         case let .color(title, get, _), let .paint(title, get, _, _):
             content.text = title
