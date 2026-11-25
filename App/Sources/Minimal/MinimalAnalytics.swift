@@ -1273,7 +1273,8 @@ final class MinimalAnalyticsViewController: UIViewController, UIGestureRecognize
         trafficTotal.showText(status == nil ? "—" : Format.bytes(downBytes + upBytes))
         trafficRing.parts = [(value: Double(downBytes), color: SpeedGraphView.downColor), (value: Double(upBytes), color: SpeedGraphView.upColor)]
         memoryValue.showText(status.map { Format.bytes($0.memory) } ?? "—")
-        memoryDetail.showText(status.map { "· \($0.goroutines) goroutines" } ?? "")
+        // 3.6 (the owner): the ceiling beside the value — «31.9 MB из 50 MB».
+        memoryDetail.showText(status.map { Lf("из %@", "50 MB") + " · \($0.goroutines) goroutines" } ?? "")
         if graphHint.isHidden != (status != nil) { graphHint.isHidden = status != nil }
     }
 

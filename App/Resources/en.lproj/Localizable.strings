@@ -789,3 +789,4 @@
 "Маршруты: новый поток соединений от ядра (снимок)" = "Routes: a new connection stream from the core (snapshot)";
 "Маршруты: без исходящего %@ (%@ соед.), обновления без начала %@ (%@)" = "Routes: no outbound %@ (%@ conn.), updates without a start %@ (%@)";
 "Открытые соединения" = "Open connections";
+"из %@" = "of %@";
