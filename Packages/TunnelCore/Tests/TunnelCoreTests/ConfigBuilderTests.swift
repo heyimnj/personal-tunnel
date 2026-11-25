@@ -411,8 +411,8 @@ final class ConfigBuilderTests: XCTestCase {
         // through the same server when HTTPS fails.
         XCTAssertEqual(full.at("dns", "servers")?[0]?["type"], "group")
         XCTAssertEqual(full.at("dns", "servers")?[0]?["tag"], "dns-remote")
-        XCTAssertEqual(full.at("dns", "servers")?[0]?["servers"], ["dns-remote-https", "dns-remote-tcp"])
-        XCTAssertEqual(full.at("dns", "servers")?[0]?["mode"], "parallel")
+        XCTAssertEqual(full.at("dns", "servers")?[0]?["servers"], ["dns-remote-tcp", "dns-remote-https"])
+        XCTAssertEqual(full.at("dns", "servers")?[0]?["mode"], "ordered")
         XCTAssertEqual(full.at("dns", "servers")?[1]?["type"], "https")
         XCTAssertEqual(full.at("dns", "servers")?[1]?["detour"], "proxy")
         XCTAssertEqual(full.at("dns", "servers")?[2]?["type"], "tcp")

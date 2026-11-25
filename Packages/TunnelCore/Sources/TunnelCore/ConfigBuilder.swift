@@ -398,7 +398,11 @@ public enum ConfigBuilder {
                 // name is asked both ways at once and the first answer counts; with
                 // «stable» a start that picked the broken way waited 5–10 s for it
                 // to fail before the other was asked.
-                ["type": "group", "tag": "dns-remote", "servers": ["dns-remote-https", "dns-remote-tcp"], "mode": "parallel"],
+                // 3.5.22 (the owner): «ordered» (core/patches/0006) — plain DNS over TCP
+                // through the server first, DNS over HTTPS only when TCP gave no
+                // answer; the failed way is passed over for two minutes. «parallel»
+                // asked every name both ways at once.
+                ["type": "group", "tag": "dns-remote", "servers": ["dns-remote-tcp", "dns-remote-https"], "mode": "ordered"],
                 ["type": "https", "tag": "dns-remote-https", "server": .string(options.dnsServer), "detour": .string(selectorTag)],
                 ["type": "tcp", "tag": "dns-remote-tcp", "server": .string(options.dnsServer), "detour": .string(selectorTag)],
             ] + directResolvers(options) + (options.bypassRussia ? DirectResolvers.russian : [])),
