@@ -16,11 +16,26 @@ final class LogDigestTests: XCTestCase {
             LogDigest.Entry(level: "ERROR", time: nil, text: "router: rule-set not found"),
             LogDigest.Entry(level: "ERROR", time: nil, text: "router: rule-set not found"),
         ]
+        // 3.5.14: the order stays; only a run, and repeats past the third, fold.
         XCTAssertEqual(LogDigest.collapse(entries), [
-            "ERROR 12:00:01 [11 1.2s] connection: dial tcp <host>: i/o timeout (×2, последний раз 12:00:05)",
+            "ERROR 12:00:01 [11 1.2s] connection: dial tcp <host>: i/o timeout",
             "INFO 12:00:02 [app] Проверка задержки",
+            "ERROR 12:00:05 [12 300ms] connection: dial tcp <host>: i/o timeout",
             "ERROR --:--:-- router: rule-set not found (×2)",
         ])
+    }
+
+    func testRepeatsPastTheThirdAreCountedOnItsPlace() {
+        var entries: [LogDigest.Entry] = []
+        for second in 0 ..< 6 {
+            entries.append(LogDigest.Entry(level: "ERROR", time: "12:00:0\(second)", text: "[\(second) 1s] connection: EOF"))
+            entries.append(LogDigest.Entry(level: "INFO", time: "12:00:0\(second)", text: "[app] шаг \(second)"))
+        }
+        let lines = LogDigest.collapse(entries)
+        XCTAssertEqual(lines.count, 3 + 6)
+        XCTAssertEqual(lines[0], "ERROR 12:00:00 [0 1s] connection: EOF")
+        XCTAssertEqual(lines[4], "ERROR 12:00:02 [2 1s] connection: EOF (×4, последний раз 12:00:05)")
+        XCTAssertEqual(lines.last, "INFO 12:00:05 [app] шаг 5")
     }
 
     func testEventsKeepTheLastSessionsAndTheirTellingMemoryLines() {

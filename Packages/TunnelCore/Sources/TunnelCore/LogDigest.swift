@@ -34,31 +34,41 @@ public enum LogDigest {
         return entry.level + " " + connection.stringByReplacingMatches(in: text, range: NSRange(text.startIndex..., in: text), withTemplate: "")
     }
 
-    /// Lines repeated anywhere in the log stand once, where they first came, with
-    /// how many there were and when the last came: «(×37, последний раз 12:04:51)».
-    public static func collapse(_ entries: [Entry]) -> [String] {
-        var order: [String] = []
-        var first: [String: Entry] = [:]
-        var count: [String: Int] = [:]
-        var last: [String: String] = [:]
+    /// 3.5.14: the log keeps its order and its detail (the owner found 3.5's copy too
+    /// short: every repeat stood once, at its first place). A run of the same line
+    /// stands once with its count; a line stands where it came up to `keep` times,
+    /// and its later repeats are counted on its last place:
+    /// «(×37, последний раз 12:04:51)».
+    public static func collapse(_ entries: [Entry], keep: Int = 3) -> [String] {
+        var lines: [(entry: Entry, count: Int, last: String?)] = []
+        var lastKey: String?
+        var shown: [String: Int] = [:]
+        var place: [String: Int] = [:]
         for entry in entries {
             let key = key(entry)
-            if first[key] == nil {
-                order.append(key)
-                first[key] = entry
+            if key == lastKey, let index = lines.indices.last {
+                lines[index].count += 1
+                if let time = entry.time { lines[index].last = time }
+                continue
             }
-            count[key, default: 0] += 1
-            if let time = entry.time { last[key] = time }
+            if shown[key, default: 0] < keep {
+                shown[key, default: 0] += 1
+                lines.append((entry, 1, entry.time))
+                place[key] = lines.count - 1
+                lastKey = key
+            } else if let index = place[key] {
+                lines[index].count += 1
+                if let time = entry.time { lines[index].last = time }
+                lastKey = nil
+            }
         }
-        return order.compactMap { key in
-            guard let entry = first[key] else { return nil }
-            var line = entry.level + " " + (entry.time ?? "--:--:--") + " " + entry.text
-            let times = count[key] ?? 1
-            if times > 1 {
-                if let latest = last[key], latest != entry.time {
-                    line += " " + CoreText.f("(×%@, последний раз %@)", "\(times)", latest)
+        return lines.map { item in
+            var line = item.entry.level + " " + (item.entry.time ?? "--:--:--") + " " + item.entry.text
+            if item.count > 1 {
+                if let latest = item.last, latest != item.entry.time {
+                    line += " " + CoreText.f("(×%@, последний раз %@)", "\(item.count)", latest)
                 } else {
-                    line += " " + CoreText.f("(×%@)", "\(times)")
+                    line += " " + CoreText.f("(×%@)", "\(item.count)")
                 }
             }
             return line

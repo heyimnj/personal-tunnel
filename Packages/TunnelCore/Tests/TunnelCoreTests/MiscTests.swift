@@ -98,7 +98,8 @@ final class ServerInspectionTests: XCTestCase {
         let reality = ServerInspection.safeJSON(node[0])
         XCTAssertFalse(reality.contains("11111111-2222"))
         XCTAssertFalse(reality.contains("\"ab12\""))
-        XCTAssertTrue(reality.contains("h.example"))
+        // 3.5.14: addresses and domains are hidden as well.
+        XCTAssertFalse(reality.contains("h.example"))
         XCTAssertTrue(reality.contains("xtls-rprx-vision"))
         let hy = ServerInspection.safeJSON(node[1])
         XCTAssertFalse(hy.contains("secretpass"))
@@ -107,6 +108,23 @@ final class ServerInspectionTests: XCTestCase {
         let details = Dictionary(uniqueKeysWithValues: ServerInspection.details(node[0]))
         XCTAssertEqual(details["Flow"], "xtls-rprx-vision")
         XCTAssertEqual(details["uTLS"], "chrome")
+    }
+
+    /// 3.5.14: a relay's token in the WebSocket path, its domain in the Host header
+    /// and the server's address no longer show (the owner found them in this JSON).
+    func testSafeJSONHidesPathQueryAddressesAndDomains() throws {
+        let node = NodeAssembler.assemble([try ShareLink.parse("vless://11111111-2222-3333-4444-555555555555@203.0.113.7:443?security=tls&sni=relay.example&type=ws&host=relay.example&path=%2Frelay%3Ftoken%3Dsecrettoken%26pool%3Dde#A")])[0]
+        let shown = ServerInspection.safeJSON(node)
+        XCTAssertFalse(shown.contains("secrettoken"), shown)
+        XCTAssertFalse(shown.contains("pool=de"), shown)
+        XCTAssertFalse(shown.contains("203.0.113.7"), shown)
+        XCTAssertFalse(shown.contains("relay.example"), shown)
+        XCTAssertTrue(shown.contains("/relay?***"), shown)
+        XCTAssertTrue(shown.contains("\"ws\""), shown)
+        let source = try XCTUnwrap(ServerInspection.safeSource(node))
+        XCTAssertFalse(source.contains("secrettoken"), source)
+        XCTAssertFalse(source.contains("relay.example"), source)
+        XCTAssertFalse(source.contains("203.0.113.7"), source)
     }
 }
 
@@ -299,5 +317,30 @@ final class ArrangementRaiseTests: XCTestCase {
         XCTAssertEqual(arrangement.sorted(ids, key: Arrangement.subscription, name: { "\($0)" }), [4, 1, 3, 2])
         // 1.x's JSON has no raised list.
         XCTAssertEqual(Arrangement.decode(#"{"pinned":[],"manual":[],"recent":[],"byName":false}"#).raised, [])
+    }
+}
+
+/// 3.5.14 (battery): automatic groups test their servers no oftener than every ten minutes.
+final class GroupIntervalTests: XCTestCase {
+    func testDurationsParse() {
+        XCTAssertEqual(ConfigBuilder.seconds("3m"), 180)
+        XCTAssertEqual(ConfigBuilder.seconds("1m30s"), 90)
+        XCTAssertEqual(ConfigBuilder.seconds("1h"), 3600)
+        XCTAssertNil(ConfigBuilder.seconds("soon"))
+        XCTAssertEqual(ConfigBuilder.duration(600), "10m")
+        XCTAssertEqual(ConfigBuilder.duration(90), "90s")
+    }
+
+    func testProviderGroupsAreSlowedAndKeepAValidIdleTimeout() {
+        let known: Set<String> = ["a", "b"]
+        let fast: JSONValue = ["type": "urltest", "tag": "g", "outbounds": ["a", "b"], "interval": "3m", "idle_timeout": "5m"]
+        let adapted = ConfigBuilder.Carried.adapt(fast, known: known)
+        XCTAssertEqual(adapted["interval"], "10m")
+        XCTAssertEqual(adapted["idle_timeout"], "30m")
+        let slow: JSONValue = ["type": "urltest", "tag": "g", "outbounds": ["a", "b"], "interval": "1h", "idle_timeout": "2h"]
+        XCTAssertEqual(ConfigBuilder.Carried.adapt(slow, known: known)["interval"], "60m")
+        XCTAssertEqual(ConfigBuilder.Carried.adapt(slow, known: known)["idle_timeout"], "2h")
+        let bare: JSONValue = ["type": "urltest", "tag": "g", "outbounds": ["a", "b"]]
+        XCTAssertEqual(ConfigBuilder.Carried.adapt(bare, known: known)["interval"], "10m")
     }
 }

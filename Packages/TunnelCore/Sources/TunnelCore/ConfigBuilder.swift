@@ -95,6 +95,33 @@ public enum ConfigBuilder {
     public static let selectorTag = "proxy"
     public static let autoTag = "auto"
     public static let probeURL = "https://www.gstatic.com/generate_204"
+    /// 3.5.14 (battery): an automatic group tests its servers at most every ten
+    /// minutes (sing-box's default, kept until now, is three: a group of sixteen
+    /// servers opened over five TLS connections a minute, all day in the
+    /// background while any traffic went through it). Providers' groups too.
+    public static let groupInterval: TimeInterval = 600
+    static let groupIdleTimeout: TimeInterval = 1800
+
+    /// A sing-box duration («3m», «1m30s», «180s», «1h»), in seconds; nil if not one.
+    static func seconds(_ duration: String) -> TimeInterval? {
+        let units: [String: TimeInterval] = ["h": 3600, "m": 60, "s": 1, "ms": 0.001, "us": 0.000001, "µs": 0.000001, "ns": 0.000000001]
+        var total: TimeInterval = 0
+        var rest = Substring(duration.trimmingCharacters(in: .whitespaces))
+        guard !rest.isEmpty else { return nil }
+        while !rest.isEmpty {
+            let number = rest.prefix { $0.isNumber || $0 == "." }
+            rest = rest.dropFirst(number.count)
+            let unit = rest.prefix { !($0.isNumber || $0 == ".") }
+            rest = rest.dropFirst(unit.count)
+            guard let value = Double(number), let scale = units[String(unit)] else { return nil }
+            total += value * scale
+        }
+        return total
+    }
+
+    static func duration(_ seconds: TimeInterval) -> JSONValue {
+        .string(seconds.truncatingRemainder(dividingBy: 60) == 0 ? "\(Int(seconds / 60))m" : "\(Int(seconds))s")
+    }
 
     /// Bundled rule sets: tag → file name inside the extension's `Rules` folder.
     public enum RuleSet {
@@ -261,9 +288,9 @@ public enum ConfigBuilder {
                 "tag": .string(autoTag),
                 "outbounds": JSONValue(leaves),
                 "url": .string(probeURL),
-                "interval": "3m",
+                "interval": duration(groupInterval),
                 "tolerance": 150,
-                "idle_timeout": "30m",
+                "idle_timeout": duration(groupIdleTimeout),
                 "interrupt_exist_connections": false,
             ])
         }
@@ -647,6 +674,15 @@ public enum ConfigBuilder {
                 let kept = members.stringList.filter { $0 != tag && known.contains($0) }
                 fields["outbounds"] = JSONValue(kept)
                 if let preferred = fields["default"]?.stringValue, !kept.contains(preferred) { fields["default"] = nil }
+            }
+            if type == "urltest" {
+                // 3.5.14 (battery): no oftener than every ten minutes; the idle timeout
+                // must not be shorter (sing-box refuses the group).
+                let interval = max(fields["interval"]?.stringValue.flatMap(ConfigBuilder.seconds) ?? 0, ConfigBuilder.groupInterval)
+                fields["interval"] = ConfigBuilder.duration(interval)
+                if let idle = fields["idle_timeout"]?.stringValue.flatMap(ConfigBuilder.seconds), idle < interval {
+                    fields["idle_timeout"] = ConfigBuilder.duration(max(interval, ConfigBuilder.groupIdleTimeout))
+                }
             }
             return .object(fields)
         }

@@ -267,7 +267,28 @@ final class ServiceLogViewController: UIViewController, UITableViewDataSource, U
         let levels = ServiceLogViewController.levels
         var text = ["\(TunnelController.appName) \(AboutViewController.version), " + L("ядро туннеля") + ": \(CoreInfo.tunnelCore)",
                     // 3.1.14: which shared container the app really got (a signing tool may give another).
-                    "App Group: \(AppGroup.identifier)" + (App.shared.paths == nil ? " — " + L("нет доступа") : ""), ""]
+                    "App Group: \(AppGroup.identifier)" + (App.shared.paths == nil ? " — " + L("нет доступа") : "")]
+        // 3.5.14: the state the log was taken in, at its head (the owner: the log
+        // must say more). Read from what the app already holds: nothing is woken.
+        let device = UIDevice.current
+        text.append("iOS \(device.systemVersion), " + Lf("стиль «%@», язык %@", "\(Prefs.style)", "\(Prefs.language)"))
+        let tunnel = App.shared.tunnel
+        var session = Lf("VPN: %@", "\(tunnel.state.value)")
+        if let since = tunnel.connectedSince.value {
+            session += ", " + Lf("сеанс %@", Format.duration(Int(Date().timeIntervalSince(since))))
+        }
+        if let status = App.shared.core.status.value {
+            session += ", " + Lf("трафик ↓%@ ↑%@, память ядра %@", Format.bytes(status.downlinkTotal), Format.bytes(status.uplinkTotal), Format.bytes(status.memory))
+        }
+        text.append(session)
+        let library = App.shared.library
+        text.append(Lf("Подписок %@, серверов %@", "\(library.subscriptions.count)", "\(library.subscriptions.reduce(0) { $0 + $1.nodes.count })"))
+        let options = Prefs.tunnelOptions
+        let flags: [(String, Bool)] = [("autoSelect", options.autoSelect), ("killSwitch", Prefs.killSwitch), ("bypassRussia", options.bypassRussia),
+                                       ("adBlocking", options.adBlocking), ("blockEncryptedDNS", options.blockEncryptedDNS), ("localNetwork", options.bypassPrivate),
+                                       ("secureDNS", Prefs.secureDNS), ("autoConnect", Prefs.autoConnect), ("autoPing", Prefs.autoPing)]
+        text.append(L("Настройки: ") + flags.map { "\($0.0)=\($0.1 ? "on" : "off")" }.joined(separator: ", ") + ", log=\(options.logLevel), ping=\(Prefs.pingMode)")
+        text.append("")
         let hosts = App.shared.library.serverHosts
         // 3.3 (PT-16): no secrets, servers, destinations or addresses but the tunnel's own.
         func shared(_ lines: [String]) -> [String] {
@@ -295,7 +316,7 @@ final class ServiceLogViewController: UIViewController, UITableViewDataSource, U
         }
         UIPasteboard.general.string = text.joined(separator: "\n")
         Haptics.result(true)
-        App.shared.notice.value = Lf("Скопировано строк: %@.", "\(log.count)")
+        App.shared.notice.value = Lf("Скопировано строк: %@ из %@.", "\(log.count)", "\(entries.count)")
     }
 
     static func tail(_ url: URL, lines: Int) -> [String] {

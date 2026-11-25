@@ -387,13 +387,14 @@ final class FailureNotes: @unchecked Sendable {
     }
 }
 
-/// The first failures of a run, so the log says why without filling up: three
-/// silent servers, and (3.1.0) up to eight that answered with an error — a
-/// certificate, a handshake — whose words say what to fix.
+/// The first failures of a run, so the log says why without filling up: silent
+/// servers, and (3.1.0) those that answered with an error — a certificate, a
+/// handshake — whose words say what to fix. 3.5.14: ten and forty (were three and
+/// eight): a subscription whose every server failed told why for eight of them.
 final class FailureSamples: @unchecked Sendable {
     private let lock = NSLock()
-    private var silent = 3
-    private var errors = 8
+    private var silent = 10
+    private var errors = 40
 
     func take(_ failure: ProbeFailure = .other) -> Bool {
         lock.lock()

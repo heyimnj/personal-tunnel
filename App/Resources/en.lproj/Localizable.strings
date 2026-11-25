@@ -206,7 +206,11 @@
 "Подписок нет. Добавьте сервер или подписку." = "No subscriptions. Add a server or subscription.";
 "Поиск" = "Search";
 "Поиск подписок" = "Search subscriptions";
-"Показаны только соединения, полученные от ядра во время наблюдения; это не весь трафик сеанса." = "Only connections the core reported while this was open are shown; this is not all the session's traffic.";
+"Маршруты — куда ушёл трафик сеанса: через какой сервер или напрямую. «Без разбивки» — трафик, пока приложение было закрыто: ядро сохраняет только последние соединения." = "Routes: where the session's traffic went, through which server or direct. «Unattributed»: traffic while the app was closed — the core keeps only its latest connections.";
+"Маршруты за сеанс" = "Routes this session";
+"Напрямую" = "Direct";
+"Остальные" = "Others";
+"Без разбивки" = "Unattributed";
 "Пользовательский" = "Custom";
 "Порядок серверов" = "Server order";
 "При раздельной маршрутизации успешный системный запрос не доказывает работу прокси. DNS-утечки этой проверкой не измеряются." = "With split routing a successful system request does not prove the proxy works. This check does not measure DNS leaks.";
@@ -715,3 +719,12 @@
 "2 мин · предел ≈ 50 МБ" = "2 min · limit ≈ 50 MB";
 "VPN выключен за %@ с (настройки VPN — %@ с)" = "VPN off in %@ s (VPN settings: %@ s)";
 "Переход страницы: кадров %@, пропущено %@, самый долгий %@ мс; раскладок аналитики %@, её обновлений %@ (%@ мс)." = "Page change: %@ frames, %@ dropped, longest %@ ms; analytics layout passes %@, its updates %@ (%@ ms).";
+
+/* 3.5.14: the copied log's head */
+"стиль «%@», язык %@" = "style «%@», language %@";
+"VPN: %@" = "VPN: %@";
+"сеанс %@" = "session %@";
+"трафик ↓%@ ↑%@, память ядра %@" = "traffic ↓%@ ↑%@, core memory %@";
+"Подписок %@, серверов %@" = "Subscriptions %@, servers %@";
+"Настройки: " = "Settings: ";
+"Скопировано строк: %@ из %@." = "Copied %@ of %@ lines.";

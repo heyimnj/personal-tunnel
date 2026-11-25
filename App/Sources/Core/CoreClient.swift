@@ -14,8 +14,12 @@ struct CoreStatus: Equatable {
 struct CoreConnections: Equatable {
     var tcp = 0
     var udp = 0
-    /// Bytes per outbound tag, observed while the stream was open.
+    /// Bytes per outbound tag over the session (3.5.14; before: only the connections
+    /// the core still held), «direct» under `CoreConnections.direct`. Connections the
+    /// app never saw (closed and forgotten by the core while it was in the background)
+    /// are the session's total less their sum.
     var routes: [String: Int64] = [:]
+    static let direct = "\u{1}direct"
     /// The open connections themselves, filled only while a screen lists them.
     var open: [CoreConnection] = []
 }
@@ -111,6 +115,11 @@ final class CoreClient {
     private var store: LibboxConnections?
     /// Owned by `parse`: whether to copy the open connections out (`CoreConnections.open`).
     private var parseListsConnections = false
+    /// Owned by `parse` (3.5.14): the session's bytes per route, and how much of each
+    /// connection is already in them — the core sends a connection again with its
+    /// whole count on every new stream, and the app's store forgets closed ones.
+    private var sessionRoutes: [String: Int64] = [:]
+    private var counted: [String: Int64] = [:]
 
     static func setUp(paths: SharedPaths) {
         let options = LibboxSetupOptions()
@@ -148,7 +157,7 @@ final class CoreClient {
         disconnect()
         status.value = nil
         connections.value = CoreConnections()
-        parse.async { self.store = nil }
+        parse.async { self.store = nil; self.sessionRoutes = [:]; self.counted = [:] }
     }
 
     /// The core's totals at the last «Сбросить статистику» (3.1.6): the core keeps
@@ -167,7 +176,7 @@ final class CoreClient {
         history.value = TrafficHistory()
         samples.value = CoreSamples()
         connections.value = CoreConnections()
-        parse.async { self.store = nil }
+        parse.async { self.store = nil; self.sessionRoutes = [:]; self.counted = [:] }
     }
 
     /// A line from the app itself; the core's own lines arrive over the socket.
@@ -281,6 +290,8 @@ final class CoreClient {
         var value = value
         // A new tunnel starts its count again from zero; so does the base.
         if value.uplinkTotal < totalsBase.up || value.downlinkTotal < totalsBase.down { totalsBase = (0, 0) }
+        // …and the routes of the last one go with it (3.5.14).
+        if value.uplinkTotal < rawTotals.up || value.downlinkTotal < rawTotals.down { parse.async { self.sessionRoutes = [:]; self.counted = [:] } }
         // 3.3 beta 4: a reload starts the core's counters again, and its first rate
         // came out negative: the graph drew far below its card.
         value.uplink = max(0, value.uplink)
@@ -358,11 +369,18 @@ final class CoreClient {
                         ))
                     }
                 }
-                if item.outboundType != "direct", !item.outbound.isEmpty {
-                    result.routes[item.outbound, default: 0] += item.uplinkTotal + item.downlinkTotal
+                let route = item.outboundType == "direct" ? CoreConnections.direct : item.outbound
+                if !route.isEmpty {
+                    let total = item.uplinkTotal + item.downlinkTotal
+                    let delta = total - counted[item.id_, default: 0]
+                    if delta > 0 {
+                        counted[item.id_] = total
+                        sessionRoutes[route, default: 0] += delta
+                    }
                 }
             }
         }
+        result.routes = sessionRoutes.filter { $0.value > 0 }
         return result
     }
 

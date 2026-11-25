@@ -783,7 +783,7 @@ final class MinimalAnalyticsViewController: UIViewController, UIGestureRecognize
         let legendColumn = UIStackView(.vertical, spacing: 0, alignment: .fill, [above, routeLegend, below])
         above.heightAnchor.constraint(equalTo: below.heightAnchor).isActive = true
         let routesBody = UIStackView(.horizontal, spacing: 16, alignment: .fill, [routeRings, legendColumn])
-        for item in [small(L("Маршруты")), routesBody] as [UIView] { routes.stack.addArrangedSubview(item) }
+        for item in [small(L("Маршруты за сеанс")), routesBody] as [UIView] { routes.stack.addArrangedSubview(item) }
 
         // The core's memory (4:2): the figure, then its line over two minutes,
         // drawn to whatever room the card leaves (scaled inside its own box).
@@ -806,7 +806,7 @@ final class MinimalAnalyticsViewController: UIViewController, UIGestureRecognize
         memory.stack.setCustomSpacing(8, after: memoryValue)
         memory.stack.setCustomSpacing(6, after: memoryLine)
 
-        let routesNote = Classic.padded(UILabel(L("Показаны только соединения, полученные от ядра во время наблюдения; это не весь трафик сеанса."), font: Theme.font(.caption2), color: .secondaryLabel, lines: 0),
+        let routesNote = Classic.padded(UILabel(L("Маршруты — куда ушёл трафик сеанса: через какой сервер или напрямую. «Без разбивки» — трафик, пока приложение было закрыто: ядро сохраняет только последние соединения."), font: Theme.font(.caption2), color: .secondaryLabel, lines: 0),
                                         UIEdgeInsets(top: 0, left: 6, bottom: 0, right: 6))
 
         let links = AnalyticsCard(insets: UIEdgeInsets(top: 0, left: 18, bottom: 0, right: 18))
@@ -1072,7 +1072,27 @@ final class MinimalAnalyticsViewController: UIViewController, UIGestureRecognize
         let tcpText = "\(connections.tcp)", udpText = "\(connections.udp)"
         if tcpRow.value.text != tcpText { tcpRow.value.text = tcpText }
         if udpRow.value.text != udpText { udpRow.value.text = udpText }
-        let top = Array(connections.routes.sorted { $0.value > $1.value }.prefix(Self.routesShown))
+        // 3.5.14: the session's routes, «direct» by name; what the app could not
+        // attribute (connections it never saw) makes up the session's total.
+        var routes = connections.routes.map { (key: $0.key == CoreConnections.direct ? L("Напрямую") : $0.key, value: $0.value) }
+            .sorted { $0.value > $1.value }
+        if routes.count > Self.routesShown {
+            let rest = routes[(Self.routesShown - 1)...].reduce(0) { $0 + $1.value }
+            routes = Array(routes.prefix(Self.routesShown - 1)) + [(key: L("Остальные"), value: rest)]
+        }
+        if let status = App.shared.core.status.value {
+            let unseen = status.uplinkTotal + status.downlinkTotal - routes.reduce(0) { $0 + $1.value }
+            // Only a share worth telling (2 %), not the bytes of a second's lag.
+            if unseen > 0, unseen * 50 > status.uplinkTotal + status.downlinkTotal {
+                if routes.count >= Self.routesShown {
+                    let last = routes.removeLast()
+                    routes.append((key: L("Остальные"), value: last.value + unseen))
+                } else {
+                    routes.append((key: L("Без разбивки"), value: unseen))
+                }
+            }
+        }
+        let top = routes
         routeRings.parts = top.enumerated().map { index, route in
             (value: Double(route.value), color: Self.routeColors[index % Self.routeColors.count])
         }

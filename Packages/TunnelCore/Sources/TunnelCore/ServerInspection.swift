@@ -38,7 +38,7 @@ public enum ServerInspection {
     /// neither (added from a sing-box file).
     public static func safeSource(_ node: ServerNode) -> String? {
         if let source = node.source {
-            return mask(source, hidingAddresses: true).serialized(pretty: true)
+            return mask(source).serialized(pretty: true)
         }
         guard let link = node.link, let schemeEnd = link.range(of: "://") else { return nil }
         let scheme = link[..<schemeEnd.lowerBound]
@@ -57,38 +57,60 @@ public enum ServerInspection {
         let safePort = port.allSatisfy { $0 == ":" || $0.isNumber || $0 == "," || $0 == "-" } && !port.contains("]") ? port : ""
         rest.replaceSubrange(rest.startIndex ..< end, with: (authority.contains("@") ? "***@" : "") + "***" + safePort)
         var query = rest
-        for key in ["password", "pwd", "auth", "sid", "obfs-password", "obfsParam", "key"] {
+        for key in ["password", "pwd", "auth", "sid", "obfs-password", "obfsParam", "key", "pbk", "token",
+                    "sni", "host", "peer", "servername", "obfs-host"] {
             query = query.replacingOccurrences(of: "(?i)([?&]" + NSRegularExpression.escapedPattern(for: key) + "=)[^&#]*", with: "$1***", options: .regularExpression)
         }
+        // 3.5.14: a path's own query (a relay's «?token=…», percent-encoded in a link) goes too.
+        query = query.replacingOccurrences(of: "(?i)([?&](?:path|servicename|spx)=[^&#]*?)(%3F|\\?)[^&#]*", with: "$1$2***", options: .regularExpression)
         return scheme + "://" + query
     }
 
     /// The server's outbounds as sing-box JSON with every secret replaced by `***`.
+    /// 3.5.14: addresses, domains and a path's query too: the owner found a relay's
+    /// token and the servers' addresses in it.
     public static func safeJSON(_ node: ServerNode) -> String {
         let objects = [node.outbound] + node.members
         let document: JSONValue = ["outbounds": .array(objects.map { mask($0) })]
         return document.serialized(pretty: true)
     }
 
-    /// Keys whose values are a server's address (hidden in the provider's config).
-    static let addressKeys: Set<String> = ["address", "server"]
+    /// Keys whose values are a server's address or domain: hidden too (3.5.14: in
+    /// the sing-box JSON as well as in the provider's config).
+    static let addressKeys: Set<String> = ["address", "server", "server_name", "servername", "sni", "host", "peer", "dest", "target", "add"]
+    /// Keys whose values are a path: what follows its «?» is hidden.
+    static let pathKeys: Set<String> = ["path", "servicename", "service_name", "spiderx"]
 
-    static func mask(_ value: JSONValue, hidingAddresses: Bool = false) -> JSONValue {
+    static func mask(_ value: JSONValue) -> JSONValue {
         switch value {
         case var .object(fields):
             for (key, field) in fields {
                 let lower = key.lowercased()
-                if secretKeys.contains(lower) || (hidingAddresses && addressKeys.contains(lower)), field.stringValue != nil || field.intValue != nil {
-                    fields[key] = "***"
+                if secretKeys.contains(lower) || addressKeys.contains(lower) {
+                    if field.stringValue != nil || field.intValue != nil {
+                        fields[key] = "***"
+                    } else if case let .array(list) = field, !list.isEmpty, list.allSatisfy({ $0.stringValue != nil }) {
+                        fields[key] = .array(list.map { _ in "***" })
+                    } else {
+                        fields[key] = mask(field)
+                    }
+                } else if pathKeys.contains(lower), let path = field.stringValue {
+                    fields[key] = .string(maskQuery(path))
                 } else {
-                    fields[key] = mask(field, hidingAddresses: hidingAddresses)
+                    fields[key] = mask(field)
                 }
             }
             return .object(fields)
         case let .array(items):
-            return .array(items.map { mask($0, hidingAddresses: hidingAddresses) })
+            return .array(items.map { mask($0) })
         default:
             return value
         }
+    }
+
+    /// «/relay?token=abc&pool=de» → «/relay?***».
+    static func maskQuery(_ path: String) -> String {
+        guard let mark = path.firstIndex(of: "?") else { return path }
+        return String(path[...mark]) + "***"
     }
 }
