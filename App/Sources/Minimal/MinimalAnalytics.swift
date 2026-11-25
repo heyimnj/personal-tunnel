@@ -749,10 +749,12 @@ final class MinimalAnalyticsViewController: UIViewController, UIGestureRecognize
         sessionStack.translatesAutoresizingMaskIntoConstraints = false
         header.addSubview(sessionStack)
         NSLayoutConstraint.activate([
-            header.heightAnchor.constraint(equalToConstant: 62),
-            title.centerXAnchor.constraint(equalTo: header.centerXAnchor), title.centerYAnchor.constraint(equalTo: header.centerYAnchor, constant: -9),
+            // 3.5.26 (the owner): the session line right under the title, the cards right
+            // under it — the header ends at the line.
+            title.centerXAnchor.constraint(equalTo: header.centerXAnchor), title.centerYAnchor.constraint(equalTo: header.topAnchor, constant: 24),
             sessionStack.centerXAnchor.constraint(equalTo: header.centerXAnchor), sessionStack.topAnchor.constraint(equalTo: title.bottomAnchor, constant: 2),
-            more.trailingAnchor.constraint(equalTo: header.trailingAnchor), more.centerYAnchor.constraint(equalTo: header.centerYAnchor),
+            sessionStack.bottomAnchor.constraint(equalTo: header.bottomAnchor),
+            more.trailingAnchor.constraint(equalTo: header.trailingAnchor), more.centerYAnchor.constraint(equalTo: title.centerYAnchor),
             more.widthAnchor.constraint(equalToConstant: 44), more.heightAnchor.constraint(equalToConstant: 44),
             moreGlass.centerXAnchor.constraint(equalTo: more.centerXAnchor), moreGlass.centerYAnchor.constraint(equalTo: more.centerYAnchor),
             moreGlass.widthAnchor.constraint(equalToConstant: 44), moreGlass.heightAnchor.constraint(equalToConstant: 44),
