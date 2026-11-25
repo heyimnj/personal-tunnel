@@ -626,7 +626,7 @@ final class MinimalServersViewController: UIViewController, UIScrollViewDelegate
                 // 3.5 beta 2: the Modern page of its own (cards, as in this sheet).
                 self?.present(ModernServerOrderViewController.wrapped(), animated: true)
             },
-        ] + (selecting ? selectionItems() : [currentServerPin()]) + [
+        ] + (selecting ? selectionItems() : [currentServerPin()]) + collapseAllItem() + [
             UIAction(title: L("Обновить подписки")) { _ in App.shared.refreshAll() },
         ]
     }
@@ -1260,6 +1260,22 @@ final class MinimalServersViewController: UIViewController, UIScrollViewDelegate
             return
         }
         list.reconfigureRows { id, tag in keys.contains(LatencyService.key(id, tag)) }
+    }
+
+    /// 3.5.20 (the owner): «Свернуть все подписки», only while at least one is open.
+    private func collapseAllItem() -> [UIMenuElement] {
+        let open = App.shared.library.subscriptions.filter { !$0.isStandalone && list.isOpen($0.id) }.map(\.id)
+        guard !open.isEmpty else { return [] }
+        return [UIAction(title: L("Свернуть все подписки"), image: UIImage(systemName: "rectangle.compress.vertical")) { [weak self] _ in
+            self?.collapse(open)
+        }]
+    }
+
+    private func collapse(_ ids: [Int64]) {
+        for id in ids { expanded.remove(id) }
+        Prefs.expandedSubscriptions = expanded
+        Haptics.item()
+        for id in ids where list.isOpen(id) { list.setOpen(id, false) }
     }
 
     private func toggle(_ id: Int64) {
