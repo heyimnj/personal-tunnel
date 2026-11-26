@@ -1,0 +1,35 @@
+# PT Lab — витрина вариантов интерфейса Personal Tunnel. Без ядра, без VPN, без App Group:
+# только экраны и анимации, чтобы владелец сравнил варианты на телефоне. Ставится рядом с
+# основным приложением и бетой (свой Bundle ID), их данные не трогает.
+name: PTLab
+options:
+  bundleIdPrefix: com.personaltunnelapp
+  developmentLanguage: ru
+  deploymentTarget:
+    iOS: "16.0"
+configFiles:
+  Debug: Lab.xcconfig
+  Release: Lab.xcconfig
+
+targets:
+  PTLab:
+    type: application
+    platform: iOS
+    sources:
+      - path: Sources
+    settings:
+      base:
+        PRODUCT_NAME: PTLab
+        PRODUCT_BUNDLE_IDENTIFIER: com.personaltunnelapp.lab
+        INFOPLIST_FILE: Info.plist
+        GENERATE_INFOPLIST_FILE: NO
+
+schemes:
+  PTLab:
+    build:
+      targets:
+        PTLab: all
+    run:
+      config: Debug
+    archive:
+      config: Release

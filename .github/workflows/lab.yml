@@ -1,0 +1,95 @@
+name: Lab
+
+# PT Lab — витрина вариантов интерфейса (Lab/): без ядра, без расширения, собирается за минуты.
+on:
+  push:
+    branches: [main, "claude/**"]
+    paths:
+      - "Lab/**"
+      - ".github/workflows/lab.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: lab-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  lab:
+    name: Неподписанный IPA PT Lab
+    runs-on: macos-26-intel
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+
+      - name: Xcode
+        run: |
+          set -euo pipefail
+          XCODE="$(ls -d /Applications/Xcode*.app | grep -vi beta | sort -V | tail -1)"
+          sudo xcode-select -s "$XCODE/Contents/Developer"
+          xcodebuild -version
+
+      - name: Проект Xcode
+        run: |
+          set -euo pipefail
+          curl -fsSL -o "$RUNNER_TEMP/xcodegen.zip" https://github.com/yonaskolb/XcodeGen/releases/download/2.46.0/xcodegen.zip
+          echo "4d9e34b62172d645eed6457cac13fc222569974098ef4ee9c3368bedf0196806  $RUNNER_TEMP/xcodegen.zip" | shasum -a 256 -c -
+          unzip -q -o "$RUNNER_TEMP/xcodegen.zip" -d "$RUNNER_TEMP"
+          cd Lab && "$RUNNER_TEMP/xcodegen/bin/xcodegen" generate
+
+      - name: Компиляция
+        run: |
+          set -euo pipefail
+          mkdir -p build
+          set +e
+          xcodebuild -project Lab/PTLab.xcodeproj -scheme PTLab \
+            -configuration Release -destination 'generic/platform=iOS' \
+            -derivedDataPath build/DerivedData \
+            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY= \
+            build > build/xcodebuild.log 2>&1
+          status=$?
+          set -e
+          grep -E "error: " build/xcodebuild.log | grep -v "^ " | sed "s|$PWD/||" | cut -c1-260 | sort -u | head -40 || true
+          grep -E "BUILD (SUCCEEDED|FAILED)" build/xcodebuild.log || true
+          exit $status
+
+      - name: Упаковка IPA
+        id: package
+        run: |
+          set -euo pipefail
+          VERSION="$(grep '^MARKETING_VERSION' Lab/Lab.xcconfig | cut -d= -f2 | tr -d ' ')"
+          BUILD="$(grep '^CURRENT_PROJECT_VERSION' Lab/Lab.xcconfig | cut -d= -f2 | tr -d ' ')"
+          NAME="PTLab-${VERSION//./_}-${BUILD}-unsigned.ipa"
+          APP="build/DerivedData/Build/Products/Release-iphoneos/PTLab.app"
+          /usr/libexec/PlistBuddy -c "Print :CFBundleIdentifier" "$APP/Info.plist"
+          mkdir -p build/ipa/Payload
+          cp -R "$APP" build/ipa/Payload/
+          (cd build/ipa && /usr/bin/ditto -c -k --keepParent Payload "../$NAME")
+          shasum -a 256 "build/$NAME" > build/SHA256SUMS
+          git rev-parse HEAD > build/source-commit.txt
+          echo "name=$NAME" >> "$GITHUB_OUTPUT"
+
+      - name: Выложить IPA
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: PTLab-unsigned-${{ github.run_number }}
+          path: |
+            build/${{ steps.package.outputs.name }}
+            build/SHA256SUMS
+            build/source-commit.txt
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Выложить журнал сборки
+        if: always()
+        continue-on-error: true
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: lab-build-log-${{ github.run_number }}
+          path: build/xcodebuild.log
+          if-no-files-found: ignore
+          retention-days: 7

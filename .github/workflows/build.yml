@@ -6,6 +6,9 @@ on:
     paths-ignore:
       - "**.md"
       - "handoff/**"
+      # PT Lab собирается своим workflow (lab.yml).
+      - "Lab/**"
+      - ".github/workflows/lab.yml"
   workflow_dispatch:
     inputs:
       cache_unverified:
