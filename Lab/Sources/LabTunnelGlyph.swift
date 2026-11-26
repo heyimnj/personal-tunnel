@@ -98,6 +98,12 @@ final class TunnelGlyphView: UIView {
 
     private let body = CAShapeLayer()
     private let stem = CAShapeLayer()
+    /// PT Lab 1.8 (the owner): while the tunnel comes up or goes down, a yellow
+    /// stretch runs along the mark — as the mark had it before it learnt to turn
+    /// into the arch — instead of the whole mark turning yellow. Up, it fades and
+    /// the mark is green; it never runs while the tunnel just stands.
+    private let runner = CAShapeLayer()
+    private var runnerShown = Spring(0, omega: 10)
     private var archLayers: [CAShapeLayer] = []
     private var link: CADisplayLink?
     private var lastTick: CFTimeInterval = 0
@@ -105,12 +111,13 @@ final class TunnelGlyphView: UIView {
     override init(frame: CGRect) {
         super.init(frame: frame)
         isUserInteractionEnabled = false
-        for item in [body, stem] {
+        for item in [body, stem, runner] {
             item.fillColor = nil
             item.lineCap = .round
             item.lineJoin = .round
             layer.addSublayer(item)
         }
+        runner.opacity = 0
     }
 
     @available(*, unavailable)
@@ -122,7 +129,7 @@ final class TunnelGlyphView: UIView {
         super.layoutSubviews()
         CATransaction.begin()
         CATransaction.setDisableActions(true)
-        for item in [body, stem] + archLayers { item.frame = bounds }
+        for item in [body, stem, runner] + archLayers { item.frame = bounds }
         CATransaction.commit()
         render()
     }
@@ -168,6 +175,7 @@ final class TunnelGlyphView: UIView {
         }
         setTint(for: next, snap: still || !tintSet)
         tintSet = true
+        runnerShown.target = (next == .connecting || next == .stopping) && !UIAccessibility.isReduceMotionEnabled ? 1 : 0
         if still { snapAll() }
         updatePulse()
         render()
@@ -223,7 +231,8 @@ final class TunnelGlyphView: UIView {
         let colour: UIColor
         switch look {
         case .off: colour = .label
-        case .connecting, .stopping: colour = .systemYellow
+        // Lab 1.8: the mark keeps its plain colour; the yellow runs along it (`runner`).
+        case .connecting, .stopping: colour = .label
         case .on: colour = .systemGreen
         case .failing: colour = .systemRed
         }
@@ -237,6 +246,7 @@ final class TunnelGlyphView: UIView {
 
     private func snapAll() {
         opening.snap()
+        runnerShown.snap()
         for index in tint.indices { tint[index].snap() }
         switch mode {
         case .idle:
@@ -278,7 +288,7 @@ final class TunnelGlyphView: UIView {
 
     private var moving: Bool {
         if mode == .conveyor, !still { return true }
-        if !opening.settled || tint.contains(where: { !$0.settled }) { return true }
+        if !opening.settled || !runnerShown.settled || tint.contains(where: { !$0.settled }) { return true }
         return lights.contains { !$0.p.settled || !$0.alive.settled || $0.running }
     }
 
@@ -306,6 +316,7 @@ final class TunnelGlyphView: UIView {
 
     private func advance(_ dt: CGFloat) {
         opening.step(dt)
+        runnerShown.step(dt)
         for index in tint.indices { tint[index].step(dt) }
         for index in lights.indices {
             if lights[index].running {
@@ -353,6 +364,17 @@ final class TunnelGlyphView: UIView {
         body.path = Self.body(t).copy(using: &transform)
         body.lineWidth = Self.line * unit
         body.strokeColor = colour
+        let shown = max(0, min(1, runnerShown.x))
+        runner.isHidden = shown < 0.01
+        if !runner.isHidden {
+            runner.path = Self.runnerPath(t).copy(using: &transform)
+            runner.lineWidth = Self.line * unit
+            runner.strokeColor = UIColor.systemYellow.resolvedColor(with: traitCollection).cgColor
+            runner.opacity = Float(shown)
+            startRunning()
+        } else {
+            runner.removeAnimation(forKey: "run")
+        }
         let stroke = 1 - min(1, t * 1.4)
         stem.isHidden = stroke <= 0
         stem.path = Self.segment(50, 24 + 28 * t, 50, 50 + 24 * t).copy(using: &transform)
@@ -405,6 +427,45 @@ final class TunnelGlyphView: UIView {
         path.addPath(half)
         path.addPath(half, transform: CGAffineTransform(translationX: 100, y: 0).scaledBy(x: -1, y: 1))
         return path
+    }
+
+    /// The mark as one way for the runner: up the left half from its foot over
+    /// the top (across the ring's gap) and down the right half to its foot.
+    private static func runnerPath(_ t: CGFloat) -> CGPath {
+        let a0 = (240 + 30 * t) * .pi / 180
+        let a1 = (90 + 90 * t) * .pi / 180
+        let leg = 22 * t
+        let point = { (angle: CGFloat) in CGPoint(x: 50 + 22 * cos(angle), y: 52 + 22 * sin(angle)) }
+        let left = point(a1)
+        let path = CGMutablePath()
+        path.move(to: CGPoint(x: left.x + sin(a1) * leg, y: left.y - cos(a1) * leg))
+        path.addLine(to: left)
+        path.addArc(center: CGPoint(x: 50, y: 52), radius: 22, startAngle: a1, endAngle: a0, clockwise: false)
+        // The right half mirrors the left: angle θ ↔ π − θ.
+        let r0 = .pi - a0, r1 = .pi - a1
+        path.move(to: point(r0))
+        path.addArc(center: CGPoint(x: 50, y: 52), radius: 22, startAngle: r0, endAngle: r1, clockwise: false)
+        let right = point(r1)
+        path.addLine(to: CGPoint(x: right.x - sin(a1) * leg, y: right.y - cos(a1) * leg))
+        return path
+    }
+
+    /// A quarter of the way runs from one foot to the other, as the 3.5 mark's
+    /// stretch ran round its ring (1.2 s a lap).
+    private func startRunning() {
+        guard runner.animation(forKey: "run") == nil else { return }
+        let head = CAKeyframeAnimation(keyPath: "strokeEnd")
+        head.values = [0, 0.28, 1, 1]
+        head.keyTimes = [0, 0.2, 0.8, 1]
+        let tail = CAKeyframeAnimation(keyPath: "strokeStart")
+        tail.values = [0, 0, 0.72, 1]
+        tail.keyTimes = [0, 0.2, 0.8, 1]
+        let run = CAAnimationGroup()
+        run.animations = [head, tail]
+        run.duration = 1.2 / Double(max(timeScale, 0.05))
+        run.repeatCount = .infinity
+        run.isRemovedOnCompletion = false
+        runner.add(run, forKey: "run")
     }
 
     /// The arch (∩) scaled `scale` round the point it runs to, (50, 63).

@@ -17,12 +17,14 @@ targets:
     platform: iOS
     sources:
       - path: Sources
+      - path: Assets.xcassets
     settings:
       base:
         PRODUCT_NAME: PTLab
         PRODUCT_BUNDLE_IDENTIFIER: com.personaltunnelapp.lab
         INFOPLIST_FILE: Info.plist
         GENERATE_INFOPLIST_FILE: NO
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
 
 schemes:
   PTLab:
