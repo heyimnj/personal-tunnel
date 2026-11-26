@@ -410,10 +410,12 @@ class TapControl: UIControl {
             let outX = max(0, -point.x, point.x - bounds.width)
             let outY = max(0, -point.y, point.y - bounds.height)
             let out = hypot(outX, outY)
-            let fadeOver = max(shade.bounds.width / 2 * 0.7, 30)
+            let fadeOver = max(shade.bounds.width / 2 * 0.9, 30)
+            leaveGhost(of: shade, towards: point)
             CATransaction.begin()
-            // A touch of lag, so it moves like something liquid, not glued on.
-            CATransaction.setAnimationDuration(0.09)
+            // A touch of lag, so it moves like something liquid, not glued on
+            // (3.6.6: 0.16 s, was 0.09).
+            CATransaction.setAnimationDuration(0.16)
             CATransaction.setAnimationTimingFunction(CAMediaTimingFunction(name: .easeOut))
             shade.position = point
             shade.opacity = Float(max(0, 1 - out / fadeOver))
@@ -467,7 +469,8 @@ class TapControl: UIControl {
         let dimpleRadius = min(farthest, max(bounds.height, 44)) * 0.9
         let shade = CAGradientLayer()
         shade.type = .radial
-        shade.colors = [ink.withAlphaComponent(0.07).cgColor, ink.withAlphaComponent(0.035).cgColor, ink.withAlphaComponent(0).cgColor]
+        // 3.6.6 (the owner, «Волна» in PT Lab): a little deeper than 0.07, so the press is seen.
+        shade.colors = [ink.withAlphaComponent(0.09).cgColor, ink.withAlphaComponent(0.045).cgColor, ink.withAlphaComponent(0).cgColor]
         shade.locations = [0, 0.55, 1]
         shade.startPoint = CGPoint(x: 0.5, y: 0.5)
         shade.endPoint = CGPoint(x: 1, y: 1)
@@ -493,6 +496,49 @@ class TapControl: UIControl {
         // 3.6.2 (the owner): no thin ring — the spot alone carries the touch, and
         // on release it spreads over the whole plate (fadeShade).
         shadeReach = farthest * 1.08 / dimpleRadius
+        lastGhost = 0
+        lastGhostPoint = point
+    }
+
+    private var lastGhost: CFTimeInterval = 0
+    private var lastGhostPoint = CGPoint.zero
+
+    /// 3.6.6 (the owner: the trail a little longer): where the spot was a moment
+    /// ago a fainter copy stays and melts away, so the moving finger leaves a wake.
+    private func leaveGhost(of shade: CAGradientLayer, towards point: CGPoint) {
+        let now = CACurrentMediaTime()
+        guard now - lastGhost > 0.035, hypot(point.x - lastGhostPoint.x, point.y - lastGhostPoint.y) > 3, let host = rippleClip else { return }
+        lastGhost = now
+        lastGhostPoint = point
+        let ghost = CAGradientLayer()
+        ghost.type = .radial
+        ghost.colors = shade.colors
+        ghost.locations = shade.locations
+        ghost.startPoint = shade.startPoint
+        ghost.endPoint = shade.endPoint
+        let from = shade.presentation()?.position ?? shade.position
+        let opacity = (shade.presentation()?.opacity ?? shade.opacity) * 0.45
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        ghost.bounds = shade.bounds
+        ghost.position = from
+        ghost.opacity = 0
+        host.layer.insertSublayer(ghost, below: shade)
+        CATransaction.commit()
+        CATransaction.begin()
+        CATransaction.setCompletionBlock { ghost.removeFromSuperlayer() }
+        let fade = CABasicAnimation(keyPath: "opacity")
+        fade.fromValue = opacity
+        fade.toValue = 0
+        let shrink = CABasicAnimation(keyPath: "transform.scale")
+        shrink.fromValue = 0.95
+        shrink.toValue = 0.7
+        let group = CAAnimationGroup()
+        group.animations = [fade, shrink]
+        group.duration = 0.42
+        group.timingFunction = CAMediaTimingFunction(name: .easeOut)
+        ghost.add(group, forKey: "ghost")
+        CATransaction.commit()
     }
 
     /// The scale at which the spot covers the whole plate (set by `spread`).
@@ -523,11 +569,11 @@ class TapControl: UIControl {
         CATransaction.begin()
         CATransaction.setCompletionBlock { shade.removeFromSuperlayer() }
         if end == .runOff, !UIAccessibility.isReduceMotionEnabled {
-            let duration = 0.32
+            let duration = 0.42
             let from = shade.presentation()?.position ?? shade.position
             let length = max(hypot(drift.x, drift.y), 0.001)
-            // On the way the finger went, a spot's width or so further.
-            let run = min(shade.bounds.width * 0.6, max(40, length * 6))
+            // On the way the finger went, a spot's width or so further (3.6.6: further).
+            let run = min(shade.bounds.width * 0.8, max(40, length * 8))
             let to = CGPoint(x: from.x + drift.x / length * run, y: from.y + drift.y / length * run)
             let move = CABasicAnimation(keyPath: "position")
             move.fromValue = NSValue(cgPoint: from)
@@ -583,31 +629,30 @@ class TapControl: UIControl {
             return
         }
         // 3.6.3 (the owner): 0.85 s was not seen — the next sheet opened over it.
-        // 3.6.4 (the owner: the style is right, but 0.4 s is still too slow to be
-        // seen): the spot covers the plate in 0.18 s (most of it in the first
-        // tenth), stays full a moment, then fades; a little deeper than before.
-        let duration = 0.48
-        let reach = 0.18
+        // 3.6.4: 0.18 s — but it read as a flat dark fill, like a settings row.
+        // 3.6.6 (the owner, «Волна» in PT Lab): a wave, not a flood — the spot
+        // runs out to the edges while its middle empties, so the darker front is
+        // what moves (0.42 s); then it is gone.
+        let duration = 0.42
+        let ink = UIColor.label.resolvedColor(with: traitCollection)
         let grow = CABasicAnimation(keyPath: "transform.scale")
         grow.fromValue = scale
-        grow.toValue = max(scale, shadeReach)
-        grow.duration = reach
-        grow.fillMode = .forwards
-        grow.timingFunction = CAMediaTimingFunction(controlPoints: 0.05, 0.9, 0.2, 1)
-        // Deeper while it runs out (the ring's weight moves to the spot), then gone.
-        let ink = UIColor.label.resolvedColor(with: traitCollection)
-        let deepen = CABasicAnimation(keyPath: "colors")
-        deepen.fromValue = shade.colors
-        deepen.toValue = [ink.withAlphaComponent(0.14).cgColor, ink.withAlphaComponent(0.1).cgColor, ink.withAlphaComponent(0).cgColor]
-        deepen.duration = reach * 0.6
-        deepen.autoreverses = false
-        deepen.fillMode = .forwards
+        grow.toValue = max(scale, shadeReach * 1.05)
+        grow.timingFunction = CAMediaTimingFunction(controlPoints: 0.15, 0.55, 0.3, 1)
+        let deepen = CAKeyframeAnimation(keyPath: "colors")
+        let first: [Any] = shade.colors ?? []
+        let middle: [Any] = [ink.withAlphaComponent(0.055).cgColor, ink.withAlphaComponent(0.105).cgColor, ink.withAlphaComponent(0).cgColor]
+        let last: [Any] = [ink.withAlphaComponent(0).cgColor, ink.withAlphaComponent(0.095).cgColor, ink.withAlphaComponent(0).cgColor]
+        deepen.values = [first, middle, last]
+        deepen.keyTimes = [0, 0.3, 1]
+        let front = CABasicAnimation(keyPath: "locations")
+        front.fromValue = [0, 0.55, 1]
+        front.toValue = [0, 0.82, 1]
         let fade = CAKeyframeAnimation(keyPath: "opacity")
         fade.values = [current, 1, 1, 0]
-        fade.keyTimes = [0, 0.08, 0.45, 1]
-        fade.timingFunctions = [CAMediaTimingFunction(name: .easeOut), CAMediaTimingFunction(name: .linear), CAMediaTimingFunction(name: .easeIn)]
+        fade.keyTimes = [0, 0.1, 0.6, 1]
         let group = CAAnimationGroup()
-        group.animations = [grow, deepen, fade]
+        group.animations = [grow, deepen, front, fade]
         group.duration = duration
         group.fillMode = .forwards
         group.isRemovedOnCompletion = false

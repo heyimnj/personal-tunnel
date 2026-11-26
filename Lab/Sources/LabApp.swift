@@ -61,13 +61,13 @@ enum LabSettings {
 }
 
 /// A pretend tunnel: «Подключение…» for 2.5 s, then connected; a tap while it is
-/// up or coming up stops it (0.85 s). Time is the lab's own clock, so the whole
+/// up or coming up stops it (0.65 s). Time is the lab's own clock, so the whole
 /// screen can run slower.
 final class MockTunnel {
     enum Phase { case off, connecting, on, disconnecting }
 
     static let connectTime: Double = 2.5
-    static let stopTime: Double = 0.85
+    static let stopTime: Double = 0.65
 
     private(set) var phase: Phase = .off
     private(set) var started: Double = 0

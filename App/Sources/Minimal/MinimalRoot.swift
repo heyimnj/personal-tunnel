@@ -27,6 +27,28 @@ enum MinimalIcons {
         }.withRenderingMode(.alwaysTemplate)
     }()
 
+    /// 3.6.6 (the owner: the connection button now draws the logo's arch, and two
+    /// app marks on one screen will not do): the Home tab is a signal — a dot with
+    /// two waves either side.
+    static let homeTab: UIImage = {
+        let size = CGSize(width: 30, height: 30)
+        return UIGraphicsImageRenderer(size: size).image { context in
+            let c = context.cgContext
+            c.setStrokeColor(UIColor.black.cgColor)
+            c.setFillColor(UIColor.black.cgColor)
+            c.setLineWidth(2.3)
+            c.setLineCap(.round)
+            let centre = CGPoint(x: 15, y: 15)
+            c.fillEllipse(in: CGRect(x: 15 - 2.9, y: 15 - 2.9, width: 5.8, height: 5.8))
+            for radius in [7.6, 12.7] as [CGFloat] {
+                for side in [CGFloat.pi, 0] {
+                    c.addArc(center: centre, radius: radius, startAngle: side - .pi / 4, endAngle: side + .pi / 4, clockwise: false)
+                    c.strokePath()
+                }
+            }
+        }.withRenderingMode(.alwaysTemplate)
+    }()
+
     /// The Settings tab glyph (3.5, drawn for the owner): a gear over two
     /// crossed wrenches, as the bones lie under the skull of a pirate flag —
     /// the open ends at the top, the ring ends at the bottom. A clear ring round
@@ -114,7 +136,7 @@ final class MinimalRootViewController: UITabBarController, UITabBarControllerDel
     /// Icons, captions («Только иконки вкладок» removes them), accent tint and the imported font.
     private func updateItems() {
         let labels = !Prefs.hideTabLabels
-        home.tabBarItem.image = MinimalIcons.home
+        home.tabBarItem.image = MinimalIcons.homeTab
         home.tabBarItem.title = labels ? L("Главная") : nil
         home.tabBarItem.accessibilityLabel = L("Главная")
         settings.tabBarItem.image = MinimalIcons.settings.withRenderingMode(.alwaysTemplate)

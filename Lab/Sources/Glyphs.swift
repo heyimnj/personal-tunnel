@@ -95,8 +95,8 @@ struct TunnelGlyph: GlyphStyle {
     }
 
     private static let samples = 40
-    private static let morphTime: Double = 0.6
-    private static let step: Double = 0.45
+    private static let morphTime: Double = 0.45
+    private static let step: Double = 0.36
 
     // Halves, from the top (u 0) to the end (u 1); the right half is the mirror.
     private static func ringHalf(_ u: CGFloat) -> CGPoint {
@@ -116,7 +116,7 @@ struct TunnelGlyph: GlyphStyle {
     }
 
     /// The inner lights start running this long into connecting.
-    private static let lightsStart: Double = 0.35
+    private static let lightsStart: Double = 0.25
 
     /// Conveyor places of the three lights `flow` steps in: each comes out of the
     /// depth in turn (none is shown before its time), then runs round.
@@ -129,6 +129,24 @@ struct TunnelGlyph: GlyphStyle {
 
     private static func lightOpacity(_ p: CGFloat) -> CGFloat {
         Ease.keys(p, [0, 1, 2, 2.6, 3], [0, 0.55, 0.8, 0.45, 0])
+    }
+
+    /// The ring at `t` 0, the arch at 1 — in every frame a true arc of the circle
+    /// (centre (50, 52), radius 22) and a straight leg along its tangent, so the
+    /// ends stay round (1.6; the owner: a straight piece and then a bend).
+    /// Each half: the arc from `a0` down to `a1`, then the leg; mirrored.
+    private static func body(_ t: CGFloat) -> CGPath {
+        let a0 = (240 + 30 * t) * .pi / 180
+        let a1 = (90 + 90 * t) * .pi / 180
+        let end = CGPoint(x: 50 + 22 * cos(a1), y: 52 + 22 * sin(a1))
+        let leg = 22 * t
+        let half = CGMutablePath()
+        half.addArc(center: CGPoint(x: 50, y: 52), radius: 22, startAngle: a0, endAngle: a1, clockwise: true)
+        if leg > 0.01 { half.addLine(to: CGPoint(x: end.x + sin(a1) * leg, y: end.y - cos(a1) * leg)) }
+        let path = CGMutablePath()
+        path.addPath(half)
+        path.addPath(half, transform: CGAffineTransform(translationX: 100, y: 0).scaledBy(x: -1, y: 1))
+        return path
     }
 
     /// Both halves, each `t` of the way from `from` to `to`.
@@ -170,23 +188,23 @@ struct TunnelGlyph: GlyphStyle {
             arches = Self.places(flow).map { (p: $0, opacity: Self.lightOpacity($0)) }
         case .on:
             t = 1
-            k = Ease.out(e / 0.35)
+            k = Ease.out(e / 0.3)
             // The front light runs out past the arch as an echo; the second takes the
             // first place, the third the second (out of the depth if it was there).
             let r = start.flow - floor(start.flow)
-            let settle = Ease.out(e / 0.6)
+            let settle = Ease.out(e / 0.45)
             let back = r + (1 - r) * settle
             let middle = r + 1 + (1 - r) * settle
-            let front = r + 2 + (2 - r) * Ease.out(e / 0.75)
+            let front = r + 2 + (2 - r) * Ease.out(e / 0.6)
             arches.append((back, Ease.keys(back, [0, 1], [0, 0.55])))
             arches.append((middle, Ease.keys(middle, [1, 2], [0.55, 0.8])))
             if front < 4 {
                 arches.append((front, front <= 3 ? Ease.keys(front, [2, 3], [0.8, 0.7]) : 0.6 * (4 - front)))
             }
         case .disconnecting:
-            k = start.k * (1 - Ease.out(e / 0.35))
-            t = start.a * (1 - Ease.sine((e - 0.15) / Self.morphTime))
-            let fade = 1 - Ease.out(e / 0.35)
+            k = start.k * (1 - Ease.out(e / 0.3))
+            t = start.a * (1 - Ease.sine((e - 0.1) / Self.morphTime))
+            let fade = 1 - Ease.out(e / 0.28)
             if start.k > 0 {
                 // The two arches go back into the depth.
                 arches.append((1 * fade, 0.55 * fade))
@@ -200,7 +218,7 @@ struct TunnelGlyph: GlyphStyle {
         memo.flow = flow
 
         let color = ink.blended(green, k, traits)
-        frame.strokes.append(Stroke(path: Self.morph(Self.ringHalf, { Self.archHalf($0, 1) }, t), color: color, width: line))
+        frame.strokes.append(Stroke(path: Self.body(t), color: color, width: line))
         // The stroke falls in under the arch and is gone (back up when stopping).
         let stroke = 1 - min(1, t * 1.4)
         if stroke > 0 {
