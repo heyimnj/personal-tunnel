@@ -49,6 +49,11 @@ enum LabSettings {
         set { defaults.set(newValue.rawValue, forKey: "lab.theme") }
     }
 
+    static var press: PressStyle {
+        get { PressStyle(rawValue: defaults.string(forKey: "lab.press") ?? "") ?? .wave }
+        set { defaults.set(newValue.rawValue, forKey: "lab.press") }
+    }
+
     static var variant: String {
         get { defaults.string(forKey: "lab.connectGlyph") ?? "" }
         set { defaults.set(newValue, forKey: "lab.connectGlyph") }
@@ -56,13 +61,13 @@ enum LabSettings {
 }
 
 /// A pretend tunnel: «Подключение…» for 2.5 s, then connected; a tap while it is
-/// up or coming up stops it (0.65 s). Time is the lab's own clock, so the whole
+/// up or coming up stops it (0.8 s). Time is the lab's own clock, so the whole
 /// screen can run slower.
 final class MockTunnel {
     enum Phase { case off, connecting, on, disconnecting }
 
     static let connectTime: Double = 2.5
-    static let stopTime: Double = 0.65
+    static let stopTime: Double = 0.8
 
     private(set) var phase: Phase = .off
     private(set) var started: Double = 0

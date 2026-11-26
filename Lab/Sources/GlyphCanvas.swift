@@ -41,6 +41,7 @@ struct GlyphMemo {
     var tail: CGFloat = 0
     var width: CGFloat = 0
     var light: CGFloat = 0
+    var stripes: CGFloat = 0
     var comet: CGFloat = -60
     var cometOpacity: CGFloat = 0
 }
@@ -155,6 +156,9 @@ enum Ease {
         let t = clamp(x)
         return t < 0.5 ? 4 * t * t * t : 1 - pow(-2 * t + 2, 3) / 2
     }
+
+    /// Soft at both ends, with no sharp middle (half a cosine).
+    static func sine(_ x: Double) -> CGFloat { 0.5 - 0.5 * cos(.pi * clamp(x)) }
 
     static func mix(_ a: CGFloat, _ b: CGFloat, _ k: CGFloat) -> CGFloat { a + (b - a) * k }
 

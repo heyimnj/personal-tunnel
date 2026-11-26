@@ -12,6 +12,7 @@ final class LabHomeViewController: UIViewController {
     private let variantButton = UIButton(type: .system)
     private let themeButton = UIButton(type: .system)
     private let slowButton = UIButton(type: .system)
+    private let pressButton = UIButton(type: .system)
     private let note = UILabel()
     private let button = LabPowerButton()
     private let canvas = GlyphCanvas()
@@ -56,7 +57,10 @@ final class LabHomeViewController: UIViewController {
             self.tunnel.tap(at: self.clock)
         }, for: .touchUpInside)
 
-        for item in [variantButton, themeButton, slowButton, note, button, status, capsule, hint] as [UIView] {
+        pressButton.showsMenuAsPrimaryAction = true
+        pressButton.contentHorizontalAlignment = .leading
+
+        for item in [variantButton, themeButton, slowButton, note, pressButton, button, status, capsule, hint] as [UIView] {
             item.translatesAutoresizingMaskIntoConstraints = false
             view.addSubview(item)
         }
@@ -73,6 +77,9 @@ final class LabHomeViewController: UIViewController {
             note.topAnchor.constraint(equalTo: variantButton.bottomAnchor, constant: 4),
             note.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 20),
             note.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -20),
+            pressButton.topAnchor.constraint(equalTo: note.bottomAnchor, constant: 12),
+            pressButton.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 20),
+            pressButton.trailingAnchor.constraint(lessThanOrEqualTo: view.trailingAnchor, constant: -20),
 
             button.centerXAnchor.constraint(equalTo: view.centerXAnchor),
             button.centerYAnchor.constraint(equalTo: guide.centerYAnchor, constant: -60),
@@ -103,6 +110,7 @@ final class LabHomeViewController: UIViewController {
         tunnel.onChange = { [weak self] phase in self?.phaseChanged(phase) }
         phaseChanged(.off)
         showVariant()
+        showPress()
         showTheme()
         showSlow()
     }
@@ -176,6 +184,27 @@ final class LabHomeViewController: UIViewController {
         choose(all[(index + step + all.count) % all.count])
     }
 
+    private func showPress() {
+        let current = LabSettings.press
+        var title = AttributedString("Отклик: " + current.title + "  ▾")
+        title.font = .systemFont(ofSize: 15, weight: .semibold)
+        var config = UIButton.Configuration.plain()
+        config.attributedTitle = title
+        config.subtitle = current.note
+        config.titleLineBreakMode = .byWordWrapping
+        config.contentInsets = .zero
+        config.titlePadding = 3
+        pressButton.configuration = config
+        pressButton.menu = UIMenu(title: "Отклик нажатия на кнопках Главной", children: PressStyle.allCases.map { item in
+            UIAction(title: item.title, subtitle: item.note, state: item == current ? .on : .off) { [weak self] _ in
+                LabSettings.press = item
+                self?.showPress()
+            }
+        })
+        button.style = current
+        capsule.style = current
+    }
+
     private func nextTheme() {
         let all = LabSettings.Theme.allCases
         let next = all[(LabSettings.theme.rawValue + 1) % all.count]
@@ -211,7 +240,7 @@ private final class LabTicker: NSObject {
 
 /// The big round button as in 3.6: raised, lighter at the top, a fine edge and a
 /// soft shadow; it sinks a little under the finger.
-final class LabPowerButton: UIControl {
+final class LabPowerButton: LabTapControl {
     private let face = CAGradientLayer()
 
     override init(frame: CGRect) {
@@ -248,20 +277,10 @@ final class LabPowerButton: UIControl {
         layer.shadowOpacity = dark ? 0.6 : 0.12
     }
 
-    override var isHighlighted: Bool {
-        didSet {
-            guard oldValue != isHighlighted else { return }
-            let pressed = isHighlighted
-            UIView.animate(withDuration: pressed ? 0.18 : 0.6, delay: 0, usingSpringWithDamping: pressed ? 1 : 0.5, initialSpringVelocity: 0,
-                           options: [.beginFromCurrentState, .allowUserInteraction]) {
-                self.transform = pressed ? CGAffineTransform(scaleX: 0.985, y: 0.985) : .identity
-            }
-        }
-    }
 }
 
 /// The server capsule: flag, name, delay when connected, a chevron up.
-final class LabCapsule: UIView {
+final class LabCapsule: LabTapControl {
     private let face = CAGradientLayer()
     private let flag = UILabel()
     private let name = UILabel()
@@ -288,6 +307,7 @@ final class LabCapsule: UIView {
         row.alignment = .center
         row.spacing = 10
         row.translatesAutoresizingMaskIntoConstraints = false
+        row.isUserInteractionEnabled = false
         addSubview(row)
         NSLayoutConstraint.activate([
             row.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 20),
