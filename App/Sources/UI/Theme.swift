@@ -469,7 +469,7 @@ class TapControl: UIControl {
         let dimpleRadius = min(farthest, max(bounds.height, 44)) * 0.9
         let shade = CAGradientLayer()
         shade.type = .radial
-        // 3.6.6 (the owner, «Волна» in PT Lab): a little deeper than 0.07, so the press is seen.
+        // 3.6.6 (the owner, «Волна» in PTLab): a little deeper than 0.07, so the press is seen.
         shade.colors = [ink.withAlphaComponent(0.09).cgColor, ink.withAlphaComponent(0.045).cgColor, ink.withAlphaComponent(0).cgColor]
         shade.locations = [0, 0.55, 1]
         shade.startPoint = CGPoint(x: 0.5, y: 0.5)
@@ -630,7 +630,7 @@ class TapControl: UIControl {
         }
         // 3.6.3 (the owner): 0.85 s was not seen — the next sheet opened over it.
         // 3.6.4: 0.18 s — but it read as a flat dark fill, like a settings row.
-        // 3.6.6 (the owner, «Волна» in PT Lab): a wave, not a flood — the spot
+        // 3.6.6 (the owner, «Волна» in PTLab): a wave, not a flood — the spot
         // runs out to the edges while its middle empties, so the darker front is
         // what moves (0.42 s); then it is gone.
         let duration = 0.42

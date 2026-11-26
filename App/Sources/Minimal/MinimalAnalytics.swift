@@ -910,8 +910,14 @@ final class MinimalAnalyticsViewController: UIViewController, UIGestureRecognize
 
         let tiles = UIStackView(.horizontal, spacing: 12, alignment: .fill, [traffic, delayButton])
         tiles.distribution = .fillEqually
-        // Square: as tall as each tile is wide.
-        traffic.heightAnchor.constraint(equalTo: traffic.widthAnchor).isActive = true
+        // Square: as tall as each tile is wide. 3.6.15 (the owner, with a font taller
+        // than the system's: «Session traffic» still cut at the top): square only as
+        // a wish — when the title, ring, figures and note need more, both tiles grow
+        // (a required square squeezed the stack out over the tile's top edge).
+        let square = traffic.heightAnchor.constraint(equalTo: traffic.widthAnchor)
+        square.priority = .defaultHigh
+        square.isActive = true
+        traffic.heightAnchor.constraint(greaterThanOrEqualTo: traffic.widthAnchor).isActive = true
 
         let session = AnalyticsGroup()
         session.add([sessionRow])
@@ -1019,7 +1025,8 @@ final class MinimalAnalyticsViewController: UIViewController, UIGestureRecognize
             // card): the page starts higher (into the status bar's margin, below the
             // Dynamic Island) and ends 8 pt over the tab bar (was 24). 3.6.14 (the
             // owner: «a little less still»): 18 pt higher than before 3.6.13 (was 12).
-            content.topAnchor.constraint(equalTo: scroll.contentLayoutGuide.topAnchor, constant: -14),
+            // 3.6.15 (the owner: a bit more room than 3.6.14, less than 3.6.13): 15 pt.
+            content.topAnchor.constraint(equalTo: scroll.contentLayoutGuide.topAnchor, constant: -11),
             content.bottomAnchor.constraint(equalTo: scroll.contentLayoutGuide.bottomAnchor, constant: -8),
             content.leadingAnchor.constraint(equalTo: scroll.frameLayoutGuide.leadingAnchor, constant: 16),
             content.trailingAnchor.constraint(equalTo: scroll.frameLayoutGuide.trailingAnchor, constant: -16),

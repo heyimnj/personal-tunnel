@@ -1,6 +1,6 @@
 import UIKit
 
-// PT Lab 2.0: the app itself (../App) is the Lab; this screen of variants opens
+// PTLab 2.0: the app itself (../App) is the Lab; this screen of variants opens
 // from the flask button (LabOverlay). Its settings and pretend tunnel follow.
 
 /// What the lab remembers between launches.

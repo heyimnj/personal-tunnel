@@ -1,10 +1,12 @@
 import UIKit
 
-/// PT Lab 2.0: a small flask at the left edge of the app's window opens the
+/// PTLab 2.0: a small flask at the left edge of the app's window opens the
 /// screen of variants (`LabHomeViewController`) as a sheet. Drag it up or down
 /// to get it out of the way.
 enum LabOverlay {
     static func install(in window: UIWindow) {
+        // PTLab 2.3 (the owner): the inner arches of the connect mark run yellow too.
+        TunnelGlyph.archRunners = true
         let button = LabFlaskButton(frame: CGRect(x: 0, y: window.bounds.height * 0.42, width: 34, height: 44))
         button.autoresizingMask = [.flexibleTopMargin, .flexibleBottomMargin, .flexibleRightMargin]
         button.addAction(UIAction { [weak window] _ in
@@ -33,7 +35,7 @@ private final class LabFlaskButton: UIControl {
         icon.isUserInteractionEnabled = false
         addSubview(plate)
         addSubview(icon)
-        accessibilityLabel = "PT Lab"
+        accessibilityLabel = "PTLab"
         let drag = UIPanGestureRecognizer(target: self, action: #selector(dragged(_:)))
         addGestureRecognizer(drag)
     }

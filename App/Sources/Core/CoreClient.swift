@@ -88,7 +88,7 @@ struct LogLine {
     }()
 }
 
-// PT Lab (`LAB`) builds the app without the core: its CoreClient is in Lab/Mock.
+// PTLab (`LAB`) builds the app without the core: its CoreClient is in Lab/Mock.
 #if !LAB
 /// Live data from the running core over the Libbox command socket. Each kind
 /// of data has its own observable, so a screen redraws only for what it shows.

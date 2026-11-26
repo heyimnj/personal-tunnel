@@ -48,7 +48,7 @@ struct NetworkProbes: LatencyProbes {
 
     func tcp(host: String, port: Int, timeout: TimeInterval, label: String?) async -> ProbeResult {
         #if LAB
-        // PT Lab: no server is really reached; a believable delay instead (Lab/Mock).
+        // PTLab: no server is really reached; a believable delay instead (Lab/Mock).
         return await LabPing.probe(label ?? host)
         #else
         return await connect(host: host, port: port, parameters: .tcp, kind: "TCP", timeout: timeout, label: label)
@@ -246,7 +246,7 @@ enum ProbeExitCheck {
     }
 }
 
-// PT Lab (`LAB`): no core in the app; its LocalCoreProbes is in Lab/Mock.
+// PTLab (`LAB`): no core in the app; its LocalCoreProbes is in Lab/Mock.
 #if !LAB
 /// Without the VPN the app's own core measures servers (3.0): each subscription's
 /// servers run in a core without a tunnel, and a URL is fetched through every

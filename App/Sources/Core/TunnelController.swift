@@ -15,7 +15,7 @@ struct TunnelCrash: Equatable {
     var details: String
 }
 
-// PT Lab (`LAB`): no VPN at all — its TunnelController (Lab/Mock) only pretends.
+// PTLab (`LAB`): no VPN at all — its TunnelController (Lab/Mock) only pretends.
 #if !LAB
 /// Owns the system VPN configuration and starts and stops the tunnel.
 final class TunnelController {

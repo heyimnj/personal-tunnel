@@ -287,6 +287,9 @@ final class MinimalServersViewController: UIViewController, UIScrollViewDelegate
         panel.layer.shadowOpacity = 0.12
         panel.layer.shadowRadius = 16
         panel.layer.shadowOffset = CGSize(width: 0, height: 6)
+        barFill.isUserInteractionEnabled = false
+        barFill.backgroundColor = Theme.accent.withAlphaComponent(0.14)
+        panel.contentView.addSubview(barFill)
         panel.contentView.addSubview(row)
         row.pin(to: panel.contentView, insets: UIEdgeInsets(top: 0, left: 6, bottom: 0, right: 6))
         view.addSubview(panel)
@@ -527,6 +530,10 @@ final class MinimalServersViewController: UIViewController, UIScrollViewDelegate
     /// Whether the bar last showed a selection; the bar the change cross-fades.
     private var barSelecting = false
     private weak var animatedBar: UIView?
+    /// «B»'s bar fills with the accent as a test runs, as «A»'s «Пинг» capsule
+    /// does (3.6.15, the owner: the whole bar, left to right).
+    private let barFill = UIView()
+    private var barShare: CGFloat?
 
     /// The capsules: ping and the order, or (selecting) delete and copy. 3.5.19 (the
     /// owner: the buttons swapped at once, with a jerk): going into or out of a
@@ -568,6 +575,7 @@ final class MinimalServersViewController: UIViewController, UIScrollViewDelegate
             pingButton.isEnabled = !selectionEmpty
             sortButton.isEnabled = !selectionEmpty
             subtitle.text = Lf("Выбрано: %@", "\(selectedSubscriptions.count + selectedNodes.count)")
+            if layout == .bottom { fillBar(nil) }
         } else {
             pingButton.isEnabled = true
             sortButton.isEnabled = true
@@ -597,6 +605,22 @@ final class MinimalServersViewController: UIViewController, UIScrollViewDelegate
         }
     }
 
+    /// The fill follows the test; it does not jump back when a new one starts.
+    private func fillBar(_ share: CGFloat?) {
+        let was = barShare
+        barShare = share
+        if let share, let was, share >= was {
+            UIView.animate(withDuration: 0.3, delay: 0, options: [.beginFromCurrentState, .curveEaseOut]) { self.layoutBarFill() }
+        } else {
+            layoutBarFill()
+        }
+    }
+
+    private func layoutBarFill() {
+        guard let box = barFill.superview else { return }
+        barFill.frame = CGRect(x: 0, y: 0, width: box.bounds.width * max(0, min(1, barShare ?? 0)), height: box.bounds.height)
+    }
+
     private func show(_ progress: LatencyProgress) {
         guard !selecting else { return }
         if progress.running {
@@ -616,6 +640,7 @@ final class MinimalServersViewController: UIViewController, UIScrollViewDelegate
             pingItem.show(symbol: progress.running ? "stop.fill" : "waveform.path.ecg",
                           title: progress.running ? "\(progress.done)/\(progress.total)" : L("Пинг"), tint: Theme.accent)
             pingItem.accessibilityLabel = progress.running ? L("Остановить проверку") : L("Проверить пинг")
+            fillBar(progress.running ? CGFloat(fraction) : nil)
         case .search:
             pingDial.show(running: progress.running, progress: fraction)
             let servers = App.shared.library.subscriptions.reduce(0) { $0 + $1.nodes.count }
@@ -689,6 +714,7 @@ final class MinimalServersViewController: UIViewController, UIScrollViewDelegate
 
     override func viewDidLayoutSubviews() {
         super.viewDidLayoutSubviews()
+        layoutBarFill()
         if layout == .header {
             search.frame = CGRect(x: ServerListView.margin, y: 4, width: max(0, list.bounds.width - 2 * ServerListView.margin), height: Self.searchFieldHeight)
         }
@@ -1328,7 +1354,10 @@ final class MinimalServersViewController: UIViewController, UIScrollViewDelegate
         items.append(HoldMenuItem(title: L("Удалить"), symbol: "trash", destructive: true) { [weak self] in
             if let tag { self?.confirmDelete(node: tag, in: id) } else { self?.confirmDelete(subscription: id) }
         })
-        HoldMenuView.show(in: view, at: list.convert(point, to: view), title: title, items: items, source: source, onDismiss: release)
+        // 3.6.15 (the owner): the bottom bar stays above the dim for a held server and
+        // a held subscription alike.
+        let keep: [UIView] = layout == .bottom ? [animatedBar, plusButton as UIView].compactMap { $0 } : []
+        HoldMenuView.show(in: view, at: list.convert(point, to: view), title: title, items: items, source: source, keep: keep, onDismiss: release)
     }
 
     private func togglePin(_ key: String) {

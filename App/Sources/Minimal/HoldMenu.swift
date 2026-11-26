@@ -104,6 +104,12 @@ private final class HoldMenuRow: UIControl {
 /// row (down first, then sideways, the items settling a beat later) and drains
 /// back into it. A touch outside closes it.
 ///
+/// 3.6.15 (the owner: a torn shift as it opens, most of all on the right): the pour
+/// was a scale with a springy overshoot — the items were squeezed sideways and the
+/// right edge ran past its place and back. Now the card's outline grows (the
+/// surface, its shadow and a mask over the items), the items keep their size, and
+/// the spring stops without overshoot.
+///
 /// The card is one even surface in the cards' own tone (glass took its colour from
 /// whatever lay under each part of it, so the menu looked patchy and sat on a layer
 /// of its own). The rest of the sheet dims, and the pressed row is lifted above the
@@ -124,6 +130,14 @@ final class HoldMenuView: UIView {
     private var onDismiss: (() -> Void)?
     /// The sheet dims under the menu.
     private var dims = true
+    /// Clips the items to the outline while it grows.
+    private let mask = CAShapeLayer()
+    /// The card's whole outline, and the small one it pours out of.
+    private var fullOutline: CGPath?
+    private var seedOutline: CGPath?
+    /// Pictures of views that stay bright above the dim (the servers sheet's bottom
+    /// bar, 3.6.15), with the lifted row.
+    private var kept: [UIView] = []
 
     /// The menu's surface: the cards' colour, a step lighter in dark mode so it
     /// stands off the cards it covers.
@@ -133,7 +147,11 @@ final class HoldMenuView: UIView {
 
     /// `source`: the pressed row, the part the menu is placed by, and the part
     /// lifted above the dim (`.null`: nothing dims).
-    static func show(in host: UIView, at point: CGPoint, title: String, items: [HoldMenuItem], source: (view: UIView, rect: CGRect, lift: CGRect)? = nil, onDismiss: (() -> Void)? = nil) {
+    /// `keep`: views shown bright above the dim as they are (3.6.15, the owner: the
+    /// servers sheet's bottom bar stayed under a held server but vanished under a
+    /// held subscription, whose lifted picture covered it — now it stays in both).
+    static func show(in host: UIView, at point: CGPoint, title: String, items: [HoldMenuItem], source: (view: UIView, rect: CGRect, lift: CGRect)? = nil,
+                     keep: [UIView] = [], onDismiss: (() -> Void)? = nil) {
         let menu = HoldMenuView(frame: host.bounds)
         menu.autoresizingMask = [.flexibleWidth, .flexibleHeight]
         menu.onDismiss = onDismiss
@@ -151,6 +169,7 @@ final class HoldMenuView: UIView {
             if !source.lift.isNull { menu.lift(source.view, source.lift) }
             row = source.view.convert(source.rect, to: menu)
         }
+        if menu.dims { menu.keep(keep) }
         menu.place(at: point, row: row)
         menu.animateIn()
     }
@@ -212,6 +231,16 @@ final class HoldMenuView: UIView {
         lifted = picture
     }
 
+    private func keep(_ views: [UIView]) {
+        for view in views where view.window != nil && !view.isHidden && view.alpha > 0.01 {
+            guard let picture = view.snapshotView(afterScreenUpdates: false) else { continue }
+            picture.frame = view.convert(view.bounds, to: self)
+            picture.isUserInteractionEnabled = false
+            insertSubview(picture, belowSubview: card)
+            kept.append(picture)
+        }
+    }
+
     /// A thin inset rule before the destructive action, as in system menus.
     private func rule() -> UIView {
         let box = UIView()
@@ -233,21 +262,54 @@ final class HoldMenuView: UIView {
         let content = CGSize(width: HoldMenuMetrics.width, height: ceil(max(44, fitted.height)))
         let place = HoldMenuMetrics.placement(content: content, touch: touch, row: row, bounds: bounds, safe: safeAreaInsets)
         let frame = place.frame
-        // Both halves of the pour grow out of the edge facing the row, under the finger.
-        let origin = CGPoint(x: place.originX, y: place.below ? 0 : frame.height)
-        let anchor = CGPoint(x: origin.x / frame.width, y: origin.y / frame.height)
-        card.layer.anchorPoint = anchor
-        card.bounds = CGRect(origin: .zero, size: frame.size)
-        card.layer.position = CGPoint(x: frame.minX + origin.x, y: frame.minY + origin.y)
-        stretch.layer.anchorPoint = anchor
-        stretch.bounds = card.bounds
-        stretch.layer.position = origin
-        let outline = UIBezierPath(roundedRect: CGRect(origin: .zero, size: frame.size), cornerRadius: HoldMenuMetrics.radius)
-        stretch.layer.shadowPath = outline.cgPath
+        card.frame = frame
+        stretch.frame = card.bounds
+        let whole = CGRect(origin: .zero, size: frame.size)
+        let radius = HoldMenuMetrics.radius
+        let outline = UIBezierPath(roundedRect: whole, cornerRadius: radius).cgPath
+        // The pour starts as a small card at the edge facing the row, under the
+        // finger: a fifth of the width, its corners already whole (so the outlines
+        // have the same points and blend).
+        let seedWidth = max(radius * 2 + 2, frame.width * 0.22)
+        let seedHeight = radius * 2 + 2
+        let seedX = min(max(place.originX - seedWidth / 2, 0), frame.width - seedWidth)
+        let seed = CGRect(x: seedX, y: place.below ? 0 : frame.height - seedHeight, width: seedWidth, height: seedHeight)
+        seedOutline = UIBezierPath(roundedRect: seed, cornerRadius: radius).cgPath
+        fullOutline = outline
+        stretch.layer.shadowPath = outline
         surface.frame = stretch.bounds
-        surface.path = outline.cgPath
-        items.frame = CGRect(origin: .zero, size: frame.size)
+        surface.path = outline
+        mask.frame = stretch.bounds
+        mask.path = outline
+        items.frame = whole
+        items.layer.mask = mask
         direction = place.below ? 1 : -1
+    }
+
+    /// Moves the outline (surface, shadow, mask) from where it is now to `target`.
+    private func morph(to target: CGPath, spring: Bool, duration: CFTimeInterval) {
+        let parts: [(CALayer, String)] = [(surface, "path"), (mask, "path"), (stretch.layer, "shadowPath")]
+        for (layer, key) in parts {
+            let now: CGPath?
+            if key == "path" { now = (layer.presentation() as? CAShapeLayer)?.path ?? (layer as? CAShapeLayer)?.path } else { now = layer.presentation()?.shadowPath ?? layer.shadowPath }
+            let animation: CABasicAnimation
+            if spring {
+                let bounce = CASpringAnimation(keyPath: key)
+                bounce.mass = 1
+                bounce.stiffness = 260
+                bounce.damping = 2 * sqrt(260)  // critical: no overshoot
+                bounce.duration = bounce.settlingDuration
+                animation = bounce
+            } else {
+                animation = CABasicAnimation(keyPath: key)
+                animation.duration = duration
+                animation.timingFunction = CAMediaTimingFunction(controlPoints: 0.4, 0, 0.2, 1)
+            }
+            animation.fromValue = now
+            animation.toValue = target
+            if key == "path" { (layer as? CAShapeLayer)?.path = target } else { layer.shadowPath = target }
+            layer.add(animation, forKey: "outline")
+        }
     }
 
     private func run(_ animator: UIViewPropertyAnimator, delay: TimeInterval = 0) {
@@ -263,18 +325,21 @@ final class HoldMenuView: UIView {
             run(UIViewPropertyAnimator(duration: 0.18, curve: .easeOut) { self.card.alpha = 1 })
             return
         }
-        card.transform = CGAffineTransform(scaleX: 0.22, y: 1)
-        stretch.transform = CGAffineTransform(scaleX: 1, y: 0.06)
         items.alpha = 0
-        items.transform = CGAffineTransform(translationX: 0, y: -10 * direction)
-        let pour = UIViewPropertyAnimator(duration: 0.46, timingParameters: UISpringTimingParameters(dampingRatio: 0.74, initialVelocity: CGVector(dx: 0, dy: 1.2)))
-        pour.addAnimations { self.stretch.transform = .identity }
-        let spread = UIViewPropertyAnimator(duration: 0.56, timingParameters: UISpringTimingParameters(dampingRatio: 0.8, initialVelocity: .zero))
-        spread.addAnimations { self.card.transform = .identity }
+        items.transform = CGAffineTransform(translationX: 0, y: -6 * direction)
+        if let seedOutline, let fullOutline {
+            CATransaction.begin()
+            CATransaction.setDisableActions(true)
+            surface.path = seedOutline
+            mask.path = seedOutline
+            stretch.layer.shadowPath = seedOutline
+            CATransaction.commit()
+            morph(to: fullOutline, spring: true, duration: 0)
+        }
         let appear = UIViewPropertyAnimator(duration: 0.12, curve: .easeOut) { self.card.alpha = 1 }
-        let settle = UIViewPropertyAnimator(duration: 0.3, timingParameters: UISpringTimingParameters(dampingRatio: 0.9, initialVelocity: .zero))
+        let settle = UIViewPropertyAnimator(duration: 0.3, timingParameters: UISpringTimingParameters(dampingRatio: 1, initialVelocity: .zero))
         settle.addAnimations { self.items.alpha = 1; self.items.transform = .identity }
-        run(appear); run(pour); run(spread, delay: 0.03); run(settle, delay: 0.09)
+        run(appear); run(settle, delay: 0.06)
     }
 
     @objc private func backdropTouched() { close(then: nil) }
@@ -296,9 +361,8 @@ final class HoldMenuView: UIView {
             self.lifted?.alpha = 0
             guard !reduce else { return }
             self.items.alpha = 0
-            self.card.transform = CGAffineTransform(scaleX: 0.4, y: 1)
-            self.stretch.transform = CGAffineTransform(scaleX: 1, y: 0.12)
         }
+        if !reduce, let seedOutline { morph(to: seedOutline, spring: false, duration: 0.24) }
         shrink.addCompletion { [weak self] _ in
             self?.removeFromSuperview()
             if let action { DispatchQueue.main.async(execute: action) }

@@ -52,7 +52,7 @@ final class LabHomeViewController: UIViewController {
         hint.textColor = .tertiaryLabel
         hint.textAlignment = .center
         hint.numberOfLines = 0
-        hint.text = "PT Lab — только для сравнения вариантов, без VPN.\nСвайп влево/вправо — следующий вариант."
+        hint.text = "PTLab — только для сравнения вариантов, без VPN.\nСвайп влево/вправо — следующий вариант."
 
         button.addSubview(canvas)
         button.addSubview(shipped)

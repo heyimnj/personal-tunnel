@@ -1,8 +1,8 @@
-// PT Lab copy of App/Sources/Minimal/TunnelGlyph.swift (3.6.12), as shipped, with a
+// PTLab copy of App/Sources/Minimal/TunnelGlyph.swift (3.6.12), as shipped, with a
 // time scale for «¼×». Keep in step with the app when the glyph changes there.
 import UIKit
 
-/// 3.6.6 (the owner, chosen in PT Lab — «1 · Туннель»): the connection button's
+/// 3.6.6 (the owner, chosen in PTLab — «1 · Туннель»): the connection button's
 /// glyph. Off it is the power mark. Connecting, the ring opens into the logo's
 /// arch — in every frame a true arc and a straight leg along its tangent, both
 /// halves mirrored — the stroke falls in under it and is gone, and inner arches
@@ -24,7 +24,7 @@ import UIKit
 /// Drawn in a 100 × 100 box (the ring: radius 22 round (50, 52)) with a few
 /// shape layers, set every display frame only while something moves.
 final class TunnelGlyphView: UIView {
-    /// PT Lab: «¼×» runs the springs slower.
+    /// PTLab: «¼×» runs the springs slower.
     var timeScale: CGFloat = 1
 
     enum Look: Equatable { case off, connecting, on, failing, stopping }
@@ -98,7 +98,7 @@ final class TunnelGlyphView: UIView {
 
     private let body = CAShapeLayer()
     private let stem = CAShapeLayer()
-    /// PT Lab 1.8 (the owner): while the tunnel comes up or goes down, a yellow
+    /// PTLab 1.8 (the owner): while the tunnel comes up or goes down, a yellow
     /// stretch runs along the mark — as the mark had it before it learnt to turn
     /// into the arch — instead of the whole mark turning yellow. Up, it fades and
     /// the mark is green; it never runs while the tunnel just stands.

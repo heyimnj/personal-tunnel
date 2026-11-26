@@ -5,8 +5,8 @@ import AppCore
 
 enum CoreInfo {
     #if LAB
-    static var version: String { "PT Lab" }
-    static var xrayVersion: String { "PT Lab" }
+    static var version: String { "PTLab" }
+    static var xrayVersion: String { "PTLab" }
     #else
     static var version: String { LibboxVersion() }
     static var xrayVersion: String { PtbridgeXrayVersion() }

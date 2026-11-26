@@ -1,7 +1,7 @@
 import Foundation
 import TunnelCore
 
-/// PT Lab's own storage and its sample subscriptions. The Lab keeps everything in
+/// PTLab's own storage and its sample subscriptions. The Lab keeps everything in
 /// its own Application Support folder, never in the app's group: a signing tool
 /// may hand it the same group as the app, and the Lab must not touch that data.
 enum LabData {

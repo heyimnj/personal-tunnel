@@ -1,6 +1,6 @@
 name: Lab
 
-# PT Lab — весь клиент без ядра и VPN (Lab/ + исходники App/ с флагом LAB). Собирается при изменениях
+# PTLab — весь клиент без ядра и VPN (Lab/ + исходники App/ с флагом LAB). Собирается при изменениях
 # Lab, приложения и TunnelCore — так в Lab всегда текущий клиент.
 on:
   push:
@@ -21,7 +21,7 @@ concurrency:
 
 jobs:
   lab:
-    name: Неподписанный IPA PT Lab
+    name: Неподписанный IPA PTLab
     runs-on: macos-26-intel
     timeout-minutes: 30
     steps:

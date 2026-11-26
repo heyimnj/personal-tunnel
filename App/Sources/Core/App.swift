@@ -66,7 +66,7 @@ final class App {
 
     private init() {
         #if LAB
-        // PT Lab keeps everything in its own folder: it must never read or write the
+        // PTLab keeps everything in its own folder: it must never read or write the
         // app's group (a signing tool may hand it the same group as the app).
         paths = LabData.paths
         #elseif canImport(Darwin)

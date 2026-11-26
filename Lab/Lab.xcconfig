@@ -1,9 +1,9 @@
-// PT Lab: своя версия, номер сборки только растёт.
-MARKETING_VERSION = 2.2
-CURRENT_PROJECT_VERSION = 12
+// PTLab: своя версия, номер сборки только растёт.
+MARKETING_VERSION = 2.3
+CURRENT_PROJECT_VERSION = 13
 
 // Для Info.plist (как у приложения): имя, схема, группа (строгая, своя — см. AppGroupStrict).
-PT_DISPLAY_NAME = PT Lab
+PT_DISPLAY_NAME = PTLab
 PT_BUNDLE_ID = com.personaltunnelapp.lab
 PT_URL_SCHEME = ptlab
 APP_GROUP_IDENTIFIER = group.com.personaltunnelapp.lab

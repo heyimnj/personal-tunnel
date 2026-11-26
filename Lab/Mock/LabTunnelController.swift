@@ -2,7 +2,7 @@ import Foundation
 import TunnelCore
 import UIKit
 
-/// PT Lab: the app's `TunnelController` without the system VPN. A start shows
+/// PTLab: the app's `TunnelController` without the system VPN. A start shows
 /// «Подключение…» for a moment and then «Подключено», a stop «Отключение…» and
 /// then off; nothing is installed and no traffic goes anywhere. Same surface as
 /// the app's (App/Sources/Core/TunnelController.swift).
@@ -26,7 +26,7 @@ final class TunnelController {
     }
 
     static var appName: String {
-        (Bundle.main.object(forInfoDictionaryKey: "CFBundleDisplayName") as? String) ?? "PT Lab"
+        (Bundle.main.object(forInfoDictionaryKey: "CFBundleDisplayName") as? String) ?? "PTLab"
     }
 
     func start(config _: String) {

@@ -30,7 +30,7 @@
   применяются пачками.
 - `PacketTunnel` — расширение с Libbox. Держать маленьким: лимит памяти около 50 МиБ.
 - Проект генерирует XcodeGen из `project.yml`; локально компилятора iOS нет, компиляцию проверяет CI.
-- `Lab` — PT Lab (владелец, 26.11): весь клиент без ядра и VPN (`com.personaltunnelapp.lab`) для просмотра
+- `Lab` — PTLab (владелец, 26.11): весь клиент без ядра и VPN (`com.personaltunnelapp.lab`) для просмотра
   любых изменений. Собирается из тех же `App/Sources` и `App/Resources` с флагом `LAB`; в основном коде под
   `#if !LAB` только то, что требует ядро или системный VPN: класс `CoreClient`, класс `TunnelController`,
   `LocalCoreProbes` и тела проверок в `LatencyService`, версии в `CoreInfo`. Замены — в `Lab/Mock` (тот же

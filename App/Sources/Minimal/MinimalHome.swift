@@ -311,14 +311,14 @@ final class MinimalHomeViewController: UIViewController, UIScrollViewDelegate, U
     }
 
     /// 1.5.0 `ModernPagerDots`: two 6 pt dots in 22 pt targets, 4 pt apart,
-    /// 20 pt from the bottom of the safe area. 3.6.13 (the owner: they lay on the
-    /// analytics cards, which end 16 pt from the edge): at the screen's edge — the
-    /// dots' centres 11 pt in, clear of the cards.
+    /// 20 pt from the trailing edge and from the bottom of the safe area. (3.6.13
+    /// moved them to the screen's edge; 3.6.15, the owner: back — they fade quickly
+    /// and are not in the way.)
     private func layoutDots() {
         let last = view.bounds.height - view.safeAreaInsets.bottom - 20
         for (index, control) in dotControls.enumerated() {
             let y = last - 22 - CGFloat(1 - index) * 26
-            control.frame = CGRect(x: view.bounds.width - 22, y: y, width: 22, height: 22)
+            control.frame = CGRect(x: view.bounds.width - 20 - 22, y: y, width: 22, height: 22)
             control.subviews.first?.frame = CGRect(x: 8, y: 8, width: 6, height: 6)
         }
         // The pill under both dots: 18 pt wide, 18 pt beyond each dot's centre.
@@ -334,11 +334,11 @@ final class MinimalHomeViewController: UIViewController, UIScrollViewDelegate, U
 
     // MARK: 3.6.14 beta 1 — the dots as a scrubber
 
-    /// Where a hold starts the scrubber: a strip at the screen's edge round the dots,
+    /// Where a hold starts the scrubber: a 44 pt strip round the dots,
     /// on Home and the analytics page (not deeper), with nothing presented.
     fileprivate func acceptsScrub(at point: CGPoint) -> Bool {
         guard presentedViewController == nil, dotControls.first?.isHidden == false else { return false }
-        let zone = CGRect(x: view.bounds.width - 44, y: dotPill.frame.minY - 24, width: 44, height: dotPill.frame.height + 48)
+        let zone = CGRect(x: dotPill.frame.midX - 22, y: dotPill.frame.minY - 24, width: 44, height: dotPill.frame.height + 48)
         return zone.contains(point)
     }
 
@@ -685,7 +685,7 @@ final class MinimalConnectionView: UIView {
 
     private let button = TapControl()
     private let buttonGlass = ControlGlassView(circle: true, opacityKey: Prefs.buttonOpacityKey)
-    /// 3.6.6 (the owner, chosen in PT Lab): the power mark that opens into the
+    /// 3.6.6 (the owner, chosen in PTLab): the power mark that opens into the
     /// logo's tunnel arch (`TunnelGlyph`); 3.5–3.6.5 had `SwitchGlyph`.
     private let power = TunnelGlyph()
     private let spinner = UIActivityIndicatorView(style: .medium)

@@ -1,7 +1,7 @@
 import Foundation
 import TunnelCore
 
-/// PT Lab: the app's `CoreClient` without the core. While the pretend tunnel is
+/// PTLab: the app's `CoreClient` without the core. While the pretend tunnel is
 /// up it makes a status a second — speeds that wander, growing totals, memory,
 /// a few open connections and their routes — and a few log lines, so analytics,
 /// the connections list and the service log have something alive to show. Same
