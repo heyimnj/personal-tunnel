@@ -1011,8 +1011,11 @@ final class MinimalAnalyticsViewController: UIViewController, UIGestureRecognize
         scroll.addSubview(content)
         content.translatesAutoresizingMaskIntoConstraints = false
         NSLayoutConstraint.activate([
-            content.topAnchor.constraint(equalTo: scroll.contentLayoutGuide.topAnchor, constant: 4),
-            content.bottomAnchor.constraint(equalTo: scroll.contentLayoutGuide.bottomAnchor, constant: -24),
+            // 3.6.13 (the owner: too much room above the title and under the last
+            // card): the page starts 12 pt higher (into the status bar's margin, below
+            // the Dynamic Island) and ends 8 pt over the tab bar (was 24).
+            content.topAnchor.constraint(equalTo: scroll.contentLayoutGuide.topAnchor, constant: -8),
+            content.bottomAnchor.constraint(equalTo: scroll.contentLayoutGuide.bottomAnchor, constant: -8),
             content.leadingAnchor.constraint(equalTo: scroll.frameLayoutGuide.leadingAnchor, constant: 16),
             content.trailingAnchor.constraint(equalTo: scroll.frameLayoutGuide.trailingAnchor, constant: -16),
         ])

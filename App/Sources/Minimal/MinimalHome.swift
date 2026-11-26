@@ -296,12 +296,14 @@ final class MinimalHomeViewController: UIViewController, UIScrollViewDelegate, U
     }
 
     /// 1.5.0 `ModernPagerDots`: two 6 pt dots in 22 pt targets, 4 pt apart,
-    /// 20 pt from the trailing edge and from the bottom of the safe area.
+    /// 20 pt from the bottom of the safe area. 3.6.13 (the owner: they lay on the
+    /// analytics cards, which end 16 pt from the edge): at the screen's edge — the
+    /// dots' centres 11 pt in, clear of the cards.
     private func layoutDots() {
         let last = view.bounds.height - view.safeAreaInsets.bottom - 20
         for (index, control) in dotControls.enumerated() {
             let y = last - 22 - CGFloat(1 - index) * 26
-            control.frame = CGRect(x: view.bounds.width - 20 - 22, y: y, width: 22, height: 22)
+            control.frame = CGRect(x: view.bounds.width - 22, y: y, width: 22, height: 22)
             control.subviews.first?.frame = CGRect(x: 8, y: 8, width: 6, height: 6)
         }
     }
