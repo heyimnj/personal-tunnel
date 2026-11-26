@@ -1000,7 +1000,8 @@ final class MinimalAnalyticsViewController: UIViewController, UIGestureRecognize
             // owner: «a little less still»): 18 pt higher than before 3.6.13 (was 12).
             // 3.6.15 (the owner: a bit more room than 3.6.14, less than 3.6.13): 15 pt.
             // 3.6.16 (the owner: the whole page «a little» lower still): 13 pt.
-            content.topAnchor.constraint(equalTo: scroll.contentLayoutGuide.topAnchor, constant: -9),
+            // 3.6.17 (the owner: more room between the island and the title): 9 pt.
+            content.topAnchor.constraint(equalTo: scroll.contentLayoutGuide.topAnchor, constant: -5),
             content.bottomAnchor.constraint(equalTo: scroll.contentLayoutGuide.bottomAnchor, constant: -8),
             content.leadingAnchor.constraint(equalTo: scroll.frameLayoutGuide.leadingAnchor, constant: 16),
             content.trailingAnchor.constraint(equalTo: scroll.frameLayoutGuide.trailingAnchor, constant: -16),
