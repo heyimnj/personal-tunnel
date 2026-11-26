@@ -1,3 +1,4 @@
+import Foundation
 #if !LAB
 import AppCore
 #endif
