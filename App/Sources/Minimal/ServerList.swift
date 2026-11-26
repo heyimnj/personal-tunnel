@@ -433,7 +433,14 @@ class SwipeRow: UIView, UIGestureRecognizerDelegate {
         let move = offset == 0 ? CGAffineTransform.identity : CGAffineTransform(translationX: offset, y: 0)
         if let host, host.transform != move { host.transform = move }
         onSlide?(offset)
-        guard !plate.buttons.isEmpty else { return }
+        // 3.6.17 (the owner: «Выбрать несколько» from the swipe left long names cut,
+        // the ping gone): the action emptied the buttons (none while selecting) while
+        // the plate stood open, and an empty plate was never placed again — it stayed
+        // over the row's right part in the card's colour. Without buttons it folds away.
+        guard !plate.buttons.isEmpty else {
+            if plate.frame.width > 0 { plate.place(CGRect(x: rail.bounds.width, y: 0, width: 0, height: contentHeight), radius: tileRadius) }
+            return
+        }
         let pulled = max(0, -offset)
         let full = railWidth
         // The gap opens with the swipe, so the plate starts as a sliver right away.
