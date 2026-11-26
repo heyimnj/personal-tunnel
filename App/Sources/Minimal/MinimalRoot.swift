@@ -49,8 +49,9 @@ enum MinimalIcons {
         }.withRenderingMode(.alwaysTemplate)
     }()
 
-    /// 3.6.7 (the owner): a server whose country is not known — a planet with an
-    /// orbit (a dot and a tilted ring), in place of the globe and the app's mark.
+    /// 3.6.7 (the owner): a server whose country is not known. 3.6.10 (the owner: the
+    /// orbit looked unfinished, like an eye): a map pin drawn dashed, with its dot —
+    /// «the place is not known».
     static func orbit(_ side: CGFloat) -> UIImage {
         if let cached = orbits[side] { return cached }
         let image = UIGraphicsImageRenderer(size: CGSize(width: side, height: side)).image { context in
@@ -58,11 +59,19 @@ enum MinimalIcons {
             c.scaleBy(x: side / 30, y: side / 30)
             c.setStrokeColor(UIColor.black.cgColor)
             c.setFillColor(UIColor.black.cgColor)
-            c.fillEllipse(in: CGRect(x: 15 - 3.6, y: 15 - 3.6, width: 7.2, height: 7.2))
-            c.translateBy(x: 15, y: 15)
-            c.rotate(by: -.pi / 6)
-            c.setLineWidth(2.1)
-            c.strokeEllipse(in: CGRect(x: -12, y: -5.2, width: 24, height: 10.4))
+            let pin = UIBezierPath()
+            pin.move(to: CGPoint(x: 15, y: 26.5))
+            pin.addCurve(to: CGPoint(x: 6.5, y: 12.6), controlPoint1: CGPoint(x: 15, y: 26.5), controlPoint2: CGPoint(x: 6.5, y: 18.6))
+            pin.addArc(withCenter: CGPoint(x: 15, y: 12.6), radius: 8.5, startAngle: .pi, endAngle: 0, clockwise: true)
+            pin.addCurve(to: CGPoint(x: 15, y: 26.5), controlPoint1: CGPoint(x: 23.5, y: 18.6), controlPoint2: CGPoint(x: 15, y: 26.5))
+            pin.close()
+            c.addPath(pin.cgPath)
+            c.setLineWidth(2)
+            c.setLineJoin(.round)
+            c.setLineCap(.round)
+            c.setLineDash(phase: 0, lengths: [3.2, 2.4])
+            c.strokePath()
+            c.fillEllipse(in: CGRect(x: 15 - 2.8, y: 12.6 - 2.8, width: 5.6, height: 5.6))
         }.withRenderingMode(.alwaysTemplate)
         orbits[side] = image
         return image
