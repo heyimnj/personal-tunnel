@@ -392,22 +392,43 @@ class TapControl: UIControl {
     }
 
     override func beginTracking(_ touch: UITouch, with event: UIEvent?) -> Bool {
+        drift = .zero
         if ripple, !UIAccessibility.isReduceMotionEnabled { spread(from: touch.location(in: self)) }
         return super.beginTracking(touch, with: event)
     }
 
-    /// 3.6.4: the finger slid off the plate — the press is called off now, the
-    /// spot draws back at once rather than when the finger lifts.
+    /// 3.6.5 (the owner): the spot follows the finger. Towards the edge the plate's
+    /// border cuts it off, and past it the spot pales with the distance — as if
+    /// it ran off over the edge, unseen, and was gone.
     override func continueTracking(_ touch: UITouch, with event: UIEvent?) -> Bool {
         let going = super.continueTracking(touch, with: event)
-        if ripple, shade != nil, !isTouchInside { fadeShade(.retract) }
+        if ripple, let shade, !UIAccessibility.isReduceMotionEnabled {
+            let point = touch.location(in: self)
+            let previous = touch.previousLocation(in: self)
+            // The way the finger goes, kept smooth, for the run-off on release.
+            drift = CGPoint(x: drift.x * 0.6 + (point.x - previous.x) * 0.4, y: drift.y * 0.6 + (point.y - previous.y) * 0.4)
+            let outX = max(0, -point.x, point.x - bounds.width)
+            let outY = max(0, -point.y, point.y - bounds.height)
+            let out = hypot(outX, outY)
+            let fadeOver = max(shade.bounds.width / 2 * 0.7, 30)
+            CATransaction.begin()
+            // A touch of lag, so it moves like something liquid, not glued on.
+            CATransaction.setAnimationDuration(0.09)
+            CATransaction.setAnimationTimingFunction(CAMediaTimingFunction(name: .easeOut))
+            shade.position = point
+            shade.opacity = Float(max(0, 1 - out / fadeOver))
+            CATransaction.commit()
+        }
         return going
     }
+
+    /// The finger's recent way, points per touch event (see `continueTracking`).
+    private var drift = CGPoint.zero
 
     override func endTracking(_ touch: UITouch?, with event: UIEvent?) {
         let inside = isTouchInside
         super.endTracking(touch, with: event)
-        fadeShade(inside ? .spread : .retract)
+        fadeShade(inside ? .spread : .runOff)
     }
 
     override func cancelTracking(with event: UIEvent?) {
@@ -481,9 +502,12 @@ class TapControl: UIControl {
     private enum ShadeEnd {
         /// Let go on the plate: the spot runs out over all of it.
         case spread
-        /// 3.6.4 (the owner): the press was called off — the finger slid off the
-        /// plate or a scroll took it. The spot draws back into itself, not just fades.
+        /// 3.6.4 (the owner): the press was called off by a scroll that took it.
+        /// The spot draws back into itself, not just fades.
         case retract
+        /// 3.6.5 (the owner): let go off the plate — the spot, which followed the
+        /// finger, runs on the way it went, over the edge, and is gone.
+        case runOff
         /// A new press began on top of the old spot.
         case fade
     }
@@ -498,6 +522,33 @@ class TapControl: UIControl {
         let scale = (shade.presentation()?.value(forKeyPath: "transform.scale") as? CGFloat) ?? 1
         CATransaction.begin()
         CATransaction.setCompletionBlock { shade.removeFromSuperlayer() }
+        if end == .runOff, !UIAccessibility.isReduceMotionEnabled {
+            let duration = 0.32
+            let from = shade.presentation()?.position ?? shade.position
+            let length = max(hypot(drift.x, drift.y), 0.001)
+            // On the way the finger went, a spot's width or so further.
+            let run = min(shade.bounds.width * 0.6, max(40, length * 6))
+            let to = CGPoint(x: from.x + drift.x / length * run, y: from.y + drift.y / length * run)
+            let move = CABasicAnimation(keyPath: "position")
+            move.fromValue = NSValue(cgPoint: from)
+            move.toValue = NSValue(cgPoint: to)
+            move.timingFunction = CAMediaTimingFunction(controlPoints: 0.2, 0.6, 0.4, 1)
+            let fade = CABasicAnimation(keyPath: "opacity")
+            fade.fromValue = current
+            fade.toValue = 0
+            fade.timingFunction = CAMediaTimingFunction(name: .easeIn)
+            let group = CAAnimationGroup()
+            group.animations = [move, fade]
+            group.duration = duration
+            group.fillMode = .forwards
+            group.isRemovedOnCompletion = false
+            shade.position = to
+            shade.opacity = 0
+            shade.add(group, forKey: "runOff")
+            drift = .zero
+            CATransaction.commit()
+            return
+        }
         if end == .retract, !UIAccessibility.isReduceMotionEnabled {
             // 3.6.4: called off — the spot gathers back towards the point it came
             // from (the reverse of its growth, quicker) and is gone, a little paler
