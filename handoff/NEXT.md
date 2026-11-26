@@ -13,6 +13,8 @@
 
 ## PT Lab 2.0 (10): весь клиент без ядра
 
+IPA: `PTLab-2_0-10-unsigned.ipa`, Lab CI 11 (CI 10 упал: CoreInfo без `import Foundation`), коммит ea0ad7c, SHA256 `bd1a60bdb9fc3e3e4ae35d94d3e212789a79225146f39fd2876e7a29e428af30` (собрано в CI, на устройстве не проверено). Основная сборка того же коммита (CI 166) прошла — ограждения `#if !LAB` приложение не ломают.
+
 - Владелец: Lab — не одна Главная, а всё приложение «чисто визуал», чтобы смотреть любые изменения клиента.
   `Lab/project.yml` собирает `App/Sources` и `App/Resources` с флагом `LAB`; в приложении под `#if !LAB`
   только класс `CoreClient`, класс `TunnelController`, `LocalCoreProbes` и тела проверок `NetworkProbes`,
