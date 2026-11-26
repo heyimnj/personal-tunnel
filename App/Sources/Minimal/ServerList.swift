@@ -814,12 +814,31 @@ final class FilterBar: UIScrollView {
 
 /// The circle «Выбрать несколько» puts in front of rows and subscriptions.
 enum SelectionMark {
+    /// 3.6.11 (the owner: leaving the selection, names ran over the circles): the
+    /// circle collapses with its row, but stayed fully drawn while the name slid
+    /// over it. Now it fades and shrinks in 0.12 s — gone before the name arrives —
+    /// and comes in faded and small, growing with the row's way in.
     static func apply(_ selected: Bool?, to view: UIImageView) {
+        let small = CGAffineTransform(scaleX: 0.5, y: 0.5)
         guard let selected else {
+            if !view.isHidden {
+                UIView.animate(withDuration: 0.12, delay: 0, options: [.beginFromCurrentState, .curveEaseOut, .overrideInheritedDuration, .overrideInheritedCurve]) {
+                    view.alpha = 0
+                    view.transform = small
+                }
+            }
             view.isHidden = true
             return
         }
+        if view.isHidden {
+            UIView.performWithoutAnimation {
+                view.alpha = 0
+                view.transform = small
+            }
+        }
         view.isHidden = false
+        view.alpha = 1
+        view.transform = .identity
         view.image = UIImage(systemName: selected ? "checkmark.circle.fill" : "circle", withConfiguration: UIImage.SymbolConfiguration(textStyle: .title3))
         view.tintColor = selected ? Theme.accent : .secondaryLabel
     }
