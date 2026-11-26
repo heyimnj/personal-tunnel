@@ -1015,7 +1015,8 @@ final class MinimalAnalyticsViewController: UIViewController, UIGestureRecognize
         // a parent (3.5 (271) tied two of them earlier and crashed at launch).
         routes.heightAnchor.constraint(equalTo: traffic.heightAnchor).isActive = true
         // 3.5.26 (the owner): the session line close to the cards; even gaps between them.
-        content.setCustomSpacing(4, after: header)
+        // 3.6.16 (the owner: «a little more, the least bit» between the top and the cards): 6.
+        content.setCustomSpacing(6, after: header)
         for view in [hero, tiles, routes, connections] { content.setCustomSpacing(12, after: view) }
         content.setCustomSpacing(12, after: memory)
         scroll.addSubview(content)

@@ -99,33 +99,21 @@ final class TunnelGlyph: UIView {
     /// ring — instead of the whole mark turning yellow. Up, it fades and the mark is
     /// green (red if the server does not answer); it never runs while the tunnel stands.
     private let runner = CAShapeLayer()
-    /// 3.6.15 (the owner: going down, the stretch broke in the middle, where the
-    /// mark changes shape): the ring's own way — from one end of its gap down round
-    /// the bottom to the other end — as the 3.5 mark's stretch ran. The arch's way
-    /// (foot, top, foot) fades into it as the arch closes, and back.
-    private let ringRunner = CAShapeLayer()
     private var runnerShown = Spring(0, omega: 10)
-    /// When the stretches started running: all of them run in step.
-    private var runStart: CFTimeInterval?
-    /// PTLab 2.3 (the owner): the inner arches get a running stretch too. Off in
-    /// the app.
-    static var archRunners = false
     private var archLayers: [CAShapeLayer] = []
-    private var archRunnerLayers: [CAShapeLayer] = []
     private var link: CADisplayLink?
     private var lastTick: CFTimeInterval = 0
 
     override init(frame: CGRect) {
         super.init(frame: frame)
         isUserInteractionEnabled = false
-        for item in [body, stem, runner, ringRunner] {
+        for item in [body, stem, runner] {
             item.fillColor = nil
             item.lineCap = .round
             item.lineJoin = .round
             layer.addSublayer(item)
         }
         runner.opacity = 0
-        ringRunner.opacity = 0
     }
 
     @available(*, unavailable)
@@ -137,7 +125,7 @@ final class TunnelGlyph: UIView {
         super.layoutSubviews()
         CATransaction.begin()
         CATransaction.setDisableActions(true)
-        for item in [body, stem, runner, ringRunner] + archLayers + archRunnerLayers { item.frame = bounds }
+        for item in [body, stem, runner] + archLayers { item.frame = bounds }
         CATransaction.commit()
         render()
     }
@@ -365,14 +353,6 @@ final class TunnelGlyph: UIView {
             arch.frame = bounds
             layer.addSublayer(arch)
             archLayers.append(arch)
-            let run = CAShapeLayer()
-            run.fillColor = nil
-            run.lineCap = .round
-            run.lineJoin = .round
-            run.frame = bounds
-            run.isHidden = true
-            layer.addSublayer(run)
-            archRunnerLayers.append(run)
         }
 
         CATransaction.begin()
@@ -381,20 +361,15 @@ final class TunnelGlyph: UIView {
         body.lineWidth = Self.line * unit
         body.strokeColor = colour
         let shown = max(0, min(1, runnerShown.x))
-        let yellow = UIColor.systemYellow.resolvedColor(with: traitCollection).cgColor
-        if shown < 0.01 { runStart = nil }
-        // The arch's way at the arch, the ring's at the ring; between, one fades
-        // into the other.
-        let archWay = Self.smooth((t - 0.3) / 0.4)
-        for (layer, weight, way) in [(runner, archWay, Self.runnerPath(t)), (ringRunner, 1 - archWay, Self.ringPath(t))] {
-            let opacity = shown * weight
-            layer.isHidden = opacity < 0.01
-            if layer.isHidden { layer.removeAnimation(forKey: "run"); continue }
-            layer.path = Self.twice(way).copy(using: &transform)
-            layer.lineWidth = Self.line * unit
-            layer.strokeColor = yellow
-            layer.opacity = Float(opacity)
-            startRunning(layer)
+        runner.isHidden = shown < 0.01
+        if !runner.isHidden {
+            runner.path = Self.runnerPath(t).copy(using: &transform)
+            runner.lineWidth = Self.line * unit
+            runner.strokeColor = UIColor.systemYellow.resolvedColor(with: traitCollection).cgColor
+            runner.opacity = Float(shown)
+            startRunning()
+        } else {
+            runner.removeAnimation(forKey: "run")
         }
         let stroke = 1 - min(1, t * 1.4)
         stem.isHidden = stroke <= 0
@@ -414,17 +389,6 @@ final class TunnelGlyph: UIView {
             arch.lineWidth = Self.width(scale) * unit
             arch.strokeColor = colour
             arch.opacity = Float(min(1, shown))
-        }
-        for (index, run) in archRunnerLayers.enumerated() {
-            let arch = archLayers[index]
-            let opacity = Self.archRunners && !arch.isHidden ? CGFloat(arch.opacity) * shown : 0
-            run.isHidden = opacity < 0.01
-            if run.isHidden { run.removeAnimation(forKey: "run"); continue }
-            run.path = arch.path.map { Self.twice($0) }
-            run.lineWidth = arch.lineWidth
-            run.strokeColor = yellow
-            run.opacity = Float(opacity)
-            startRunning(run)
         }
         CATransaction.commit()
     }
@@ -482,65 +446,22 @@ final class TunnelGlyph: UIView {
         return path
     }
 
-    /// The ring's way: from the left end of its gap down the left half, round the
-    /// bottom (across the feet once they part) and up the right half to the gap.
-    private static func ringPath(_ t: CGFloat) -> CGPath {
-        let a0 = (240 + 30 * t) * .pi / 180
-        let a1 = (90 + 90 * t) * .pi / 180
-        let leg = 22 * t
-        let center = CGPoint(x: 50, y: 52)
-        let point = { (angle: CGFloat) in CGPoint(x: 50 + 22 * cos(angle), y: 52 + 22 * sin(angle)) }
-        let path = CGMutablePath()
-        path.move(to: point(a0))
-        path.addArc(center: center, radius: 22, startAngle: a0, endAngle: a1, clockwise: true)
-        let left = point(a1)
-        if leg > 0.01 { path.addLine(to: CGPoint(x: left.x + sin(a1) * leg, y: left.y - cos(a1) * leg)) }
-        let r0 = .pi - a0, r1 = .pi - a1
-        let right = point(r1)
-        path.move(to: CGPoint(x: right.x - sin(a1) * leg, y: right.y - cos(a1) * leg))
-        if leg > 0.01 { path.addLine(to: right) }
-        path.addArc(center: center, radius: 22, startAngle: r1, endAngle: r0, clockwise: true)
-        return path
-    }
-
-    /// A way drawn twice over itself: the stretch's window slides along the first
-    /// copy into the second, so while its tail leaves at one end its head already
-    /// comes in at the other.
-    private static func twice(_ way: CGPath) -> CGPath {
-        let path = CGMutablePath()
-        path.addPath(way)
-        path.addPath(way)
-        return path
-    }
-
-    private static func smooth(_ x: CGFloat) -> CGFloat {
-        let k = max(0, min(1, x))
-        return k * k * (3 - 2 * k)
-    }
-
-    /// A quarter of the way runs round it at an even speed, 1.2 s a lap (as the
-    /// 3.5 mark's stretch ran round its ring). 3.6.15 (the owner: it came in whole,
-    /// then went out whole): one stretch going on round — as it leaves at one foot
-    /// it comes in at the other. All stretches run in step.
-    private func startRunning(_ layer: CAShapeLayer) {
-        guard layer.animation(forKey: "run") == nil else { return }
-        let start = runStart ?? CACurrentMediaTime()
-        runStart = start
-        let tail = CABasicAnimation(keyPath: "strokeStart")
-        tail.fromValue = 0.0
-        tail.toValue = 0.5
-        let head = CABasicAnimation(keyPath: "strokeEnd")
-        head.fromValue = 0.125
-        head.toValue = 0.625
+    /// A quarter of the way runs from one foot to the other, as the 3.5 mark's
+    /// stretch ran round its ring (1.2 s a lap).
+    private func startRunning() {
+        guard runner.animation(forKey: "run") == nil else { return }
+        let head = CAKeyframeAnimation(keyPath: "strokeEnd")
+        head.values = [0, 0.28, 1, 1]
+        head.keyTimes = [0, 0.2, 0.8, 1]
+        let tail = CAKeyframeAnimation(keyPath: "strokeStart")
+        tail.values = [0, 0, 0.72, 1]
+        tail.keyTimes = [0, 0.2, 0.8, 1]
         let run = CAAnimationGroup()
-        run.animations = [tail, head]
+        run.animations = [head, tail]
         run.duration = 1.2
-        run.timingFunction = CAMediaTimingFunction(name: .linear)
         run.repeatCount = .infinity
         run.isRemovedOnCompletion = false
-        run.beginTime = layer.convertTime(start, from: nil)
-        run.fillMode = .backwards
-        layer.add(run, forKey: "run")
+        runner.add(run, forKey: "run")
     }
 
     /// The arch (∩) scaled `scale` round the point it runs to, (50, 63).

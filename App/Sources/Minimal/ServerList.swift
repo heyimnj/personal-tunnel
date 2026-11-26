@@ -615,6 +615,11 @@ final class ServerRowView: SwipeRow {
         spinner.color = Theme.accent
         spinner.hidesWhenStopped = true
         ping.textAlignment = .right
+        // 3.6.16 (the owner: a jerk going into and out of a selection, with a
+        // subscription open): the ping column narrows for the circle; the label drew
+        // its text for the new width at once while its frame was still on the way, so
+        // «171 ms» jumped left and came back. Kept at the right edge as it moves.
+        ping.contentMode = .right
         name.lineBreakMode = .byTruncatingTail
         let leading = UIView()
         for view in [flag, globe] as [UIView] {

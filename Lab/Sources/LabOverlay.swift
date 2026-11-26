@@ -5,8 +5,6 @@ import UIKit
 /// to get it out of the way.
 enum LabOverlay {
     static func install(in window: UIWindow) {
-        // PTLab 2.3 (the owner): the inner arches of the connect mark run yellow too.
-        TunnelGlyph.archRunners = true
         let button = LabFlaskButton(frame: CGRect(x: 0, y: window.bounds.height * 0.42, width: 34, height: 44))
         button.autoresizingMask = [.flexibleTopMargin, .flexibleBottomMargin, .flexibleRightMargin]
         button.addAction(UIAction { [weak window] _ in
