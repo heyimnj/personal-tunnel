@@ -634,7 +634,7 @@ final class MinimalConnectionView: UIView {
     private let capsule = TapControl()
     private let capsuleGlass = ControlGlassView(circle: false, opacityKey: Prefs.serverOpacityKey)
     private let flag = UILabel(font: .systemFont(ofSize: 21))
-    private let mark = UIImageView(image: MinimalIcons.home)
+    private let mark = UIImageView(image: MinimalIcons.orbit(26))
     private let name = UILabel(font: Theme.font(17, .medium))
     /// 3.5 beta 2 (the owner: the capsule wanted something at its end, not the
     /// old up-and-down chevrons): the server's delay, and a small chevron up — the
@@ -754,10 +754,9 @@ final class MinimalConnectionView: UIView {
         let look: TunnelGlyph.Look
         switch App.shared.tunnel.state.value {
         case .disconnected: look = .off
-        case .connecting: look = .connecting
+        // Yellow while it comes up or changes server (the mark's colours since 3.5 beta 4).
+        case .connecting, .reasserting: look = .connecting
         case .disconnecting: look = .stopping
-        // A server change while up keeps the arch; from below it is still coming up.
-        case .reasserting: look = power.look == .on || power.look == .failing ? power.look : .connecting
         // 3.5.4 (the owner: «Подключено» stood beside a running ring for seconds):
         // green as soon as the system says connected; red only when tests through
         // the server fail (two in a row).
@@ -790,9 +789,10 @@ final class MinimalConnectionView: UIView {
         let emoji = Theme.flag(label.countryCode)
         flag.text = emoji
         flag.isHidden = emoji == nil
-        // No flag: the app's mark, as 1.5.0's home capsule showed it.
+        // No flag: 3.6.7 (the owner) the orbit, as for every server whose country is
+        // unknown (the app's mark is on the connection button now).
         mark.isHidden = emoji != nil
-        mark.image = MinimalIcons.home
+        mark.image = MinimalIcons.orbit(26)
         mark.tintColor = .label
         showDelay()
     }

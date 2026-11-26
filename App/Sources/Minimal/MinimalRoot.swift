@@ -49,6 +49,27 @@ enum MinimalIcons {
         }.withRenderingMode(.alwaysTemplate)
     }()
 
+    /// 3.6.7 (the owner): a server whose country is not known — a planet with an
+    /// orbit (a dot and a tilted ring), in place of the globe and the app's mark.
+    static func orbit(_ side: CGFloat) -> UIImage {
+        if let cached = orbits[side] { return cached }
+        let image = UIGraphicsImageRenderer(size: CGSize(width: side, height: side)).image { context in
+            let c = context.cgContext
+            c.scaleBy(x: side / 30, y: side / 30)
+            c.setStrokeColor(UIColor.black.cgColor)
+            c.setFillColor(UIColor.black.cgColor)
+            c.fillEllipse(in: CGRect(x: 15 - 3.6, y: 15 - 3.6, width: 7.2, height: 7.2))
+            c.translateBy(x: 15, y: 15)
+            c.rotate(by: -.pi / 6)
+            c.setLineWidth(2.1)
+            c.strokeEllipse(in: CGRect(x: -12, y: -5.2, width: 24, height: 10.4))
+        }.withRenderingMode(.alwaysTemplate)
+        orbits[side] = image
+        return image
+    }
+
+    private static var orbits: [CGFloat: UIImage] = [:]
+
     /// The Settings tab glyph (3.5, drawn for the owner): a gear over two
     /// crossed wrenches, as the bones lie under the skull of a pirate flag —
     /// the open ends at the top, the ring ends at the bottom. A clear ring round

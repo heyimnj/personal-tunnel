@@ -477,7 +477,8 @@ private final class OrderCell: UICollectionViewCell {
     weak var owner: ModernServerOrderViewController?
     private let card = UIView()
     private let flag = UILabel(font: .systemFont(ofSize: 22))
-    private let globe = UIImageView(image: UIImage(systemName: "globe", withConfiguration: UIImage.SymbolConfiguration(pointSize: 18, weight: .medium)))
+    /// 3.6.7 (the owner): the orbit for a server whose country is unknown (was the globe).
+    private let globe = UIImageView(image: MinimalIcons.orbit(24))
     private let name = UILabel(font: Theme.font(17, .medium))
     private let count = UILabel(font: Theme.font(13, .medium), color: .secondaryLabel)
     private let countPill = UIView()

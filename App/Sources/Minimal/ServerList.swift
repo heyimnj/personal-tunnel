@@ -570,7 +570,8 @@ final class PassThroughStackView: UIStackView {
 final class ServerRowView: SwipeRow {
     let card = TapControl()
     let flag = UILabel(font: .systemFont(ofSize: 22))
-    let globe = UIImageView(image: UIImage(systemName: "globe", withConfiguration: UIImage.SymbolConfiguration(pointSize: 20)))
+    /// 3.6.7 (the owner): the orbit for a server whose country is unknown (was the globe).
+    let globe = UIImageView(image: MinimalIcons.orbit(26))
     let name = UILabel(font: Theme.font(17, .medium))
     let badges = BadgeRow()
     let check = UIImageView(image: UIImage(systemName: "checkmark", withConfiguration: UIImage.SymbolConfiguration(pointSize: 12, weight: .bold)))
