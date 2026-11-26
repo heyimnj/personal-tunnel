@@ -647,6 +647,12 @@ final class MinimalAnalyticsViewController: UIViewController, UIGestureRecognize
     private let trafficTotal = UILabel(font: Theme.digits(Theme.font(.footnote).pointSize, .semibold))
     private let downTotal = UILabel(font: Theme.digits(Theme.font(.subheadline).pointSize, .semibold))
     private let upTotal = UILabel(font: Theme.digits(Theme.font(.subheadline).pointSize, .semibold))
+    /// 3.6.8 (the owner, variant «Б»): with the VPN off the tile shows the last
+    /// session, greyed, with how long it lasted and when.
+    private let trafficTitle = UILabel(L("Трафик за сеанс"), font: Theme.font(.footnote, .medium), color: .secondaryLabel)
+    private let trafficNote = UILabel(" ", font: Theme.font(.caption1), color: .secondaryLabel)
+    private var legendIcons: [(icon: UIImageView, color: UIColor)] = []
+    private var lastSession: SessionSummary?
     private let delayGauge = GaugeView()
     private let delayValue = UILabel(font: Theme.digits(22, .semibold))
     private let delayCaption = UILabel(font: Theme.font(.footnote), color: .secondaryLabel, lines: 2)
@@ -852,6 +858,7 @@ final class MinimalAnalyticsViewController: UIViewController, UIGestureRecognize
             let icon = UIImageView(image: UIImage(systemName: symbol, withConfiguration: UIImage.SymbolConfiguration(font: Theme.font(.caption1, .bold))))
             icon.tintColor = color
             icon.setContentHuggingPriority(.required, for: .horizontal)
+            legendIcons.append((icon, color))
             label.font = Theme.digits(Theme.font(.footnote).pointSize, .semibold)
             label.adjustsFontSizeToFitWidth = true
             label.minimumScaleFactor = 0.7
@@ -861,8 +868,12 @@ final class MinimalAnalyticsViewController: UIViewController, UIGestureRecognize
             amount("arrow.down", SpeedGraphView.downColor, downTotal), amount("arrow.up", SpeedGraphView.upColor, upTotal),
         ])
         let traffic = tile()
-        let trafficTitle = small(L("Трафик за сеанс"))
-        for item in [trafficTitle, trafficRing, tileLegend] as [UIView] { traffic.stack.addArrangedSubview(item) }
+        trafficNote.textAlignment = .center
+        trafficNote.adjustsFontSizeToFitWidth = true
+        trafficNote.minimumScaleFactor = 0.8
+        // The note keeps its line while connected too (a space), so the tile's
+        // height does not change when the VPN goes on or off.
+        for item in [trafficTitle, trafficRing, tileLegend, trafficNote] as [UIView] { traffic.stack.addArrangedSubview(item) }
         trafficTitle.widthAnchor.constraint(equalTo: traffic.stack.widthAnchor).isActive = true
 
         // The delay: a half-circle gauge. 3.5: a tap tests the connected server again.
@@ -1224,8 +1235,9 @@ final class MinimalAnalyticsViewController: UIViewController, UIGestureRecognize
         let since = App.shared.tunnel.connectedSince.value
         let text = Format.duration(since.map { Int(Date().timeIntervalSince($0)) } ?? 0)
         if sessionRow.value.text != text { sessionRow.value.text = text }
-        sessionLine.showText(L("Сеанс") + " " + text)
         let on = since != nil
+        // 3.6.8 (the owner): «VPN выключен» rather than a session of 00:00:00.
+        sessionLine.showText(on ? L("Сеанс") + " " + text : L("VPN выключен"))
         let dotColor: UIColor = on ? .systemGreen : .tertiaryLabel
         if sessionDot.backgroundColor != dotColor { sessionDot.backgroundColor = dotColor }
     }
@@ -1297,10 +1309,23 @@ final class MinimalAnalyticsViewController: UIViewController, UIGestureRecognize
         upUnit.showText(up.1)
         let downBytes: Int64 = status?.downlinkTotal ?? 0
         let upBytes: Int64 = status?.uplinkTotal ?? 0
-        downTotal.showText(status == nil ? "—" : Format.bytes(downBytes))
-        upTotal.showText(status == nil ? "—" : Format.bytes(upBytes))
-        trafficTotal.showText(status == nil ? "—" : Format.bytes(downBytes + upBytes))
-        trafficRing.parts = [(value: Double(downBytes), color: SpeedGraphView.downColor), (value: Double(upBytes), color: SpeedGraphView.upColor)]
+        // 3.6.8 (the owner): VPN off — the last session, greyed; none yet — dashes.
+        let last = status == nil ? storedLastSession() : nil
+        let downShown = last?.down ?? downBytes, upShown = last?.up ?? upBytes
+        let greyed = last != nil
+        trafficTitle.showText(greyed ? L("Прошлый сеанс") : L("Трафик за сеанс"))
+        trafficNote.showText(last.map { Self.describe($0) } ?? " ")
+        let blank = status == nil && last == nil
+        downTotal.showText(blank ? "—" : Format.bytes(downShown))
+        upTotal.showText(blank ? "—" : Format.bytes(upShown))
+        trafficTotal.showText(blank ? "—" : Format.bytes(downShown + upShown))
+        for item in legendIcons {
+            let tint = greyed || blank ? UIColor.tertiaryLabel : item.color
+            if item.icon.tintColor != tint { item.icon.tintColor = tint }
+        }
+        trafficRing.parts = greyed
+            ? [(value: Double(downShown), color: .systemGray2), (value: Double(upShown), color: .systemGray4)]
+            : [(value: Double(downBytes), color: SpeedGraphView.downColor), (value: Double(upBytes), color: SpeedGraphView.upColor)]
         memoryValue.showText(status.map { Format.bytes($0.memory) } ?? "—")
         // 3.6 (the owner): the ceiling beside the value — «31.9 MB из 50 MB».
         memoryDetail.showText(status.map { Lf("из %@", "50 MB") + " · \($0.goroutines) goroutines" } ?? "")
@@ -1311,8 +1336,48 @@ final class MinimalAnalyticsViewController: UIViewController, UIGestureRecognize
     private var routeNames: [String] = []
     private var routeValues: [UILabel] = []
 
+    /// The last session, read from the shared settings once per stop (it changes only then).
+    private func storedLastSession() -> SessionSummary? {
+        let data = AppGroup.defaults.data(forKey: SharedKey.lastSession)
+        if let lastSession, data == lastSession.encoded { return lastSession }
+        lastSession = data.flatMap(SessionSummary.init(encoded:))
+        return lastSession
+    }
+
+    /// «1 ч 12 мин · вчера, 23:40».
+    private static func describe(_ session: SessionSummary) -> String {
+        let minutes = Int(session.seconds / 60)
+        let length: String
+        if minutes < 1 {
+            length = L("меньше минуты")
+        } else if minutes < 60 {
+            length = Lf("%@ мин", "\(minutes)")
+        } else {
+            length = Lf("%@ ч %@ мин", "\(minutes / 60)", "\(minutes % 60)")
+        }
+        let ended = Date(timeIntervalSince1970: TimeInterval(session.ended))
+        let clock = DateFormatter()
+        clock.locale = Language.locale
+        clock.dateFormat = "HH:mm"
+        let calendar = Calendar.current
+        let when: String
+        if calendar.isDateInToday(ended) {
+            when = Lf("сегодня, %@", clock.string(from: ended))
+        } else if calendar.isDateInYesterday(ended) {
+            when = Lf("вчера, %@", clock.string(from: ended))
+        } else {
+            let day = DateFormatter()
+            day.locale = Language.locale
+            day.setLocalizedDateFormatFromTemplate("d MMM")
+            when = day.string(from: ended)
+        }
+        return length + " · " + when
+    }
+
     private func show(_ connections: CoreConnections) {
-        let tcpText = "\(connections.tcp)", udpText = "\(connections.udp)"
+        // 3.6.8 (the owner): dashes, not zeros, while the VPN is off.
+        let off = App.shared.core.status.value == nil
+        let tcpText = off ? "—" : "\(connections.tcp)", udpText = off ? "—" : "\(connections.udp)"
         tcpCount.showText("TCP " + tcpText)
         udpCount.showText("UDP " + udpText)
         // 3.5.14: the session's routes, «direct» by name; what the app could not

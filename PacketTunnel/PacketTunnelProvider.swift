@@ -93,6 +93,7 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
             // the app then reported a tunnel the system had ended without a stop.
             AppGroup.defaults.removeObject(forKey: SharedKey.tunnelStartedAt)
             self.stopping = true
+            self.saveSessionSummary()
             self.log("остановка, причина \(reason.rawValue)")
             self.event("остановка, причина \(reason.rawValue)")
             // 3.2.4: iOS shows the VPN off only after the completion handler. The
@@ -496,6 +497,17 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
     }
 
     /// The core's running totals, read in this process (core/patches/0008).
+    /// 3.6.8 (the owner): the session's totals for analytics while the VPN is off —
+    /// one write, before the core closes (its counters go with it).
+    private func saveSessionSummary() {
+        guard let began = memoryStartedAt else { return }
+        noteTraffic()
+        let last = traffic.samples.last
+        let summary = SessionSummary(started: Int64(began.timeIntervalSince1970), ended: Int64(Date().timeIntervalSince1970),
+                                     up: last?.up ?? 0, down: last?.down ?? 0)
+        AppGroup.defaults.set(summary.encoded, forKey: SharedKey.lastSession)
+    }
+
     private func noteTraffic() {
         guard let total = commandServer?.trafficTotal() else { return }
         traffic.append(.init(time: Int64(Date().timeIntervalSince1970), up: total.uplink, down: total.downlink))

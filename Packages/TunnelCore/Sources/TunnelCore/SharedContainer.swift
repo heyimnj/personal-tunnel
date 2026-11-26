@@ -116,6 +116,9 @@ public enum SharedKey {
     /// 3.5.23: the session's traffic over time (`TrafficTimeline`, 24 bytes a point),
     /// stored with the memory sample.
     public static let trafficTimeline = "pt.tunnel.traffic"
+    /// 3.6.8: the last session's totals (`SessionSummary`, 32 bytes), written when
+    /// the tunnel stops; analytics shows it while the VPN is off.
+    public static let lastSession = "pt.tunnel.lastSession"
 }
 
 /// Start options and messages the app sends to the packet tunnel.

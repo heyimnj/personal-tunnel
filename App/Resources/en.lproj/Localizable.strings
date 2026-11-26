@@ -790,3 +790,11 @@
 "Маршруты: без исходящего %@ (%@ соед.), обновления без начала %@ (%@)" = "Routes: no outbound %@ (%@ conn.), updates without a start %@ (%@)";
 "Открытые соединения" = "Open connections";
 "из %@" = "of %@";
+
+/* 3.6.8: analytics while the VPN is off — the last session */
+"Прошлый сеанс" = "Last session";
+"VPN выключен" = "VPN is off";
+"меньше минуты" = "under a minute";
+"%@ ч %@ мин" = "%@ h %@ min";
+"сегодня, %@" = "today, %@";
+"вчера, %@" = "yesterday, %@";
