@@ -91,7 +91,7 @@ struct TunnelGlyph: GlyphStyle {
     var note: String {
         light
             ? "То же, что «Тоннель», и в глубине арки мягкий зелёный свет."
-            : "Кольцо ровно перетекает в арку; палочка опускается, изгибается в U и обтекает круг в n — первую внутреннюю арку. Подключено — передняя арка уходит эхом."
+            : "Кольцо ровно перетекает в арку; палочка едет вниз, ложится и выгибается в первую внутреннюю арку. Подключено — передняя арка уходит эхом."
     }
 
     private static let samples = 40
@@ -115,34 +115,38 @@ struct TunnelGlyph: GlyphStyle {
         return CGPoint(x: 50 - r, y: cy + (d - arc))
     }
 
-    /// The stroke becomes the first inner arch (owner, PT Lab 1.3): it goes down
-    /// and bends into a U at the bottom, its halves flow round the circle up the
-    /// sides and meet at the top as an n, then its legs come down. `o` 0 … 1.
+    /// The stroke becomes the first inner arch as one stick, never split (owner,
+    /// PT Lab 1.4): it goes down, tilting until it lies flat, then bends up into
+    /// the arch point by point — the whole arch from one leg's foot over the top to
+    /// the other's maps along the stick. `o` 0 … 1.
     private static let openerTime: Double = 0.85
 
     private static func opener(_ o: CGFloat) -> CGPath {
         let cx: CGFloat = 50, cy: CGFloat = 63 - 11 * 0.7, r: CGFloat = 22 * 0.7, leg: CGFloat = 22 * 0.7
-        let bend = Ease.sine(Double(o / 0.4))
-        let round = Ease.sine(Double((o - 0.35) / 0.45))
-        let legs = Ease.sine(Double((o - 0.78) / 0.22))
-        let turn = 90 * round
+        let fall = Ease.sine(Double(o / 0.5))
+        let bend = Ease.sine(Double((o - 0.45) / 0.55))
+        let centreY = 37 + (cy + 8 - 37) * fall
+        let tilt = CGFloat.pi / 2 * (1 - fall)
+        let half = 13 + (r - 13) * fall
+        let arc = CGFloat.pi * r
+        let length = 2 * leg + arc
         let path = CGMutablePath()
-        for mirrored in [false, true] {
-            for index in 0 ... samples {
-                let u = CGFloat(index) / CGFloat(samples)
-                // From the stroke's top (u 0) to its foot (u 1); on the circle, from
-                // the side end to the end at the bottom middle, turned up by `turn`.
-                let angle = (180 + turn - 90 * u) * .pi / 180
-                let onCircle = CGPoint(x: cx + r * cos(angle), y: cy + r * sin(angle))
-                let onLine = CGPoint(x: 50, y: 24 + 26 * u)
-                var x = onLine.x + (onCircle.x - onLine.x) * bend
-                let y = onLine.y + (onCircle.y - onLine.y) * bend
-                if mirrored { x = 100 - x }
-                if index == 0 { path.move(to: CGPoint(x: x, y: y)) } else { path.addLine(to: CGPoint(x: x, y: y)) }
+        for index in 0 ... samples * 2 {
+            let u = CGFloat(index) / CGFloat(samples * 2)
+            let along = (u - 0.5) * 2
+            let stick = CGPoint(x: cx + cos(tilt) * half * along, y: centreY + sin(tilt) * half * along)
+            let d = u * length
+            let target: CGPoint
+            if d <= leg {
+                target = CGPoint(x: cx - r, y: cy + leg - d)
+            } else if d <= leg + arc {
+                let angle = CGFloat.pi + (d - leg) / r
+                target = CGPoint(x: cx + r * cos(angle), y: cy + r * sin(angle))
+            } else {
+                target = CGPoint(x: cx + r, y: cy + (d - leg - arc))
             }
-            if legs > 0 {
-                path.addLine(to: CGPoint(x: mirrored ? 100 - (cx - r) : cx - r, y: cy + leg * legs))
-            }
+            let point = CGPoint(x: stick.x + (target.x - stick.x) * bend, y: stick.y + (target.y - stick.y) * bend)
+            if index == 0 { path.move(to: point) } else { path.addLine(to: point) }
         }
         return path
     }
@@ -218,15 +222,29 @@ struct TunnelGlyph: GlyphStyle {
             // The small arch goes back into the depth.
             let small = 1 - Ease.out(e / 0.3)
             arches.append((small, 0.55 * small * (start.k > 0 ? 1 : start.light)))
-            // The first arch closes back into the stroke (fading in if it was not standing).
-            opener = (start.k > 0 ? 1 : start.light) * (1 - Ease.clamp((e - 0.05) / 0.7))
-            openerOpacity = Ease.mix(1, 0.8, opener) * (start.k > 0 || start.flow == 0 ? 1 : Ease.out(e / 0.3))
+            // The first arch closes back into the stroke.
             if start.k == 0, start.flow > 0 {
+                // Stopped while the lights ran: the light nearest the first arch's
+                // place goes there (0.2 s) and closes into the stroke; the rest fade.
                 let fade = 1 - Ease.out(e / 0.25)
-                for index in 0 ..< 3 {
-                    let p = (start.flow + CGFloat(2 - index)).truncatingRemainder(dividingBy: 3)
+                let places = (0 ..< 3).map { (start.flow + CGFloat(2 - $0)).truncatingRemainder(dividingBy: 3) }
+                let nearest = places.indices.min { abs(places[$0] - 2) < abs(places[$1] - 2) } ?? 0
+                for (index, p) in places.enumerated() where index != nearest {
                     arches.append((p, Ease.keys(p, [0, 1, 2, 2.6, 3], [0, 0.55, 0.8, 0.45, 0]) * fade))
                 }
+                let p = places[nearest]
+                let settle = Ease.out(e / 0.2)
+                if e < 0.2 {
+                    let shown = Ease.keys(p, [0, 1, 2, 2.6, 3], [0, 0.55, 0.8, 0.45, 0])
+                    arches.append((Ease.mix(p, 2, settle), Ease.mix(shown, 0.8, settle)))
+                    openerOpacity = 0
+                } else {
+                    opener = 1 - Ease.clamp((e - 0.2) / 0.6)
+                    openerOpacity = Ease.mix(1, 0.8, opener)
+                }
+            } else {
+                opener = (start.k > 0 ? 1 : start.light) * (1 - Ease.clamp((e - 0.05) / 0.7))
+                openerOpacity = Ease.mix(1, 0.8, opener)
             }
         }
         memo.a = t
