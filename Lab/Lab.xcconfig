@@ -1,6 +1,6 @@
 // PT Lab: своя версия, номер сборки только растёт.
-MARKETING_VERSION = 2.0
-CURRENT_PROJECT_VERSION = 10
+MARKETING_VERSION = 2.1
+CURRENT_PROJECT_VERSION = 11
 
 // Для Info.plist (как у приложения): имя, схема, группа (строгая, своя — см. AppGroupStrict).
 PT_DISPLAY_NAME = PT Lab

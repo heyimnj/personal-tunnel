@@ -824,7 +824,11 @@ final class MinimalAnalyticsViewController: UIViewController, UIGestureRecognize
             title.centerXAnchor.constraint(equalTo: header.centerXAnchor), title.centerYAnchor.constraint(equalTo: header.topAnchor, constant: 24),
             sessionStack.centerXAnchor.constraint(equalTo: header.centerXAnchor), sessionStack.topAnchor.constraint(equalTo: title.bottomAnchor, constant: 2),
             sessionStack.bottomAnchor.constraint(equalTo: header.bottomAnchor),
-            more.trailingAnchor.constraint(equalTo: header.trailingAnchor), more.centerYAnchor.constraint(equalTo: title.centerYAnchor),
+            more.trailingAnchor.constraint(equalTo: header.trailingAnchor),
+            // 3.6.14 (the owner: the title and «…» were not level): «…» centred on the
+            // title's capitals, not on its line box (the font's room below the line
+            // pulled the box's middle down).
+            more.centerYAnchor.constraint(equalTo: title.firstBaselineAnchor, constant: -title.font.capHeight / 2),
             more.widthAnchor.constraint(equalToConstant: 44), more.heightAnchor.constraint(equalToConstant: 44),
             moreGlass.centerXAnchor.constraint(equalTo: more.centerXAnchor), moreGlass.centerYAnchor.constraint(equalTo: more.centerYAnchor),
             moreGlass.widthAnchor.constraint(equalToConstant: 44), moreGlass.heightAnchor.constraint(equalToConstant: 44),
@@ -1012,9 +1016,10 @@ final class MinimalAnalyticsViewController: UIViewController, UIGestureRecognize
         content.translatesAutoresizingMaskIntoConstraints = false
         NSLayoutConstraint.activate([
             // 3.6.13 (the owner: too much room above the title and under the last
-            // card): the page starts 12 pt higher (into the status bar's margin, below
-            // the Dynamic Island) and ends 8 pt over the tab bar (was 24).
-            content.topAnchor.constraint(equalTo: scroll.contentLayoutGuide.topAnchor, constant: -8),
+            // card): the page starts higher (into the status bar's margin, below the
+            // Dynamic Island) and ends 8 pt over the tab bar (was 24). 3.6.14 (the
+            // owner: «a little less still»): 18 pt higher than before 3.6.13 (was 12).
+            content.topAnchor.constraint(equalTo: scroll.contentLayoutGuide.topAnchor, constant: -14),
             content.bottomAnchor.constraint(equalTo: scroll.contentLayoutGuide.bottomAnchor, constant: -8),
             content.leadingAnchor.constraint(equalTo: scroll.frameLayoutGuide.leadingAnchor, constant: 16),
             content.trailingAnchor.constraint(equalTo: scroll.frameLayoutGuide.trailingAnchor, constant: -16),
