@@ -9,6 +9,8 @@ PRERELEASE =
 PT_BUNDLE_ID = com.personaltunnelapp
 PT_DISPLAY_NAME = Personal Tunnel
 PT_URL_SCHEME = personaltunnel
+// Иконка: AppIcon у Personal Tunnel, AppIconBeta (с плашкой «BETA») у PTBeta.
+PT_APP_ICON = AppIcon
 
 // App Group, общая для приложения и туннеля. Подписанной сборке нужна группа из её
 // профиля: CI передаёт APP_GROUP_IDENTIFIER=... в xcodebuild.

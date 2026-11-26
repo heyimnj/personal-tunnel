@@ -51,8 +51,9 @@
 
 Каждая новая бета ставится рядом с основным приложением, поэтому при запуске беты всегда меняются:
 - `Config/Base.xcconfig`: `PT_BUNDLE_ID = com.personaltunnelapp.beta`, `PT_DISPLAY_NAME = PTBeta`,
-  `PT_URL_SCHEME = ptbeta`, `PRERELEASE = beta N`;
+  `PT_URL_SCHEME = ptbeta`, `PRERELEASE = beta N`, `PT_APP_ICON = AppIconBeta` (иконка с плашкой «BETA»,
+  владелец 26.11);
 - `.github/workflows/build.yml`: имя IPA `PTBeta-…` вместо `PersonalTunnel-…`.
 App Group НЕ меняется: всегда `group.a69e6dc9a612eb7d.1` (своя группа беты не выдана подписью — с ней
 расширение не запускалось, PTBeta 1–5). При релизе — обратно: `com.personaltunnelapp`, `Personal Tunnel`,
-`personaltunnel`, `PRERELEASE` пустой, имя IPA `PersonalTunnel-…` (так сделан релиз 3.2 (248)).
+`personaltunnel`, `PRERELEASE` пустой, `PT_APP_ICON = AppIcon`, имя IPA `PersonalTunnel-…` (так сделан релиз 3.2 (248)).
