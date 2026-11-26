@@ -131,7 +131,7 @@ final class HoldMenuView: UIView {
     /// The sheet dims under the menu.
     private var dims = true
     /// Clips the items to the outline while it grows.
-    private let mask = CAShapeLayer()
+    private let clip = CAShapeLayer()
     /// The card's whole outline, and the small one it pours out of.
     private var fullOutline: CGPath?
     private var seedOutline: CGPath?
@@ -279,16 +279,16 @@ final class HoldMenuView: UIView {
         stretch.layer.shadowPath = outline
         surface.frame = stretch.bounds
         surface.path = outline
-        mask.frame = stretch.bounds
-        mask.path = outline
+        clip.frame = stretch.bounds
+        clip.path = outline
         items.frame = whole
-        items.layer.mask = mask
+        items.layer.mask = clip
         direction = place.below ? 1 : -1
     }
 
     /// Moves the outline (surface, shadow, mask) from where it is now to `target`.
     private func morph(to target: CGPath, spring: Bool, duration: CFTimeInterval) {
-        let parts: [(CALayer, String)] = [(surface, "path"), (mask, "path"), (stretch.layer, "shadowPath")]
+        let parts: [(CALayer, String)] = [(surface, "path"), (clip, "path"), (stretch.layer, "shadowPath")]
         for (layer, key) in parts {
             let now: CGPath?
             if key == "path" { now = (layer.presentation() as? CAShapeLayer)?.path ?? (layer as? CAShapeLayer)?.path } else { now = layer.presentation()?.shadowPath ?? layer.shadowPath }
@@ -331,7 +331,7 @@ final class HoldMenuView: UIView {
             CATransaction.begin()
             CATransaction.setDisableActions(true)
             surface.path = seedOutline
-            mask.path = seedOutline
+            clip.path = seedOutline
             stretch.layer.shadowPath = seedOutline
             CATransaction.commit()
             morph(to: fullOutline, spring: true, duration: 0)
