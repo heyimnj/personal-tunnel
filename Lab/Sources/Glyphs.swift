@@ -74,103 +74,147 @@ struct CurrentGlyph: GlyphStyle {
 
 // MARK: - 1. Tunnel
 
-/// The power mark opens into the logo's arch in one line (the legs grow out of
-/// the arc's own ends), its stroke goes in under it, and arches run towards you
-/// inside, like the lights of a tunnel. Connected: the arch turns green, one echo
-/// runs outside it, and two smaller arches stay inside — the logo's stripes.
-/// Stopping: the stripes go in, the legs draw up, the arch closes back.
+/// The power mark becomes the logo's arch. Each half of the ring flows into its
+/// half of the arch point by point (equal steps along both lines), so the shape
+/// stays even and mirrored all the way; the stroke opens the same way into the
+/// first inner arch. While connecting, inner arches come out of the depth one
+/// after another (a conveyor). Connected: the front one runs out past the arch
+/// as an echo and turns green with it, the second takes its place, a new one
+/// comes from the middle. Stopping: the reverse — the small arch goes back into
+/// the depth, the first one closes back into the stroke, the arch into the ring.
 struct TunnelGlyph: GlyphStyle {
     /// A soft green light deep inside, once connected.
     let light: Bool
 
-    var id: String { light ? "tunnel2.light" : "tunnel2" }
+    var id: String { light ? "tunnel3.light" : "tunnel3" }
     var title: String { light ? "1 · Тоннель + свет" : "1 · Тоннель" }
     var note: String {
         light
             ? "То же, что «Тоннель», и в глубине арки мягкий зелёный свет."
-            : "Значок одной линией раскрывается в арку; подключено — арка зелёная, эхо снаружи и две арки внутри, как полоски логотипа."
+            : "Кольцо ровно перетекает в арку, палочка раскрывается в первую внутреннюю арку; подключено — передняя арка уходит эхом, остальные встают на место."
     }
 
-    private static let stripeScale: [CGFloat] = [0.7, 0.44]
-    private static let stripeOpacity: [CGFloat] = [0.8, 0.55]
-    private static let stripeWidth: [CGFloat] = [line * 0.9, line * 0.78]
+    private static let samples = 40
+    private static let morphTime: Double = 0.6
+    private static let step: Double = 0.45
+
+    // Halves, from the top (u 0) to the end (u 1); the right half is the mirror.
+    private static func ringHalf(_ u: CGFloat) -> CGPoint {
+        let angle = (240 - 150 * u) * .pi / 180
+        return CGPoint(x: 50 + 22 * cos(angle), y: 52 + 22 * sin(angle))
+    }
+
+    private static func archHalf(_ u: CGFloat, _ scale: CGFloat) -> CGPoint {
+        let r = 22 * scale, cy = 63 - 11 * scale
+        let arc = r * .pi / 2, leg = 22 * scale
+        let d = u * (arc + leg)
+        if d <= arc {
+            let angle = 1.5 * .pi - d / r
+            return CGPoint(x: 50 + r * cos(angle), y: cy + r * sin(angle))
+        }
+        return CGPoint(x: 50 - r, y: cy + (d - arc))
+    }
+
+    private static func stemHalf(_ u: CGFloat) -> CGPoint { CGPoint(x: 50, y: 24 + 26 * u) }
+
+    /// Both halves, each `t` of the way from `from` to `to`.
+    private static func morph(_ from: (CGFloat) -> CGPoint, _ to: (CGFloat) -> CGPoint, _ t: CGFloat) -> CGPath {
+        let path = CGMutablePath()
+        for mirrored in [false, true] {
+            for index in 0 ... samples {
+                let u = CGFloat(index) / CGFloat(samples)
+                let a = from(u), b = to(u)
+                var x = a.x + (b.x - a.x) * t
+                let y = a.y + (b.y - a.y) * t
+                if mirrored { x = 100 - x }
+                if index == 0 { path.move(to: CGPoint(x: x, y: y)) } else { path.addLine(to: CGPoint(x: x, y: y)) }
+            }
+        }
+        return path
+    }
+
+    /// Conveyor places: 0 the depth (unseen), 1 the small arch, 2 the first
+    /// arch, 3 the arch itself, 4 an echo outside, gone.
+    private static func scale(_ p: CGFloat) -> CGFloat {
+        Ease.keys(p, [0, 1, 2, 3, 4], [0.12, 0.44, 0.7, 1.0, 1.3])
+    }
+
+    private static func width(_ scale: CGFloat) -> CGFloat { line * (0.6 + 0.3 * min(scale, 1)) }
 
     func frame(_ phase: MockTunnel.Phase, _ e: Double, start: GlyphMemo, memo: inout GlyphMemo, traits: UITraitCollection) -> GlyphFrame {
-        var a: CGFloat = 0, legs: CGFloat = 0, k: CGFloat = 0, stripes: CGFloat = 0
+        var frame = GlyphFrame()
+        var t: CGFloat = 0, k: CGFloat = 0, flow: CGFloat = 0
+        // Inner arches to draw: conveyor place and opacity.
+        var arches: [(p: CGFloat, opacity: CGFloat)] = []
+        // The stroke ⇄ first arch: how far it has opened, and its opacity (0: not drawn).
+        var opener: CGFloat = 0, openerOpacity: CGFloat = 1
+
         switch phase {
         case .off:
             break
         case .connecting:
-            a = Ease.mix(start.a, 1, Ease.sine(e / 0.6))
-            legs = Ease.mix(start.legs, 1, Ease.out((e - 0.42) / 0.35))
+            t = Ease.mix(start.a, 1, Ease.sine(e / Self.morphTime))
+            flow = CGFloat(max(0, e - Self.morphTime) / Self.step)
+            if flow == 0 {
+                // Still opening: the stroke becomes the first arch; the small one rises.
+                opener = t
+                openerOpacity = Ease.mix(1, 0.8, t)
+                arches.append((1, 0.55 * t))
+            } else {
+                openerOpacity = 0
+                for index in 0 ..< 3 {
+                    let p = (flow + CGFloat(2 - index)).truncatingRemainder(dividingBy: 3)
+                    arches.append((p, Ease.keys(p, [0, 1, 2, 2.6, 3], [0, 0.55, 0.8, 0.45, 0])))
+                }
+            }
         case .on:
-            a = 1
-            legs = 1
+            t = 1
             k = Ease.out(e / 0.35)
-            stripes = Ease.out((e - 0.12) / 0.55)
+            openerOpacity = 0
+            let r = start.flow - floor(start.flow)
+            let settle = Ease.out(e / 0.6)
+            let back = r + (1 - r) * settle
+            let middle = r + 1 + (1 - r) * settle
+            let front = r + 2 + (2 - r) * Ease.out(e / 0.75)
+            arches.append((back, Ease.keys(back, [0, 1], [0, 0.55])))
+            arches.append((middle, Ease.keys(middle, [1, 2], [0.55, 0.8])))
+            if front < 4 {
+                arches.append((front, front <= 3 ? Ease.keys(front, [2, 3], [0.8, 0.7]) : 0.6 * (4 - front)))
+            }
+            flow = 0
         case .disconnecting:
-            stripes = start.stripes * (1 - Ease.out(e / 0.25))
             k = start.k * (1 - Ease.out(e / 0.35))
-            legs = start.legs * (1 - Ease.inOut((e - 0.1) / 0.3))
-            a = start.a * (1 - Ease.sine((e - 0.25) / 0.5))
+            t = start.a * (1 - Ease.sine((e - 0.15) / Self.morphTime))
+            // The small arch goes back into the depth.
+            let small = 1 - Ease.out(e / 0.3)
+            arches.append((small, 0.55 * small * (start.k > 0 ? 1 : 0)))
+            // The first arch closes back into the stroke (fading in if it was not standing).
+            opener = t
+            openerOpacity = Ease.mix(1, 0.8, t) * (start.k > 0 ? 1 : Ease.out(e / 0.3))
+            if start.k == 0, start.flow > 0 {
+                let fade = 1 - Ease.out(e / 0.25)
+                for index in 0 ..< 3 {
+                    let p = (start.flow + CGFloat(2 - index)).truncatingRemainder(dividingBy: 3)
+                    arches.append((p, Ease.keys(p, [0, 1, 2, 2.6, 3], [0, 0.55, 0.8, 0.45, 0]) * fade))
+                }
+            }
         }
-        memo.a = a
-        memo.legs = legs
+        memo.a = t
         memo.k = k
-        memo.stripes = stripes
+        memo.flow = flow
 
         let color = ink.blended(green, k, traits)
-        var frame = GlyphFrame()
-        // The arc and its legs in one line, so there is no seam where they meet.
-        let centre = -90 + 180 * a, gap = 60 + 120 * a
-        let from = (centre + gap / 2) * .pi / 180, to = (centre - gap / 2 + 360) * .pi / 180
-        let p0 = CGPoint(x: 50 + 22 * cos(from), y: 52 + 22 * sin(from))
-        let p1 = CGPoint(x: 50 + 22 * cos(to), y: 52 + 22 * sin(to))
-        let body = CGMutablePath()
-        if legs > 0.001 {
-            body.move(to: CGPoint(x: p0.x, y: p0.y + 22 * legs))
-            body.addLine(to: p0)
-        } else {
-            body.move(to: p0)
+        frame.strokes.append(Stroke(path: Self.morph(Self.ringHalf, { Self.archHalf($0, 1) }, t), color: color, width: line))
+        if openerOpacity > 0 {
+            frame.strokes.append(Stroke(path: Self.morph(Self.stemHalf, { Self.archHalf($0, 0.7) }, opener), color: color,
+                                        width: Ease.mix(line, Self.width(0.7), opener), opacity: openerOpacity))
         }
-        body.addArc(center: CGPoint(x: 50, y: 52), radius: 22, startAngle: from, endAngle: to, clockwise: false)
-        if legs > 0.001 { body.addLine(to: CGPoint(x: p1.x, y: p1.y + 22 * legs)) }
-        frame.strokes.append(Stroke(path: body, color: color, width: line))
-
-        let stemFade = 1 - min(1, a * 1.4)
-        if stemFade > 0 {
-            frame.strokes.append(Stroke(path: Shape.line(50, 24 + 28 * a, 50, 50 + 24 * a), color: color, width: line, opacity: stemFade))
+        for item in arches where item.opacity > 0.001 {
+            let scale = Self.scale(item.p)
+            frame.strokes.append(Stroke(path: Shape.arch(scale: scale), color: color, width: Self.width(scale), opacity: item.opacity))
         }
-        // Lights of the tunnel, coming towards you, once the arch stands.
-        if phase == .connecting, e > 0.75 {
-            for index in 0 ..< 3 {
-                let q = CGFloat(((e - 0.75) / 0.95 + Double(index) / 3).truncatingRemainder(dividingBy: 1))
-                let scale = 0.12 + 0.82 * q
-                let appear = Ease.out((e - 0.75) / 0.3)
-                frame.strokes.append(Stroke(path: Shape.arch(scale: scale), color: ink, width: (3.2 * scale + 1) * 0.67, opacity: sin(.pi * q) * 0.75 * appear))
-            }
-        }
-        // The stripes: two smaller arches that come out of the depth and stay.
-        if stripes > 0 {
-            for index in 0 ..< Self.stripeScale.count {
-                let own: CGFloat
-                if phase == .on {
-                    own = Ease.out((e - 0.12 - 0.09 * Double(index)) / 0.5)
-                } else {
-                    own = stripes
-                }
-                guard own > 0 else { continue }
-                let scale = 0.12 + (Self.stripeScale[index] - 0.12) * own
-                frame.strokes.append(Stroke(path: Shape.arch(scale: scale), color: color, width: Self.stripeWidth[index], opacity: Self.stripeOpacity[index] * own))
-            }
-        }
-        // One echo round the arch when it turns green.
-        if phase == .on, e < 0.7 {
-            let q = CGFloat(e / 0.7)
-            frame.strokes.append(Stroke(path: Shape.arch(scale: 1 + 0.3 * Ease.out(e / 0.7)), color: green, width: 2, opacity: 0.6 * (1 - q)))
-        }
-        if light, stripes > 0 {
-            frame.glows.append(Glow(center: CGPoint(x: 50, y: 63), radius: 15, color: green, opacity: 0.38 * stripes))
+        if light, k > 0 {
+            frame.glows.append(Glow(center: CGPoint(x: 50, y: 63), radius: 15, color: green, opacity: 0.38 * k))
         }
         return frame
     }

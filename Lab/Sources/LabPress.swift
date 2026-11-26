@@ -125,7 +125,7 @@ class LabTapControl: UIControl {
         let shade = CAGradientLayer()
         shade.type = .radial
         // The wave's spot is deeper, so the press is plainly seen.
-        shade.colors = spotColors(style == .wave ? 0.11 : 0.07)
+        shade.colors = spotColors(style == .wave ? 0.09 : 0.07)
         shade.locations = [0, 0.55, 1]
         shade.startPoint = CGPoint(x: 0.5, y: 0.5)
         shade.endPoint = CGPoint(x: 1, y: 1)
@@ -166,7 +166,7 @@ class LabTapControl: UIControl {
         ghost.startPoint = shade.startPoint
         ghost.endPoint = shade.endPoint
         let from = shade.presentation()?.position ?? shade.position
-        let opacity = (shade.presentation()?.opacity ?? shade.opacity) * 0.55
+        let opacity = (shade.presentation()?.opacity ?? shade.opacity) * 0.45
         CATransaction.begin()
         CATransaction.setDisableActions(true)
         ghost.bounds = shade.bounds
@@ -279,9 +279,9 @@ class LabTapControl: UIControl {
                 grow.toValue = max(scale, shadeReach * 1.05)
                 grow.timingFunction = CAMediaTimingFunction(controlPoints: 0.15, 0.55, 0.3, 1)
                 let hollow = CAKeyframeAnimation(keyPath: "colors")
-                let first: [Any] = shade.colors ?? (spotColors(0.11) as [Any])
-                let middle: [Any] = [ink.withAlphaComponent(0.07).cgColor, ink.withAlphaComponent(0.13).cgColor, ink.withAlphaComponent(0).cgColor]
-                let last: [Any] = [ink.withAlphaComponent(0).cgColor, ink.withAlphaComponent(0.12).cgColor, ink.withAlphaComponent(0).cgColor]
+                let first: [Any] = shade.colors ?? (spotColors(0.09) as [Any])
+                let middle: [Any] = [ink.withAlphaComponent(0.055).cgColor, ink.withAlphaComponent(0.105).cgColor, ink.withAlphaComponent(0).cgColor]
+                let last: [Any] = [ink.withAlphaComponent(0).cgColor, ink.withAlphaComponent(0.095).cgColor, ink.withAlphaComponent(0).cgColor]
                 hollow.values = [first, middle, last]
                 hollow.keyTimes = [0, 0.3, 1]
                 let place = CABasicAnimation(keyPath: "locations")

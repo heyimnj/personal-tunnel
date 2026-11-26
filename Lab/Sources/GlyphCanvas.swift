@@ -42,6 +42,7 @@ struct GlyphMemo {
     var width: CGFloat = 0
     var light: CGFloat = 0
     var stripes: CGFloat = 0
+    var flow: CGFloat = 0
     var comet: CGFloat = -60
     var cometOpacity: CGFloat = 0
 }
