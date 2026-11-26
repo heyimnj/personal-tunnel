@@ -135,6 +135,11 @@ final class MinimalHomeViewController: UIViewController, UIScrollViewDelegate, U
     /// A programmatic page change is running its spring.
     private var animatingPage = false
     private var hideDots: DispatchWorkItem?
+    /// 3.6.14 beta 1 (the owner): hold beside the dots and slide up or down to change
+    /// page; a dim vertical pill shows under them while held.
+    private let dotPill = UIView()
+    private lazy var scrubGate = DotScrubGate(owner: self)
+    private var scrubbing = false
 
     /// 3.5: the owner's own colours behind both pages (`Wallpaper`).
     private var wallpaper: UIImageView?
@@ -193,6 +198,16 @@ final class MinimalHomeViewController: UIViewController, UIScrollViewDelegate, U
             dotControls.append(control)
         }
         updateDots()
+        dotPill.isUserInteractionEnabled = false
+        dotPill.alpha = 0
+        dotPill.backgroundColor = UIColor.label.withAlphaComponent(0.1)
+        dotPill.layer.cornerCurve = .continuous
+        if let first = dotControls.first { view.insertSubview(dotPill, belowSubview: first) }
+        let scrub = UILongPressGestureRecognizer(target: self, action: #selector(scrubbed(_:)))
+        scrub.minimumPressDuration = 0.3
+        scrub.allowableMovement = 12
+        scrub.delegate = scrubGate
+        view.addGestureRecognizer(scrub)
         Prefs.appearanceChanged.observe(self) { [weak self] in
             guard let self else { return }
             Wallpaper.apply(to: self.view, holder: &self.wallpaper)
@@ -306,6 +321,59 @@ final class MinimalHomeViewController: UIViewController, UIScrollViewDelegate, U
             control.frame = CGRect(x: view.bounds.width - 22, y: y, width: 22, height: 22)
             control.subviews.first?.frame = CGRect(x: 8, y: 8, width: 6, height: 6)
         }
+        // The pill under both dots: 18 pt wide, 18 pt beyond each dot's centre.
+        if let top = dotControls.first, let bottom = dotControls.last {
+            let pill = CGRect(x: top.frame.midX - 9, y: top.frame.midY - 18, width: 18, height: bottom.frame.midY - top.frame.midY + 36)
+            if dotPill.frame != pill {
+                dotPill.transform = .identity
+                dotPill.frame = pill
+                dotPill.layer.cornerRadius = 9
+            }
+        }
+    }
+
+    // MARK: 3.6.14 beta 1 — the dots as a scrubber
+
+    /// Where a hold starts the scrubber: a strip at the screen's edge round the dots,
+    /// on Home and the analytics page (not deeper), with nothing presented.
+    fileprivate func acceptsScrub(at point: CGPoint) -> Bool {
+        guard presentedViewController == nil, dotControls.first?.isHidden == false else { return false }
+        let zone = CGRect(x: view.bounds.width - 44, y: dotPill.frame.minY - 24, width: 44, height: dotPill.frame.height + 48)
+        return zone.contains(point)
+    }
+
+    @objc private func scrubbed(_ gesture: UILongPressGestureRecognizer) {
+        let reduce = UIAccessibility.isReduceMotionEnabled
+        switch gesture.state {
+        case .began:
+            scrubbing = true
+            showDots()
+            dotPill.transform = CGAffineTransform(scaleX: 0.7, y: 0.85)
+            UIView.animate(withDuration: reduce ? 0 : 0.2, delay: 0, options: [.curveEaseOut, .beginFromCurrentState, .allowUserInteraction]) {
+                self.dotPill.alpha = 1
+                self.dotPill.transform = .identity
+            }
+            scrub(to: gesture.location(in: view).y)
+        case .changed:
+            scrub(to: gesture.location(in: view).y)
+        default:
+            scrubbing = false
+            UIView.animate(withDuration: reduce ? 0 : 0.25, delay: 0, options: [.curveEaseOut, .beginFromCurrentState]) {
+                self.dotPill.alpha = 0
+            }
+            scheduleHideDots()
+        }
+    }
+
+    /// Above the pill's middle: Home; below: analytics — with a few points of
+    /// hysteresis, so a finger resting on the middle does not flicker the page.
+    private func scrub(to y: CGFloat) {
+        let middle = dotPill.frame.midY
+        var target = page
+        if page != 0, y < middle - 6 { target = 0 }
+        if page != 1, y > middle + 6 { target = 1 }
+        guard target != page else { return }
+        go(to: target, animated: true)
     }
 
     /// Shows the dots at once when a page change starts.
@@ -323,7 +391,7 @@ final class MinimalHomeViewController: UIViewController, UIScrollViewDelegate, U
     private func scheduleHideDots() {
         hideDots?.cancel()
         let work = DispatchWorkItem { [weak self] in
-            guard let self, !self.pageMoving else { return }
+            guard let self, !self.pageMoving, !self.scrubbing else { return }
             for control in self.dotControls { control.isUserInteractionEnabled = false }
             UIView.animate(withDuration: UIAccessibility.isReduceMotionEnabled ? 0 : 0.14, delay: 0, options: [.curveEaseOut, .beginFromCurrentState]) {
                 for control in self.dotControls { control.alpha = 0 }
@@ -577,6 +645,18 @@ final class MinimalHomeViewController: UIViewController, UIScrollViewDelegate, U
         pager.isScrollEnabled = isRoot
         navigationController.setNavigationBarHidden(isRoot, animated: animated)
         for control in dotControls { control.isHidden = !isRoot }
+    }
+}
+
+/// Lets the dots' scrubber see only touches that start beside the dots; it does
+/// not share them with other gestures (a scroll does not run under it).
+private final class DotScrubGate: NSObject, UIGestureRecognizerDelegate {
+    weak var owner: MinimalHomeViewController?
+    init(owner: MinimalHomeViewController) { self.owner = owner }
+
+    func gestureRecognizer(_: UIGestureRecognizer, shouldReceive touch: UITouch) -> Bool {
+        guard let owner, let view = owner.viewIfLoaded else { return false }
+        return owner.acceptsScrub(at: touch.location(in: view))
     }
 }
 
