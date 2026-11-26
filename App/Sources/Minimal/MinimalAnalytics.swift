@@ -871,6 +871,12 @@ final class MinimalAnalyticsViewController: UIViewController, UIGestureRecognize
         trafficNote.textAlignment = .center
         trafficNote.adjustsFontSizeToFitWidth = true
         trafficNote.minimumScaleFactor = 0.8
+        // 3.6.9 (the owner: «Session traffic» was cut off): the tile grew by the note's
+        // line and squeezed the title; the texts keep their height, the tile grows.
+        for label in [trafficTitle, trafficNote, downTotal, upTotal] {
+            label.setContentCompressionResistancePriority(.required, for: .vertical)
+            label.setContentHuggingPriority(.required, for: .vertical)
+        }
         // The note keeps its line while connected too (a space), so the tile's
         // height does not change when the VPN goes on or off.
         for item in [trafficTitle, trafficRing, tileLegend, trafficNote] as [UIView] { traffic.stack.addArrangedSubview(item) }
