@@ -105,6 +105,9 @@ final class TunnelGlyph: UIView {
     /// (foot, top, foot) fades into it as the arch closes, and back.
     private let ringRunner = CAShapeLayer()
     private var runnerShown = Spring(0, omega: 10)
+    /// 3.6.18 (the owner: «as in 3.5.x»): going down, the stroke «|» is yellow the
+    /// whole time; it turns back to the mark's colour once the tunnel is off.
+    private var stemYellow = Spring(0, omega: 10)
     /// When the stretches started running: all of them run in step.
     private var runStart: CFTimeInterval?
     private var archLayers: [CAShapeLayer] = []
@@ -180,6 +183,7 @@ final class TunnelGlyph: UIView {
         setTint(for: next, snap: still || !tintSet)
         tintSet = true
         runnerShown.target = (next == .connecting || next == .stopping) && !UIAccessibility.isReduceMotionEnabled ? 1 : 0
+        stemYellow.target = next == .stopping ? 1 : 0
         if still { snapAll() }
         updatePulse()
         render()
@@ -251,6 +255,7 @@ final class TunnelGlyph: UIView {
     private func snapAll() {
         opening.snap()
         runnerShown.snap()
+        stemYellow.snap()
         for index in tint.indices { tint[index].snap() }
         switch mode {
         case .idle:
@@ -292,7 +297,7 @@ final class TunnelGlyph: UIView {
 
     private var moving: Bool {
         if mode == .conveyor, !still { return true }
-        if !opening.settled || !runnerShown.settled || tint.contains(where: { !$0.settled }) { return true }
+        if !opening.settled || !runnerShown.settled || !stemYellow.settled || tint.contains(where: { !$0.settled }) { return true }
         return lights.contains { !$0.p.settled || !$0.alive.settled || $0.running }
     }
 
@@ -321,6 +326,7 @@ final class TunnelGlyph: UIView {
     private func advance(_ dt: CGFloat) {
         opening.step(dt)
         runnerShown.step(dt)
+        stemYellow.step(dt)
         for index in tint.indices { tint[index].step(dt) }
         for index in lights.indices {
             if lights[index].running {
@@ -388,7 +394,16 @@ final class TunnelGlyph: UIView {
         stem.isHidden = stroke <= 0
         stem.path = Self.segment(50, 24 + 28 * t, 50, 50 + 24 * t).copy(using: &transform)
         stem.lineWidth = Self.line * unit
-        stem.strokeColor = colour
+        let warm = max(0, min(1, stemYellow.x))
+        if warm > 0.001 {
+            var y = (r: CGFloat(0), g: CGFloat(0), b: CGFloat(0), a: CGFloat(0))
+            UIColor.systemYellow.resolvedColor(with: traitCollection).getRed(&y.r, green: &y.g, blue: &y.b, alpha: &y.a)
+            let mix = { (from: CGFloat, to: CGFloat) in from + (to - from) * warm }
+            stem.strokeColor = UIColor(red: mix(tint[0].x, y.r), green: mix(tint[1].x, y.g), blue: mix(tint[2].x, y.b),
+                                       alpha: mix(max(0, min(1, tint[3].x)), y.a)).cgColor
+        } else {
+            stem.strokeColor = colour
+        }
         stem.opacity = Float(stroke)
         for (index, arch) in archLayers.enumerated() {
             guard index < lights.count else { arch.isHidden = true; continue }
