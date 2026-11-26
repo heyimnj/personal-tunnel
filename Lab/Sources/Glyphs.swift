@@ -76,12 +76,12 @@ struct CurrentGlyph: GlyphStyle {
 
 /// The power mark becomes the logo's arch. Each half of the ring flows into its
 /// half of the arch point by point (equal steps along both lines), so the shape
-/// stays even and mirrored all the way; the stroke opens the same way into the
-/// first inner arch. While connecting, inner arches come out of the depth one
-/// after another (a conveyor). Connected: the front one runs out past the arch
-/// as an echo and turns green with it, the second takes its place, a new one
-/// comes from the middle. Stopping: the reverse — the small arch goes back into
-/// the depth, the first one closes back into the stroke, the arch into the ring.
+/// stays even and mirrored all the way; the stroke falls in under it and is
+/// gone. While connecting, inner arches come out of the depth one after another
+/// (a conveyor). Connected: the front one runs out past the arch as an echo and
+/// turns green with it, the second takes its place, a new one comes from the
+/// middle. Stopping: the arches go back into the depth, the arch closes into the
+/// ring and the stroke comes back up.
 struct TunnelGlyph: GlyphStyle {
     /// A soft green light deep inside, once connected.
     let light: Bool
@@ -91,7 +91,7 @@ struct TunnelGlyph: GlyphStyle {
     var note: String {
         light
             ? "То же, что «Тоннель», и в глубине арки мягкий зелёный свет."
-            : "Кольцо ровно перетекает в арку; палочка едет вниз, ложится и выгибается в первую внутреннюю арку. Подключено — передняя арка уходит эхом."
+            : "Кольцо ровно перетекает в арку, палочка падает внутрь и исчезает, из глубины по одной выходят арки. Подключено — передняя уходит эхом, остальные встают на место."
     }
 
     private static let samples = 40
@@ -115,40 +115,20 @@ struct TunnelGlyph: GlyphStyle {
         return CGPoint(x: 50 - r, y: cy + (d - arc))
     }
 
-    /// The stroke becomes the first inner arch as one stick, never split (owner,
-    /// PT Lab 1.4): it goes down, tilting until it lies flat, then bends up into
-    /// the arch point by point — the whole arch from one leg's foot over the top to
-    /// the other's maps along the stick. `o` 0 … 1.
-    private static let openerTime: Double = 0.85
+    /// The inner lights start running this long into connecting.
+    private static let lightsStart: Double = 0.35
 
-    private static func opener(_ o: CGFloat) -> CGPath {
-        let cx: CGFloat = 50, cy: CGFloat = 63 - 11 * 0.7, r: CGFloat = 22 * 0.7, leg: CGFloat = 22 * 0.7
-        let fall = Ease.sine(Double(o / 0.5))
-        let bend = Ease.sine(Double((o - 0.45) / 0.55))
-        let centreY = 37 + (cy + 8 - 37) * fall
-        let tilt = CGFloat.pi / 2 * (1 - fall)
-        let half = 13 + (r - 13) * fall
-        let arc = CGFloat.pi * r
-        let length = 2 * leg + arc
-        let path = CGMutablePath()
-        for index in 0 ... samples * 2 {
-            let u = CGFloat(index) / CGFloat(samples * 2)
-            let along = (u - 0.5) * 2
-            let stick = CGPoint(x: cx + cos(tilt) * half * along, y: centreY + sin(tilt) * half * along)
-            let d = u * length
-            let target: CGPoint
-            if d <= leg {
-                target = CGPoint(x: cx - r, y: cy + leg - d)
-            } else if d <= leg + arc {
-                let angle = CGFloat.pi + (d - leg) / r
-                target = CGPoint(x: cx + r * cos(angle), y: cy + r * sin(angle))
-            } else {
-                target = CGPoint(x: cx + r, y: cy + (d - leg - arc))
-            }
-            let point = CGPoint(x: stick.x + (target.x - stick.x) * bend, y: stick.y + (target.y - stick.y) * bend)
-            if index == 0 { path.move(to: point) } else { path.addLine(to: point) }
+    /// Conveyor places of the three lights `flow` steps in: each comes out of the
+    /// depth in turn (none is shown before its time), then runs round.
+    private static func places(_ flow: CGFloat) -> [CGFloat] {
+        (0 ..< 3).compactMap { index in
+            let p = flow - CGFloat(index)
+            return p < 0 ? nil : p.truncatingRemainder(dividingBy: 3)
         }
-        return path
+    }
+
+    private static func lightOpacity(_ p: CGFloat) -> CGFloat {
+        Ease.keys(p, [0, 1, 2, 2.6, 3], [0, 0.55, 0.8, 0.45, 0])
     }
 
     /// Both halves, each `t` of the way from `from` to `to`.
@@ -180,31 +160,19 @@ struct TunnelGlyph: GlyphStyle {
         var t: CGFloat = 0, k: CGFloat = 0, flow: CGFloat = 0
         // Inner arches to draw: conveyor place and opacity.
         var arches: [(p: CGFloat, opacity: CGFloat)] = []
-        // The stroke ⇄ first arch: how far it has opened, and its opacity (0: not drawn).
-        var opener: CGFloat = 0, openerOpacity: CGFloat = 1
 
         switch phase {
         case .off:
             break
         case .connecting:
             t = Ease.mix(start.a, 1, Ease.sine(e / Self.morphTime))
-            flow = CGFloat(max(0, e - Self.openerTime) / Self.step)
-            if flow == 0 {
-                // Still opening: the stroke becomes the first arch; the small one rises.
-                opener = Ease.mix(start.light, 1, Ease.clamp(e / Self.openerTime))
-                openerOpacity = Ease.mix(1, 0.8, opener)
-                arches.append((1, 0.55 * opener))
-            } else {
-                openerOpacity = 0
-                for index in 0 ..< 3 {
-                    let p = (flow + CGFloat(2 - index)).truncatingRemainder(dividingBy: 3)
-                    arches.append((p, Ease.keys(p, [0, 1, 2, 2.6, 3], [0, 0.55, 0.8, 0.45, 0])))
-                }
-            }
+            flow = CGFloat(max(0, e - Self.lightsStart) / Self.step)
+            arches = Self.places(flow).map { (p: $0, opacity: Self.lightOpacity($0)) }
         case .on:
             t = 1
             k = Ease.out(e / 0.35)
-            openerOpacity = 0
+            // The front light runs out past the arch as an echo; the second takes the
+            // first place, the third the second (out of the depth if it was there).
             let r = start.flow - floor(start.flow)
             let settle = Ease.out(e / 0.6)
             let back = r + (1 - r) * settle
@@ -215,48 +183,28 @@ struct TunnelGlyph: GlyphStyle {
             if front < 4 {
                 arches.append((front, front <= 3 ? Ease.keys(front, [2, 3], [0.8, 0.7]) : 0.6 * (4 - front)))
             }
-            flow = 0
         case .disconnecting:
             k = start.k * (1 - Ease.out(e / 0.35))
             t = start.a * (1 - Ease.sine((e - 0.15) / Self.morphTime))
-            // The small arch goes back into the depth.
-            let small = 1 - Ease.out(e / 0.3)
-            arches.append((small, 0.55 * small * (start.k > 0 ? 1 : start.light)))
-            // The first arch closes back into the stroke.
-            if start.k == 0, start.flow > 0 {
-                // Stopped while the lights ran: the light nearest the first arch's
-                // place goes there (0.2 s) and closes into the stroke; the rest fade.
-                let fade = 1 - Ease.out(e / 0.25)
-                let places = (0 ..< 3).map { (start.flow + CGFloat(2 - $0)).truncatingRemainder(dividingBy: 3) }
-                let nearest = places.indices.min { abs(places[$0] - 2) < abs(places[$1] - 2) } ?? 0
-                for (index, p) in places.enumerated() where index != nearest {
-                    arches.append((p, Ease.keys(p, [0, 1, 2, 2.6, 3], [0, 0.55, 0.8, 0.45, 0]) * fade))
-                }
-                let p = places[nearest]
-                let settle = Ease.out(e / 0.2)
-                if e < 0.2 {
-                    let shown = Ease.keys(p, [0, 1, 2, 2.6, 3], [0, 0.55, 0.8, 0.45, 0])
-                    arches.append((Ease.mix(p, 2, settle), Ease.mix(shown, 0.8, settle)))
-                    openerOpacity = 0
-                } else {
-                    opener = 1 - Ease.clamp((e - 0.2) / 0.6)
-                    openerOpacity = Ease.mix(1, 0.8, opener)
-                }
+            let fade = 1 - Ease.out(e / 0.35)
+            if start.k > 0 {
+                // The two arches go back into the depth.
+                arches.append((1 * fade, 0.55 * fade))
+                arches.append((2 * fade, 0.8 * fade))
             } else {
-                opener = (start.k > 0 ? 1 : start.light) * (1 - Ease.clamp((e - 0.05) / 0.7))
-                openerOpacity = Ease.mix(1, 0.8, opener)
+                arches = Self.places(start.flow).map { (p: $0, opacity: Self.lightOpacity($0) * fade) }
             }
         }
         memo.a = t
         memo.k = k
         memo.flow = flow
-        memo.light = phase == .on ? 1 : opener
 
         let color = ink.blended(green, k, traits)
         frame.strokes.append(Stroke(path: Self.morph(Self.ringHalf, { Self.archHalf($0, 1) }, t), color: color, width: line))
-        if openerOpacity > 0 {
-            frame.strokes.append(Stroke(path: Self.opener(opener), color: color,
-                                        width: Ease.mix(line, Self.width(0.7), opener), opacity: openerOpacity))
+        // The stroke falls in under the arch and is gone (back up when stopping).
+        let stroke = 1 - min(1, t * 1.4)
+        if stroke > 0 {
+            frame.strokes.append(Stroke(path: Shape.line(50, 24 + 28 * t, 50, 50 + 24 * t), color: color, width: line, opacity: stroke))
         }
         for item in arches where item.opacity > 0.001 {
             let scale = Self.scale(item.p)
