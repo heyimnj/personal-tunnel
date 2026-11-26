@@ -396,15 +396,23 @@ class TapControl: UIControl {
         return super.beginTracking(touch, with: event)
     }
 
+    /// 3.6.4: the finger slid off the plate — the press is called off now, the
+    /// spot draws back at once rather than when the finger lifts.
+    override func continueTracking(_ touch: UITouch, with event: UIEvent?) -> Bool {
+        let going = super.continueTracking(touch, with: event)
+        if ripple, shade != nil, !isTouchInside { fadeShade(.retract) }
+        return going
+    }
+
     override func endTracking(_ touch: UITouch?, with event: UIEvent?) {
         let inside = isTouchInside
         super.endTracking(touch, with: event)
-        fadeShade(spreading: inside)
+        fadeShade(inside ? .spread : .retract)
     }
 
     override func cancelTracking(with event: UIEvent?) {
         super.cancelTracking(with: event)
-        fadeShade()
+        fadeShade(.retract)
     }
 
     override func layoutSubviews() {
@@ -469,18 +477,50 @@ class TapControl: UIControl {
     /// The scale at which the spot covers the whole plate (set by `spread`).
     private var shadeReach: CGFloat = 1
 
+    /// How a press lets its spot go.
+    private enum ShadeEnd {
+        /// Let go on the plate: the spot runs out over all of it.
+        case spread
+        /// 3.6.4 (the owner): the press was called off — the finger slid off the
+        /// plate or a scroll took it. The spot draws back into itself, not just fades.
+        case retract
+        /// A new press began on top of the old spot.
+        case fade
+    }
+
     /// The press ended. 3.6.2 (the owner: the accent is on the spot now): let go
-    /// on the plate, the spot runs out over all of it — at the speed it grew, the
-    /// same soft round shape — a touch deeper as it goes, then fades. A press
-    /// taken by a scroll (or let go off the plate) only fades.
-    private func fadeShade(spreading: Bool = false) {
+    /// on the plate, the spot runs out over all of it — the same soft round shape —
+    /// a touch deeper as it goes, then fades.
+    private func fadeShade(_ end: ShadeEnd = .fade) {
         guard let shade else { return }
         self.shade = nil
         let current = shade.presentation()?.opacity ?? shade.opacity
         let scale = (shade.presentation()?.value(forKeyPath: "transform.scale") as? CGFloat) ?? 1
         CATransaction.begin()
         CATransaction.setCompletionBlock { shade.removeFromSuperlayer() }
-        guard spreading, !UIAccessibility.isReduceMotionEnabled else {
+        if end == .retract, !UIAccessibility.isReduceMotionEnabled {
+            // 3.6.4: called off — the spot gathers back towards the point it came
+            // from (the reverse of its growth, quicker) and is gone, a little paler
+            // at once so it reads as «not this time».
+            let duration = 0.3
+            let shrink = CABasicAnimation(keyPath: "transform.scale")
+            shrink.fromValue = scale
+            shrink.toValue = scale * 0.25
+            shrink.timingFunction = CAMediaTimingFunction(controlPoints: 0.5, 0, 0.75, 0.4)
+            let fade = CAKeyframeAnimation(keyPath: "opacity")
+            fade.values = [current, current * 0.7, 0]
+            fade.keyTimes = [0, 0.3, 1]
+            let group = CAAnimationGroup()
+            group.animations = [shrink, fade]
+            group.duration = duration
+            group.fillMode = .forwards
+            group.isRemovedOnCompletion = false
+            shade.removeAnimation(forKey: "spread")
+            shade.add(group, forKey: "retract")
+            CATransaction.commit()
+            return
+        }
+        guard end == .spread, !UIAccessibility.isReduceMotionEnabled else {
             let fade = CABasicAnimation(keyPath: "opacity")
             fade.fromValue = current
             fade.toValue = 0
@@ -492,23 +532,29 @@ class TapControl: UIControl {
             return
         }
         // 3.6.3 (the owner): 0.85 s was not seen — the next sheet opened over it.
-        // Now most of the plate is covered in the first fifth of a second.
-        let duration = 0.4
+        // 3.6.4 (the owner: the style is right, but 0.4 s is still too slow to be
+        // seen): the spot covers the plate in 0.18 s (most of it in the first
+        // tenth), stays full a moment, then fades; a little deeper than before.
+        let duration = 0.48
+        let reach = 0.18
         let grow = CABasicAnimation(keyPath: "transform.scale")
         grow.fromValue = scale
         grow.toValue = max(scale, shadeReach)
-        grow.timingFunction = CAMediaTimingFunction(controlPoints: 0.1, 0.8, 0.25, 1)
+        grow.duration = reach
+        grow.fillMode = .forwards
+        grow.timingFunction = CAMediaTimingFunction(controlPoints: 0.05, 0.9, 0.2, 1)
         // Deeper while it runs out (the ring's weight moves to the spot), then gone.
         let ink = UIColor.label.resolvedColor(with: traitCollection)
         let deepen = CABasicAnimation(keyPath: "colors")
         deepen.fromValue = shade.colors
-        deepen.toValue = [ink.withAlphaComponent(0.11).cgColor, ink.withAlphaComponent(0.075).cgColor, ink.withAlphaComponent(0).cgColor]
-        deepen.duration = duration * 0.35
+        deepen.toValue = [ink.withAlphaComponent(0.14).cgColor, ink.withAlphaComponent(0.1).cgColor, ink.withAlphaComponent(0).cgColor]
+        deepen.duration = reach * 0.6
         deepen.autoreverses = false
         deepen.fillMode = .forwards
         let fade = CAKeyframeAnimation(keyPath: "opacity")
-        fade.values = [current, 1, 0.8, 0]
-        fade.keyTimes = [0, 0.12, 0.55, 1]
+        fade.values = [current, 1, 1, 0]
+        fade.keyTimes = [0, 0.08, 0.45, 1]
+        fade.timingFunctions = [CAMediaTimingFunction(name: .easeOut), CAMediaTimingFunction(name: .linear), CAMediaTimingFunction(name: .easeIn)]
         let group = CAAnimationGroup()
         group.animations = [grow, deepen, fade]
         group.duration = duration

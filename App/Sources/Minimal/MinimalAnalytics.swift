@@ -1475,41 +1475,20 @@ final class MinimalAnalyticsViewController: UIViewController, UIGestureRecognize
 /// card per connection — a dot (green while open), where it goes, through which
 /// server, and the bytes each way. Live: the core sends the list only while
 /// this sheet is open (`CoreClient.listsConnections`).
-final class ConnectionsViewController: UIViewController, UITableViewDataSource {
-    /// nil: both kinds (3.5.2: the columns open the list with a switch on top).
-    private var udp: Bool?
+///
+/// 3.6.4 (the owner): «Все», TCP and UDP are real pages side by side. The page
+/// follows the finger, can be held half way and looked at, and on release goes
+/// on or comes back (as Home ↔ analytics and Settings' way back); every page is
+/// filled all the time, so the next one shows its connections while it slides in.
+/// In 3.6 a swipe gesture switched the kind and only then slid the new list in.
+final class ConnectionsViewController: UIViewController, UIPageViewControllerDataSource, UIPageViewControllerDelegate {
     private let switchable: Bool
+    private let pages: [ConnectionsPage]
+    /// The page shown (settled).
+    private var index = 0
     private weak var kinds: UISegmentedControl?
-
-    /// A swipe left: the next of «Все», TCP, UDP; right: the one before.
-    @objc private func swiped(_ gesture: UISwipeGestureRecognizer) {
-        guard let kinds else { return }
-        let step = gesture.direction == .left ? 1 : -1
-        let next = kinds.selectedSegmentIndex + step
-        guard next >= 0, next < kinds.numberOfSegments else { return }
-        Haptics.selection()
-        kinds.selectedSegmentIndex = next
-        choose(next, from: gesture.direction)
-    }
-
-    /// Shows «Все», TCP or UDP; from a swipe, the list slides in from that side.
-    private func choose(_ index: Int, from direction: UISwipeGestureRecognizer.Direction?) {
-        let choices: [Bool?] = [nil, false, true]
-        udp = choices[max(0, min(2, index))]
-        items = []
-        table.reloadData()
-        show(App.shared.core.connections.value)
-        guard let direction else { return }
-        let transition = CATransition()
-        transition.type = .push
-        transition.subtype = direction == .left ? .fromRight : .fromLeft
-        transition.duration = 0.25
-        transition.timingFunction = CAMediaTimingFunction(name: .easeOut)
-        table.layer.add(transition, forKey: "kind")
-    }
-    private let table = UITableView(frame: .zero, style: .plain)
-    private let empty = UILabel(L("Данные соединений пока недоступны"), font: Theme.font(.body), color: .secondaryLabel, lines: 0)
-    private var items: [CoreConnection] = []
+    private var pager: UIPageViewController?
+    private var offsetWatch: NSKeyValueObservation?
 
     /// `udp` nil: every open connection, with «Все / TCP / UDP» to narrow it.
     static func wrapped(udp: Bool?) -> UIViewController {
@@ -1519,8 +1498,9 @@ final class ConnectionsViewController: UIViewController, UITableViewDataSource {
     }
 
     init(udp: Bool?) {
-        self.udp = udp
         switchable = udp == nil
+        let kinds: [Bool?] = udp == nil ? [nil, false, true] : [udp]
+        pages = kinds.map { ConnectionsPage(udp: $0) }
         super.init(nibName: nil, bundle: nil)
         title = udp.map { $0 ? "UDP" : "TCP" } ?? L("Соединения")
     }
@@ -1533,25 +1513,133 @@ final class ConnectionsViewController: UIViewController, UITableViewDataSource {
         view.backgroundColor = Theme.background
         navigationItem.largeTitleDisplayMode = .never
         navigationItem.rightBarButtonItem = UIBarButtonItem(title: L("Готово"), primaryAction: UIAction { [weak self] _ in self?.dismiss(animated: true) })
+        pages.forEach { $0.loadViewIfNeeded() }
         if switchable {
             let kinds = UISegmentedControl(items: [L("Все"), "TCP", "UDP"])
             kinds.selectedSegmentIndex = 0
             kinds.addAction(UIAction { [weak self, weak kinds] _ in
                 guard let self, let kinds else { return }
-                self.choose(kinds.selectedSegmentIndex, from: nil)
+                self.go(to: kinds.selectedSegmentIndex)
             }, for: .valueChanged)
-            self.kinds = kinds
-            // 3.6 (the owner): a swipe left or right moves between «Все», TCP and UDP.
-            for direction in [UISwipeGestureRecognizer.Direction.left, .right] {
-                let swipe = UISwipeGestureRecognizer(target: self, action: #selector(swiped(_:)))
-                swipe.direction = direction
-                view.addGestureRecognizer(swipe)
-            }
             // 3.5.27 (the owner): three equal parts — «Все» was narrower than TCP and UDP.
             kinds.apportionsSegmentWidthsByContent = false
             for index in 0 ..< kinds.numberOfSegments { kinds.setWidth(72, forSegmentAt: index) }
             navigationItem.titleView = kinds
+            self.kinds = kinds
+            let pager = UIPageViewController(transitionStyle: .scroll, navigationOrientation: .horizontal, options: [.interPageSpacing: 0])
+            pager.dataSource = self
+            pager.delegate = self
+            pager.setViewControllers([pages[0]], direction: .forward, animated: false)
+            embed(pager)
+            self.pager = pager
+            // The segment follows the page past half way, as the finger moves.
+            if let scroll = pager.view.subviews.compactMap({ $0 as? UIScrollView }).first {
+                offsetWatch = scroll.observe(\.contentOffset, options: [.new]) { [weak self] scroll, _ in
+                    self?.follow(scroll)
+                }
+            }
+        } else {
+            embed(pages[0])
         }
+        setContentScrollView(pages[index].table, for: .top)
+        App.shared.core.connections.observe(self) { [weak self] connections in
+            self?.pages.forEach { $0.show(connections) }
+        }
+    }
+
+    override func viewWillAppear(_ animated: Bool) {
+        super.viewWillAppear(animated)
+        App.shared.core.listsConnections = true
+        let connections = App.shared.core.connections.value
+        pages.forEach { $0.show(connections) }
+    }
+
+    override func viewDidDisappear(_ animated: Bool) {
+        super.viewDidDisappear(animated)
+        App.shared.core.listsConnections = false
+    }
+
+    private func embed(_ child: UIViewController) {
+        addChild(child)
+        view.addSubview(child.view)
+        child.view.pin(to: view)
+        child.didMove(toParent: self)
+    }
+
+    /// A tap on «Все», TCP or UDP: the pages slide there.
+    private func go(to target: Int) {
+        guard let pager, pages.indices.contains(target), target != index else { return }
+        let direction: UIPageViewController.NavigationDirection = target > index ? .forward : .reverse
+        index = target
+        settled()
+        pager.view.isUserInteractionEnabled = false
+        let page = pages[target]
+        pager.setViewControllers([page], direction: direction, animated: true) { [weak self, weak pager] _ in
+            pager?.view.isUserInteractionEnabled = true
+            // UIPageViewController keeps stale neighbours after an animated set;
+            // setting it again without animation refreshes them.
+            DispatchQueue.main.async {
+                guard let self, self.index == target else { return }
+                pager?.setViewControllers([page], direction: direction, animated: false)
+            }
+        }
+    }
+
+    /// While the finger (or the page let go) moves: past half way the segment
+    /// already names the page coming in, and back again if it returns.
+    private func follow(_ scroll: UIScrollView) {
+        guard let kinds, scroll.isTracking || scroll.isDragging || scroll.isDecelerating else { return }
+        let width = scroll.bounds.width
+        guard width > 0 else { return }
+        let shift = (scroll.contentOffset.x - width) / width
+        let shown = max(0, min(pages.count - 1, index + (shift > 0.5 ? 1 : shift < -0.5 ? -1 : 0)))
+        if kinds.selectedSegmentIndex != shown { kinds.selectedSegmentIndex = shown }
+    }
+
+    private func settled() {
+        if kinds?.selectedSegmentIndex != index { kinds?.selectedSegmentIndex = index }
+        setContentScrollView(pages[index].table, for: .top)
+    }
+
+    func pageViewController(_: UIPageViewController, viewControllerBefore viewController: UIViewController) -> UIViewController? {
+        guard let at = pages.firstIndex(where: { $0 === viewController }), at > 0 else { return nil }
+        return pages[at - 1]
+    }
+
+    func pageViewController(_: UIPageViewController, viewControllerAfter viewController: UIViewController) -> UIViewController? {
+        guard let at = pages.firstIndex(where: { $0 === viewController }), at + 1 < pages.count else { return nil }
+        return pages[at + 1]
+    }
+
+    func pageViewController(_ pageViewController: UIPageViewController, didFinishAnimating _: Bool, previousViewControllers _: [UIViewController], transitionCompleted completed: Bool) {
+        if completed, let shown = pageViewController.viewControllers?.first, let at = pages.firstIndex(where: { $0 === shown }), at != index {
+            index = at
+            Haptics.selection()
+        }
+        settled()
+    }
+}
+
+/// One of «Все», TCP, UDP: its own list, kept filled while the sheet is open.
+private final class ConnectionsPage: UIViewController, UITableViewDataSource {
+    /// nil: both kinds.
+    let udp: Bool?
+    let table = UITableView(frame: .zero, style: .plain)
+    private let empty = UILabel(L("Данные соединений пока недоступны"), font: Theme.font(.body), color: .secondaryLabel, lines: 0)
+    private var items: [CoreConnection] = []
+    private var latest: CoreConnections?
+
+    init(udp: Bool?) {
+        self.udp = udp
+        super.init(nibName: nil, bundle: nil)
+    }
+
+    @available(*, unavailable)
+    required init?(coder _: NSCoder) { fatalError() }
+
+    override func viewDidLoad() {
+        super.viewDidLoad()
+        view.backgroundColor = Theme.background
         table.backgroundColor = .clear
         table.separatorStyle = .none
         table.allowsSelection = false
@@ -1569,21 +1657,12 @@ final class ConnectionsViewController: UIViewController, UITableViewDataSource {
             empty.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 20),
             empty.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -20),
         ])
-        App.shared.core.connections.observe(self) { [weak self] in self?.show($0) }
+        show(latest ?? App.shared.core.connections.value)
     }
 
-    override func viewWillAppear(_ animated: Bool) {
-        super.viewWillAppear(animated)
-        App.shared.core.listsConnections = true
-        show(App.shared.core.connections.value)
-    }
-
-    override func viewDidDisappear(_ animated: Bool) {
-        super.viewDidDisappear(animated)
-        App.shared.core.listsConnections = false
-    }
-
-    private func show(_ connections: CoreConnections) {
+    func show(_ connections: CoreConnections) {
+        latest = connections
+        guard isViewLoaded else { return }
         let next = connections.open.filter { udp == nil || $0.udp == udp }.sorted { $0.createdAt > $1.createdAt }
         empty.isHidden = !next.isEmpty
         guard next != items else { return }
