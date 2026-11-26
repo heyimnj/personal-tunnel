@@ -1,6 +1,6 @@
 // PTLab: своя версия, номер сборки только растёт.
 MARKETING_VERSION = 2.4
-CURRENT_PROJECT_VERSION = 15
+CURRENT_PROJECT_VERSION = 16
 
 // Для Info.plist (как у приложения): имя, схема, группа (строгая, своя — см. AppGroupStrict).
 PT_DISPLAY_NAME = PTLab
