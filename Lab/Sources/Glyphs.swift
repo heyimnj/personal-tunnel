@@ -4,13 +4,25 @@ import UIKit
 enum ConnectGlyphs {
     static let all: [GlyphStyle] = [
         CurrentGlyph(),
-        TunnelGlyph(light: false),
-        TunnelGlyph(light: true),
+        ShippedTunnel(),
         RingFillGlyph(),
     ]
 
     static func style(_ id: String) -> GlyphStyle {
         all.first { $0.id == id } ?? all[1]
+    }
+}
+
+/// «1 · Туннель» as the app has it (3.6.12): drawn by `TunnelGlyphView`, a copy of
+/// the app's glyph, not by the canvas — the home screen shows that view for it.
+struct ShippedTunnel: GlyphStyle {
+    static let identifier = "tunnel.shipped"
+    let id = ShippedTunnel.identifier
+    let title = "1 · Туннель (как в 3.6.12)"
+    let note = "Как в приложении: жёлтый при подключении и отключении, зелёный — подключено; плавно разворачивается при быстрых нажатиях."
+
+    func frame(_: MockTunnel.Phase, _: Double, start _: GlyphMemo, memo _: inout GlyphMemo, traits _: UITraitCollection) -> GlyphFrame {
+        GlyphFrame()
     }
 }
 
@@ -87,10 +99,10 @@ struct TunnelGlyph: GlyphStyle {
     let light: Bool
 
     var id: String { light ? "tunnel3.light" : "tunnel3" }
-    var title: String { light ? "1 · Тоннель + свет" : "1 · Тоннель" }
+    var title: String { light ? "1 · Туннель + свет (старый)" : "1 · Туннель (старый)" }
     var note: String {
         light
-            ? "То же, что «Тоннель», и в глубине арки мягкий зелёный свет."
+            ? "То же, что «Туннель», и в глубине арки мягкий зелёный свет."
             : "Кольцо ровно перетекает в арку, палочка падает внутрь и исчезает, из глубины по одной выходят арки. Подключено — передняя уходит эхом, остальные встают на место."
     }
 

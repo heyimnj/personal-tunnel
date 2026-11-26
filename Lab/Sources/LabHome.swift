@@ -16,6 +16,8 @@ final class LabHomeViewController: UIViewController {
     private let note = UILabel()
     private let button = LabPowerButton()
     private let canvas = GlyphCanvas()
+    /// «1 · Туннель (как в 3.6.12)»: the app's own glyph.
+    private let shipped = TunnelGlyphView()
     private let status = UILabel()
     private let capsule = LabCapsule()
     private let hint = UILabel()
@@ -52,6 +54,8 @@ final class LabHomeViewController: UIViewController {
         hint.text = "PT Lab — только для сравнения вариантов, без VPN.\nСвайп влево/вправо — следующий вариант."
 
         button.addSubview(canvas)
+        button.addSubview(shipped)
+        shipped.translatesAutoresizingMaskIntoConstraints = false
         button.addAction(UIAction { [weak self] _ in
             guard let self else { return }
             self.tunnel.tap(at: self.clock)
@@ -90,6 +94,10 @@ final class LabHomeViewController: UIViewController {
             // 100 box units: the ring's radius 22 is the app's 18.5 pt.
             canvas.widthAnchor.constraint(equalToConstant: 84),
             canvas.heightAnchor.constraint(equalToConstant: 84),
+            shipped.centerXAnchor.constraint(equalTo: button.centerXAnchor),
+            shipped.centerYAnchor.constraint(equalTo: button.centerYAnchor),
+            shipped.widthAnchor.constraint(equalToConstant: 84),
+            shipped.heightAnchor.constraint(equalToConstant: 84),
             status.topAnchor.constraint(equalTo: button.bottomAnchor, constant: 20),
             status.centerXAnchor.constraint(equalTo: view.centerXAnchor),
             capsule.topAnchor.constraint(equalTo: status.bottomAnchor, constant: 64),
@@ -143,6 +151,14 @@ final class LabHomeViewController: UIViewController {
 
     private func phaseChanged(_ phase: MockTunnel.Phase) {
         start = memo
+        let look: TunnelGlyphView.Look
+        switch phase {
+        case .off: look = .off
+        case .connecting: look = .connecting
+        case .on: look = .on
+        case .disconnecting: look = .stopping
+        }
+        shipped.show(look, animated: view.window != nil)
         switch phase {
         case .off: status.text = "Не подключено"
         case .connecting: status.text = "Подключение…"
@@ -162,6 +178,9 @@ final class LabHomeViewController: UIViewController {
         config.contentInsets = .zero
         variantButton.configuration = config
         note.text = style.note
+        let own = style.id == ShippedTunnel.identifier
+        shipped.isHidden = !own
+        canvas.isHidden = own
         let actions = ConnectGlyphs.all.map { item in
             UIAction(title: item.title, subtitle: item.note, state: item.id == style.id ? .on : .off) { [weak self] _ in self?.choose(item) }
         }
@@ -219,6 +238,7 @@ final class LabHomeViewController: UIViewController {
 
     private func toggleSlow() {
         speed = speed == 1 ? 0.25 : 1
+        shipped.timeScale = CGFloat(speed)
         showSlow()
     }
 

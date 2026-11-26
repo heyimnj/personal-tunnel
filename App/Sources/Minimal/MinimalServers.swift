@@ -248,19 +248,6 @@ final class MinimalServersViewController: UIViewController, UIScrollViewDelegate
         HoldMenuView.show(in: view, at: point, title: L("Ещё"), items: moreHoldItems(), source: (sender, sender.bounds, .null))
     }
 
-    /// The four orders, with a check at the current one.
-    private func sortMenu() -> UIMenu {
-        UIMenu(title: L("Сортировка"), children: [UIDeferredMenuElement.uncached { [weak self] done in
-            guard let self else { done([]); return }
-            done(Self.sorts.map { option in
-                UIAction(title: Self.title(option), state: self.sort == option ? .on : .off) { [weak self] _ in
-                    Haptics.selection()
-                    self?.apply(option)
-                }
-            })
-        }])
-    }
-
     /// «B» (the owner's mock-up): the title in the middle over the search; ping,
     /// order, «+», update and «…» in a bar at the bottom of the sheet.
     private func buildHeaderB() {
@@ -284,8 +271,9 @@ final class MinimalServersViewController: UIViewController, UIScrollViewDelegate
         ])
 
         pingItem.addTarget(self, action: #selector(pingTapped), for: .touchUpInside)
-        sortItem.addTarget(self, action: #selector(bottomSortTapped), for: .touchUpInside)
-        sortItem.menu = sortMenu()
+        // 3.6.12 (the owner): the order opens the same menu as «Ещё» (`HoldMenuView`),
+        // not the system's glass menu.
+        sortItem.addTarget(self, action: #selector(bottomSortTapped(_:)), for: .touchUpInside)
         refreshItem.show(symbol: "arrow.clockwise", title: L("Обновить"), tint: .label)
         refreshItem.addTarget(self, action: #selector(refreshTapped), for: .touchUpInside)
         moreItem.show(symbol: "ellipsis", title: L("Ещё"), tint: .label)
@@ -386,10 +374,27 @@ final class MinimalServersViewController: UIViewController, UIScrollViewDelegate
         apply(Self.sorts[index])
     }
 
-    /// «B»: the order's item opens its menu; in a selection it copies.
-    @objc private func bottomSortTapped() {
-        guard selecting else { return }
-        copySelected()
+    /// «B»: the order's item opens its menu (as «Ещё»); in a selection it copies.
+    @objc private func bottomSortTapped(_ sender: UIView) {
+        guard !selecting else { copySelected(); return }
+        Haptics.item()
+        let point = sender.convert(CGPoint(x: sender.bounds.midX, y: sender.bounds.midY), to: view)
+        let items = Self.sorts.map { option in
+            HoldMenuItem(title: Self.title(option), symbol: sort == option ? "checkmark" : Self.symbol(option)) { [weak self] in
+                Haptics.selection()
+                self?.apply(option)
+            }
+        }
+        HoldMenuView.show(in: view, at: point, title: L("Сортировка"), items: items, source: (sender, sender.bounds, .null))
+    }
+
+    private static func symbol(_ sort: Sort) -> String {
+        switch sort {
+        case .manual: return "line.3.horizontal"
+        case .name: return "textformat"
+        case .latency: return "speedometer"
+        case .recent: return "clock"
+        }
     }
 
     @objc private func refreshTapped() {
@@ -581,7 +586,6 @@ final class MinimalServersViewController: UIViewController, UIScrollViewDelegate
                 sortItem.show(symbol: "line.3.horizontal.decrease", title: Self.title(sort), tint: .label)
                 sortItem.accessibilityLabel = L("Сортировка") + ": " + Self.title(sort)
             }
-            sortItem.showsMenuAsPrimaryAction = !selecting
             pingItem.isEnabled = !selecting || !selectionEmpty
             sortItem.isEnabled = !selecting || !selectionEmpty
         case .search:

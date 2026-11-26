@@ -1,32 +1,6 @@
 import UIKit
 
 enum MinimalIcons {
-    /// The Home tab glyph: the app icon's mark (two arches on feet and a centre bar).
-    static let home: UIImage = {
-        let size = CGSize(width: 30, height: 30)
-        return UIGraphicsImageRenderer(size: size).image { context in
-            let c = context.cgContext
-            c.setStrokeColor(UIColor.black.cgColor)
-            c.setFillColor(UIColor.black.cgColor)
-            c.setLineWidth(2.3)
-            c.addArc(center: CGPoint(x: 15, y: 15.5), radius: 11.2, startAngle: .pi, endAngle: 0, clockwise: false)
-            c.strokePath()
-            // Inner arch is taller than it is wide, as on the icon.
-            let inner = UIBezierPath()
-            inner.move(to: CGPoint(x: 9.2, y: 17.5))
-            inner.addCurve(to: CGPoint(x: 15, y: 9.6), controlPoint1: CGPoint(x: 9.2, y: 12.6), controlPoint2: CGPoint(x: 12, y: 9.6))
-            inner.addCurve(to: CGPoint(x: 20.8, y: 17.5), controlPoint1: CGPoint(x: 18, y: 9.6), controlPoint2: CGPoint(x: 20.8, y: 12.6))
-            c.addPath(inner.cgPath)
-            c.strokePath()
-            for rect in [CGRect(x: 2.2, y: 15.5, width: 3.4, height: 7.5), CGRect(x: 24.4, y: 15.5, width: 3.4, height: 7.5),
-                         CGRect(x: 7.5, y: 17.5, width: 3.4, height: 5.5), CGRect(x: 19.1, y: 17.5, width: 3.4, height: 5.5),
-                         CGRect(x: 13.7, y: 18, width: 2.6, height: 6)]
-            {
-                c.fill(rect)
-            }
-        }.withRenderingMode(.alwaysTemplate)
-    }()
-
     /// 3.6.6 (the owner: the connection button now draws the logo's arch, and two
     /// app marks on one screen will not do): the Home tab is a signal — a dot with
     /// two waves either side.
@@ -52,8 +26,8 @@ enum MinimalIcons {
     /// 3.6.7 (the owner): a server whose country is not known. 3.6.10 (the owner: the
     /// orbit looked unfinished, like an eye): a map pin drawn dashed, with its dot —
     /// «the place is not known».
-    static func orbit(_ side: CGFloat) -> UIImage {
-        if let cached = orbits[side] { return cached }
+    static func unplaced(_ side: CGFloat) -> UIImage {
+        if let cached = unplacedCache[side] { return cached }
         let image = UIGraphicsImageRenderer(size: CGSize(width: side, height: side)).image { context in
             let c = context.cgContext
             c.scaleBy(x: side / 30, y: side / 30)
@@ -73,11 +47,11 @@ enum MinimalIcons {
             c.strokePath()
             c.fillEllipse(in: CGRect(x: 15 - 2.8, y: 12.6 - 2.8, width: 5.6, height: 5.6))
         }.withRenderingMode(.alwaysTemplate)
-        orbits[side] = image
+        unplacedCache[side] = image
         return image
     }
 
-    private static var orbits: [CGFloat: UIImage] = [:]
+    private static var unplacedCache: [CGFloat: UIImage] = [:]
 
     /// The Settings tab glyph (3.5, drawn for the owner): a gear over two
     /// crossed wrenches, as the bones lie under the skull of a pirate flag —

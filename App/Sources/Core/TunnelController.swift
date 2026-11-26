@@ -334,6 +334,10 @@ final class TunnelController {
         // them all) would come up as this start's; only a new one counts.
         AppGroup.defaults.removeObject(forKey: SharedKey.lastTunnelError)
         startRequested = true
+        // 3.6.12: a stop asked earlier that never finished is not this stop's start
+        // (the owner saw «VPN выключен за 21.17 с» timed from an old press).
+        stopAsked = nil
+        stopSaved = nil
         state.set(.connecting)
         startPending = Date()
         load { [weak self] existing in

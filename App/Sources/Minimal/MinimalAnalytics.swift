@@ -1075,7 +1075,7 @@ final class MinimalAnalyticsViewController: UIViewController, UIGestureRecognize
     private func flush(force: Bool = false) {
         guard !moving, !listMoving, behind || force else { return }
         behind = false
-        measured { refresh() }
+        refresh()
         if App.shared.core.status.value != nil, App.shared.tunnel.connectedSince.value != nil { firstPending = false }
     }
 
@@ -1104,30 +1104,6 @@ final class MinimalAnalyticsViewController: UIViewController, UIGestureRecognize
         show(client.samples.value)
         show(client.connections.value)
         tick()
-    }
-
-    /// 3.5.10 diagnostics (read by Home after each page change): layout passes of
-    /// this page and the time its updates took.
-    private(set) var layoutPasses = 0
-    private(set) var updates = 0
-    private(set) var updateTime: CFTimeInterval = 0
-
-    func resetCounters() {
-        layoutPasses = 0
-        updates = 0
-        updateTime = 0
-    }
-
-    private func measured(_ work: () -> Void) {
-        let start = CACurrentMediaTime()
-        work()
-        updates += 1
-        updateTime += CACurrentMediaTime() - start
-    }
-
-    override func viewDidLayoutSubviews() {
-        super.viewDidLayoutSubviews()
-        layoutPasses += 1
     }
 
     /// 3.5.28 (the owner): the session's columns large at the top; under a thin rule

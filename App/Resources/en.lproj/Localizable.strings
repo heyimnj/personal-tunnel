@@ -473,7 +473,6 @@
 "Укажите пароль." = "Enter the password.";
 "Укажите закрытый ключ и ключ сервера." = "Enter the private key and the server's key.";
 "Укажите адрес интерфейса WireGuard." = "Enter the WireGuard interface address.";
-"Подробный журнал" = "Verbose log";
 "Каждый пакет: нагружает туннель" = "Every packet: loads the tunnel";
 
 /* 3.0, RC 2: subscription and server editors */
@@ -573,7 +572,7 @@
 "Что хранится на iPhone" = "What is stored on the iPhone";
 "Подписки, серверы и их ключи — в общей папке приложения и VPN-расширения (App Group), под защитой файлов iOS; в резервные копии iCloud и компьютера они не попадают. HWID — только в Keychain этого устройства. Своих копий конфигурации ядро не делает. Настройки — в UserDefaults. Статистика и результаты пинга — только в памяти." = "Subscriptions, servers and their keys: in the folder the app shares with its VPN extension (App Group), under iOS file protection; they do not go into iCloud or computer backups. The HWID: only in this device's Keychain. The core keeps no copies of the configuration. Settings: in UserDefaults. Statistics and ping results: in memory only.";
 "Журналы" = "Logs";
-"Журнал остаётся на iPhone и сам никуда не уходит. Ядро пишет только предупреждения и ошибки; каждое соединение — лишь в «Подробном журнале для диагностики», который сам выключается через 30 минут. При копировании вырезаются ссылки, адреса подписок, пароли, UUID, ключи, HWID, имена ваших серверов, сайты, к которым шли соединения, и IP-адреса." = "The log stays on the iPhone and goes nowhere by itself. The core logs only warnings and errors; every connection only in the “Diagnostic log”, which turns itself off after 30 minutes. Copying removes links, subscription addresses, passwords, UUIDs, keys, the HWID, your servers' names, the sites connections went to and IP addresses.";
+"Журнал остаётся на iPhone и сам никуда не уходит. Ядро пишет только предупреждения и ошибки; каждое соединение — лишь в «Подробном отчёте», который сам выключается через 30 минут. При копировании вырезаются ссылки, адреса подписок, пароли, UUID, ключи, HWID, имена ваших серверов, сайты, к которым шли соединения, и IP-адреса." = "The log stays on the iPhone and goes nowhere by itself. The core logs only warnings and errors; every connection only in the “Detailed report”, which turns itself off after 30 minutes. Copying removes links, subscription addresses, passwords, UUIDs, keys, the HWID, your servers' names, the sites connections went to and IP addresses.";
 "Списки встроены в приложение и обновляются только вместе с ним: HaGeZi DNS Blocklists, фильтры AdGuard, SagerNet sing-geosite (GPL-3.0). Проверка идёт на iPhone, запросы никуда не отправляются." = "The lists are built into the app and change only with it: HaGeZi DNS Blocklists, AdGuard filters, SagerNet sing-geosite (GPL-3.0). Matching happens on the iPhone; nothing is sent anywhere.";
 "Что видит провайдер VPN-сервера" = "What the VPN server's provider sees";
 "Ваш IP-адрес, время и объём трафика, адреса и имена сайтов (имя из TLS, нешифрованный трафик целиком) и DNS-запросы. Мимо VPN идут российские сайты и локальная сеть, если они включены, push-уведомления Apple и службы оператора." = "Your IP address, the time and volume of traffic, the addresses and names of sites (the TLS name, unencrypted traffic in full) and DNS queries. Outside the VPN go Russian sites and the local network when those are on, Apple push notifications and carrier services.";
@@ -614,7 +613,6 @@
 "туннель: стек %@, MTU %@, kill switch %@, исключение push Apple %@" = "tunnel: stack %@, MTU %@, kill switch %@, Apple push exclusion %@";
 "выход для проверок приложения открыт" = "the app's way out for tests is open";
 "выход для проверок не открылся (%@): туннель без него" = "the way out for tests did not open (%@): the tunnel runs without it";
-"Подробный журнал для диагностики" = "Diagnostic log";
 "Сам выключится через %@ мин" = "Turns itself off in %@ min";
 "Каждое соединение на 30 минут" = "Every connection, for 30 minutes";
 "Яндекс" = "Yandex";
@@ -718,7 +716,6 @@
 "Макс. за минуту: %@" = "Max in a minute: %@";
 "2 мин · предел ≈ 50 МБ" = "2 min · limit ≈ 50 MB";
 "VPN выключен за %@ с (настройки VPN — %@ с)" = "VPN off in %@ s (VPN settings: %@ s)";
-"Переход страницы: кадров %@, пропущено %@, самый долгий %@ мс; раскладок аналитики %@, её обновлений %@ (%@ мс)." = "Page change: %@ frames, %@ dropped, longest %@ ms; analytics layout passes %@, its updates %@ (%@ ms).";
 
 /* 3.5.14: the copied log's head */
 "стиль «%@», язык %@" = "style «%@», language %@";
@@ -798,3 +795,9 @@
 "%@ ч %@ мин" = "%@ h %@ min";
 "сегодня, %@" = "today, %@";
 "вчера, %@" = "yesterday, %@";
+
+/* 3.6.12: the service log's two levels renamed (the owner) */
+"Подробный отчёт" = "Detailed report";
+"Полный отчёт" = "Full report";
+"подробный отчёт выключен: прошло 30 минут" = "detailed report off: 30 minutes passed";
+"подробный отчёт: %@" = "detailed report: %@";

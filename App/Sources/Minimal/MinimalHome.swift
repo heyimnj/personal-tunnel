@@ -464,39 +464,23 @@ final class MinimalHomeViewController: UIViewController, UIScrollViewDelegate, U
 
     private var caughtPage = false
 
-    // MARK: 3.5.10 — a page change: analytics holds still, and the frames are counted
+    // MARK: 3.5.10 — a page change: analytics holds still until the page stands
 
+    /// Watches for the page to stand still. 3.6.12: it no longer times the frames
+    /// nor writes «Переход страницы…» to the service log (that measurement found
+    /// the jerks long ago).
     private var meter: CADisplayLink?
-    private var lastFrame: CFTimeInterval = 0
-    private var frames = 0
-    private var dropped = 0
-    private var longest: CFTimeInterval = 0
 
-    /// The page began to move: analytics stops updating until it stands still,
-    /// and every frame of the move is timed (for the service log).
+    /// The page began to move: analytics stops updating until it stands still.
     private func moveStarted() {
         guard meter == nil else { return }
         analytics.moving = true
-        analytics.resetCounters()
-        frames = 0
-        dropped = 0
-        longest = 0
-        lastFrame = 0
         let link = CADisplayLink(target: FrameMeterProxy(self), selector: #selector(FrameMeterProxy.tick(_:)))
-        link.preferredFrameRateRange = CAFrameRateRange(minimum: 60, maximum: 120, preferred: 120)
         link.add(to: .main, forMode: .common)
         meter = link
     }
 
-    fileprivate func meterTick(_ link: CADisplayLink) {
-        let expected = max(1.0 / 120, link.targetTimestamp - link.timestamp)
-        if lastFrame > 0 {
-            let gap = link.timestamp - lastFrame
-            frames += 1
-            longest = max(longest, gap)
-            if gap > expected * 1.5 { dropped += max(1, Int((gap / expected).rounded()) - 1) }
-        }
-        lastFrame = link.timestamp
+    fileprivate func meterTick(_: CADisplayLink) {
         if !pageMoving { moveEnded() }
     }
 
@@ -505,12 +489,6 @@ final class MinimalHomeViewController: UIViewController, UIScrollViewDelegate, U
         link.invalidate()
         meter = nil
         analytics.moving = false
-        let ms = { (seconds: CFTimeInterval) in String(format: "%.0f", seconds * 1000) }
-        let text = Lf("Переход страницы: кадров %@, пропущено %@, самый долгий %@ мс; раскладок аналитики %@, её обновлений %@ (%@ мс).",
-                      "\(frames)", "\(dropped)", ms(longest), "\(analytics.layoutPasses)", "\(analytics.updates)", ms(analytics.updateTime))
-        // Written a moment later: preparing a log line takes the main thread a
-        // little, and the list may still be gliding.
-        DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { App.shared.core.note(text) }
     }
 
     /// During a page change only the dots follow; the analytics streams and timer
@@ -634,7 +612,7 @@ final class MinimalConnectionView: UIView {
     private let capsule = TapControl()
     private let capsuleGlass = ControlGlassView(circle: false, opacityKey: Prefs.serverOpacityKey)
     private let flag = UILabel(font: .systemFont(ofSize: 21))
-    private let mark = UIImageView(image: MinimalIcons.orbit(26))
+    private let mark = UIImageView(image: MinimalIcons.unplaced(26))
     private let name = UILabel(font: Theme.font(17, .medium))
     /// 3.5 beta 2 (the owner: the capsule wanted something at its end, not the
     /// old up-and-down chevrons): the server's delay, and a small chevron up — the
@@ -789,10 +767,10 @@ final class MinimalConnectionView: UIView {
         let emoji = Theme.flag(label.countryCode)
         flag.text = emoji
         flag.isHidden = emoji == nil
-        // No flag: 3.6.7 (the owner) the orbit, as for every server whose country is
+        // No flag: 3.6.7 (the owner) the mark of a server whose country is
         // unknown (the app's mark is on the connection button now).
         mark.isHidden = emoji != nil
-        mark.image = MinimalIcons.orbit(26)
+        mark.image = MinimalIcons.unplaced(26)
         mark.tintColor = .label
         showDelay()
     }

@@ -447,9 +447,9 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
         guard until <= Date().timeIntervalSince1970 else { return }
         do {
             try reload()
-            event("подробный журнал выключен: прошло 30 минут")
+            event("подробный отчёт выключен: прошло 30 минут")
         } catch {
-            log("подробный журнал: \(error.localizedDescription)", level: .warn)
+            log("подробный отчёт: \(error.localizedDescription)", level: .warn)
         }
     }
 

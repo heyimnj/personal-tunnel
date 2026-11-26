@@ -179,14 +179,16 @@ final class ServiceLogViewController: UIViewController, UITableViewDataSource, U
                     }
                 } + [
                     // 3.3 (PT-16): «info» (every connection) for half an hour, then «warn» again.
-                    UIAction(title: L("Подробный журнал для диагностики"),
+                    // 3.6.12 (the owner): «Подробный отчёт» (was «Подробный журнал для диагностики»),
+                    // the trace below «Полный отчёт» (was «Подробный журнал»).
+                    UIAction(title: L("Подробный отчёт"),
                              subtitle: Prefs.diagnosticLogActive
                                  ? Lf("Сам выключится через %@ мин", "\(max(1, Int(((Prefs.diagnosticLogUntil ?? Date()).timeIntervalSinceNow / 60).rounded(.up))))")
                                  : L("Каждое соединение на 30 минут"),
                              state: Prefs.diagnosticLogActive ? .on : .off) { _ in
                         App.shared.setDiagnosticLog(!Prefs.diagnosticLogActive)
                     },
-                    UIAction(title: L("Подробный журнал"), subtitle: L("Каждый пакет: нагружает туннель"), state: Prefs.verboseLog ? .on : .off) { _ in
+                    UIAction(title: L("Полный отчёт"), subtitle: L("Каждый пакет: нагружает туннель"), state: Prefs.verboseLog ? .on : .off) { _ in
                         Prefs.verboseLog.toggle()
                         App.shared.reloadTunnel()
                     },

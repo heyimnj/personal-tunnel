@@ -54,11 +54,6 @@ enum Prefs {
         set { defaults.set(newValue, forKey: "personal.glassStyle"); appearanceChanged.fire() }
     }
 
-    static var solidSettings: Bool {
-        get { bool("personal.solidSettings", true) }
-        set { defaults.set(newValue, forKey: "personal.solidSettings"); appearanceChanged.fire() }
-    }
-
     static var hideTabLabels: Bool {
         get { bool("personal.hideTabLabels", false) }
         set { defaults.set(newValue, forKey: "personal.hideTabLabels"); appearanceChanged.fire() }
@@ -78,7 +73,6 @@ enum Prefs {
     static let glassOpacityKey = "personal.glassOpacity"
     static let buttonOpacityKey = "personal.buttonOpacity"
     static let serverOpacityKey = "personal.serverOpacity"
-    static let cardOpacityKey = "personal.cardOpacity"
 
     /// 3.5 beta 2: how solid the Modern cards are (the analytics' lists and
     /// graph): 0.05…1, 0.23 as 1.5.0 drew them.

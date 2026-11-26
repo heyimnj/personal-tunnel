@@ -1,6 +1,6 @@
 import UIKit
 
-/// 3.6.6 (the owner, chosen in PT Lab — «1 · Тоннель»): the connection button's
+/// 3.6.6 (the owner, chosen in PT Lab — «1 · Туннель»): the connection button's
 /// glyph. Off it is the power mark. Connecting, the ring opens into the logo's
 /// arch — in every frame a true arc and a straight leg along its tangent, both
 /// halves mirrored — the stroke falls in under it and is gone, and inner arches
