@@ -1,24 +1,7 @@
 import UIKit
 
-@main
-final class AppDelegate: UIResponder, UIApplicationDelegate {
-    func application(_: UIApplication, didFinishLaunchingWithOptions _: [UIApplication.LaunchOptionsKey: Any]?) -> Bool {
-        true
-    }
-}
-
-final class SceneDelegate: UIResponder, UIWindowSceneDelegate {
-    var window: UIWindow?
-
-    func scene(_ scene: UIScene, willConnectTo _: UISceneSession, options _: UIScene.ConnectionOptions) {
-        guard let scene = scene as? UIWindowScene else { return }
-        let window = UIWindow(windowScene: scene)
-        window.rootViewController = LabHomeViewController()
-        window.overrideUserInterfaceStyle = LabSettings.theme.style
-        window.makeKeyAndVisible()
-        self.window = window
-    }
-}
+// PT Lab 2.0: the app itself (../App) is the Lab; this screen of variants opens
+// from the flask button (LabOverlay). Its settings and pretend tunnel follow.
 
 /// What the lab remembers between launches.
 enum LabSettings {

@@ -65,7 +65,11 @@ final class App {
     }
 
     private init() {
-        #if canImport(Darwin)
+        #if LAB
+        // PT Lab keeps everything in its own folder: it must never read or write the
+        // app's group (a signing tool may hand it the same group as the app).
+        paths = LabData.paths
+        #elseif canImport(Darwin)
         paths = AppGroup.containerURL.map(SharedPaths.init)
         #else
         paths = nil
@@ -74,6 +78,9 @@ final class App {
         Prefs.seedKillSwitch(hasLegacyData: paths.map { FileManager.default.fileExists(atPath: $0.legacyDatabase.path) || FileManager.default.fileExists(atPath: $0.library.path) } ?? false)
         if let paths { LibraryStore.protectStoredData(paths) }
         store = LibraryStore(paths: paths)
+        #if LAB
+        LabData.seedIfEmpty(store)
+        #endif
         if let paths { CoreClient.setUp(paths: paths) }
         tunnel.state.observe(self) { [weak self] state in
             guard let self else { return }

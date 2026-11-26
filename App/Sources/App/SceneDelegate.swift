@@ -13,6 +13,9 @@ final class SceneDelegate: UIResponder, UIWindowSceneDelegate {
         window.overrideUserInterfaceStyle = Theme.userInterfaceStyle
         window.makeKeyAndVisible()
         self.window = window
+        #if LAB
+        LabOverlay.install(in: window)
+        #endif
         lockIfNeeded()
     }
 

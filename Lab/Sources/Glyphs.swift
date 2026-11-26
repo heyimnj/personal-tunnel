@@ -94,7 +94,7 @@ struct CurrentGlyph: GlyphStyle {
 /// turns green with it, the second takes its place, a new one comes from the
 /// middle. Stopping: the arches go back into the depth, the arch closes into the
 /// ring and the stroke comes back up.
-struct TunnelGlyph: GlyphStyle {
+struct LabTunnelVariant: GlyphStyle {
     /// A soft green light deep inside, once connected.
     let light: Bool
 

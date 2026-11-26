@@ -30,6 +30,7 @@ final class LabHomeViewController: UIViewController {
     override func viewDidLoad() {
         super.viewDidLoad()
         view.backgroundColor = .systemBackground
+        overrideUserInterfaceStyle = LabSettings.theme.style
 
         variantButton.showsMenuAsPrimaryAction = true
         variantButton.titleLabel?.font = .systemFont(ofSize: 15, weight: .semibold)
@@ -228,7 +229,8 @@ final class LabHomeViewController: UIViewController {
         let all = LabSettings.Theme.allCases
         let next = all[(LabSettings.theme.rawValue + 1) % all.count]
         LabSettings.theme = next
-        view.window?.overrideUserInterfaceStyle = next.style
+        // 2.0: the screen's own theme; the app's window keeps the app's.
+        overrideUserInterfaceStyle = next.style
         showTheme()
     }
 

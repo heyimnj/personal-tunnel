@@ -1,8 +1,15 @@
+#if !LAB
 import AppCore
+#endif
 
 enum CoreInfo {
+    #if LAB
+    static var version: String { "PT Lab" }
+    static var xrayVersion: String { "PT Lab" }
+    #else
     static var version: String { LibboxVersion() }
     static var xrayVersion: String { PtbridgeXrayVersion() }
+    #endif
 
     /// Which core the packet tunnel was built with (read from its Info.plist).
     static var tunnelCore: String {

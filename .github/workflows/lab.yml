@@ -1,11 +1,14 @@
 name: Lab
 
-# PT Lab — витрина вариантов интерфейса (Lab/): без ядра, без расширения, собирается за минуты.
+# PT Lab — весь клиент без ядра и VPN (Lab/ + исходники App/ с флагом LAB). Собирается при изменениях
+# Lab, приложения и TunnelCore — так в Lab всегда текущий клиент.
 on:
   push:
     branches: [main, "claude/**"]
     paths:
       - "Lab/**"
+      - "App/**"
+      - "Packages/TunnelCore/**"
       - ".github/workflows/lab.yml"
   workflow_dispatch:
 
@@ -49,6 +52,7 @@ jobs:
           xcodebuild -project Lab/PTLab.xcodeproj -scheme PTLab \
             -configuration Release -destination 'generic/platform=iOS' \
             -derivedDataPath build/DerivedData \
+            -skipPackagePluginValidation -skipMacroValidation \
             CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY= \
             build > build/xcodebuild.log 2>&1
           status=$?

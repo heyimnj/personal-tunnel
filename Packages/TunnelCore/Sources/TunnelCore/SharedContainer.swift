@@ -12,8 +12,15 @@ public enum AppGroup {
         return (value?.isEmpty == false ? value : nil) ?? "group.com.personaltunnelapp"
     }
 
-    static func resolve() -> String {
-        let declared = Self.declared
+    /// PT Lab (`AppGroupStrict` in Info.plist): the declared group only, never one
+    /// borrowed from the signing profile — a signing tool may give it the app's own
+    /// group, and the Lab must not touch the app's data.
+    static var strict: Bool { Bundle.main.object(forInfoDictionaryKey: "AppGroupStrict") as? Bool ?? false }
+
+    static func resolve() -> String { resolve(declared: declared, strict: strict) }
+
+    static func resolve(declared: String, strict: Bool) -> String {
+        if strict { return declared }
         #if canImport(Darwin)
         let files = FileManager.default
         if files.containerURL(forSecurityApplicationGroupIdentifier: declared) != nil { return declared }

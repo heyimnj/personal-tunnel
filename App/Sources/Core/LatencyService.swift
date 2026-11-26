@@ -1,5 +1,7 @@
 import Foundation
+#if !LAB
 import AppCore
+#endif
 import Network
 import Security
 import TunnelCore
@@ -45,7 +47,12 @@ struct NetworkProbes: LatencyProbes {
     }
 
     func tcp(host: String, port: Int, timeout: TimeInterval, label: String?) async -> ProbeResult {
-        await connect(host: host, port: port, parameters: .tcp, kind: "TCP", timeout: timeout, label: label)
+        #if LAB
+        // PT Lab: no server is really reached; a believable delay instead (Lab/Mock).
+        return await LabPing.probe(label ?? host)
+        #else
+        return await connect(host: host, port: port, parameters: .tcp, kind: "TCP", timeout: timeout, label: label)
+        #endif
     }
 
     /// A full TLS handshake with the server's SNI. Where the network answers TCP
@@ -53,6 +60,9 @@ struct NetworkProbes: LatencyProbes {
     /// measures the server. Any certificate is accepted: REALITY shows the
     /// borrowed site's, and the point is the round trip, not trust.
     func handshake(host: String, port: Int, serverName: String?, timeout: TimeInterval, label: String?) async -> ProbeResult {
+        #if LAB
+        if true { return await LabPing.probe(label ?? host) }
+        #endif
         guard let serverName else { return await tcp(host: host, port: port, timeout: timeout, label: label) }
         let tls = NWProtocolTLS.Options()
         let options = tls.securityProtocolOptions
@@ -168,6 +178,9 @@ struct NetworkProbes: LatencyProbes {
     }
 
     func url(tag: String, link: String, timeoutMs: Int) async -> ProbeResult {
+        #if LAB
+        return await LabPing.probe(tag)
+        #else
         let report = report, samples = samples
         let key = tunnelSubscription.map { LatencyService.key($0, tag) }
         return await withCheckedContinuation { (raw: CheckedContinuation<ProbeResult, Never>) in
@@ -199,6 +212,7 @@ struct NetworkProbes: LatencyProbes {
                 }
             }
         }
+        #endif
     }
 }
 
@@ -232,6 +246,8 @@ enum ProbeExitCheck {
     }
 }
 
+// PT Lab (`LAB`): no core in the app; its LocalCoreProbes is in Lab/Mock.
+#if !LAB
 /// Without the VPN the app's own core measures servers (3.0): each subscription's
 /// servers run in a core without a tunnel, and a URL is fetched through every
 /// server the way a connection would use it, UDP protocols included. Tags are
@@ -358,6 +374,7 @@ final class LocalCoreProbes: LatencyProbes, @unchecked Sendable {
         }
     }
 }
+#endif
 
 /// The core's own words for each server's last failed test (3.1.2), by result key:
 /// the server's page shows them, so a «certificate» or a «timeout» can be told
