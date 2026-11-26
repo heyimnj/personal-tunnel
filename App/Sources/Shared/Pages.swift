@@ -135,6 +135,12 @@ final class ServiceLogViewController: UIViewController, UITableViewDataSource, U
     private lazy var scrubber = ScrollScrubber(scrollView: table)
     private let live = UILabel("LIVE", font: Theme.font(12, .bold), color: .systemRed)
     private let state = UILabel("STREAMING", font: Theme.font(12, .semibold), color: .secondaryLabel)
+    /// 3.6.16 (the owner: from the analytics): the core's memory, a thin line over
+    /// the entries while the tunnel is up — «Память ядра  31.0 MB из 50 MB · 49 goroutines».
+    private let memoryValue = UILabel(font: Theme.digits(12, .regular), color: .secondaryLabel)
+    private lazy var memoryRow = UIStackView(.horizontal, spacing: 6, alignment: .firstBaseline, [
+        UILabel(L("Память ядра"), font: Theme.font(12), color: .secondaryLabel), UIView(), memoryValue,
+    ])
     private let search = UISearchBar()
     private var lines: [LogLine] = []
     private var query = ""
@@ -224,7 +230,12 @@ final class ServiceLogViewController: UIViewController, UITableViewDataSource, U
         table.rowHeight = UITableView.automaticDimension
         table.estimatedRowHeight = 44
         table.allowsSelection = false
-        let stack = UIStackView(.vertical, spacing: 10, alignment: .fill, [panel, search, caption, table])
+        memoryRow.isLayoutMarginsRelativeArrangement = true
+        memoryRow.layoutMargins = UIEdgeInsets(top: 0, left: 14, bottom: 0, right: 14)
+        memoryValue.textAlignment = .right
+        memoryValue.adjustsFontSizeToFitWidth = true
+        memoryValue.minimumScaleFactor = 0.8
+        let stack = UIStackView(.vertical, spacing: 10, alignment: .fill, [panel, search, caption, memoryRow, table])
         view.addSubview(stack)
         stack.translatesAutoresizingMaskIntoConstraints = false
         NSLayoutConstraint.activate([
@@ -239,7 +250,13 @@ final class ServiceLogViewController: UIViewController, UITableViewDataSource, U
             scrubber.topAnchor.constraint(equalTo: table.topAnchor, constant: 10), scrubber.bottomAnchor.constraint(equalTo: table.bottomAnchor, constant: -10),
             scrubber.trailingAnchor.constraint(equalTo: table.trailingAnchor), scrubber.widthAnchor.constraint(equalToConstant: 30),
         ])
-        stack.setCustomSpacing(6, after: caption)
+        stack.setCustomSpacing(4, after: caption)
+        stack.setCustomSpacing(6, after: memoryRow)
+        showMemory(App.shared.core.status.value)
+        App.shared.core.status.observe(self) { [weak self] status in
+            guard let self, self.viewIfLoaded?.window != nil else { return }
+            self.showMemory(status)
+        }
         caption.isLayoutMarginsRelativeArrangement = true
         caption.layoutMargins = UIEdgeInsets(top: 0, left: 14, bottom: 0, right: 14)
         // 3.5.11: only while on screen (the log streams all the time since 3.5, and a
@@ -253,6 +270,16 @@ final class ServiceLogViewController: UIViewController, UITableViewDataSource, U
     override func viewWillAppear(_ animated: Bool) {
         super.viewWillAppear(animated)
         refilter()
+        showMemory(App.shared.core.status.value)
+    }
+
+    /// Shown only while the core reports (the tunnel is up).
+    private func showMemory(_ status: CoreStatus?) {
+        if let status {
+            let text = Format.bytes(status.memory) + " " + Lf("из %@", "50 MB") + " · \(status.goroutines) goroutines"
+            if memoryValue.text != text { memoryValue.text = text }
+        }
+        if memoryRow.isHidden != (status == nil) { memoryRow.isHidden = status == nil }
     }
 
     private func refilter() {

@@ -656,9 +656,6 @@ final class MinimalAnalyticsViewController: UIViewController, UIGestureRecognize
     private let delayGauge = GaugeView()
     private let delayValue = UILabel(font: Theme.digits(22, .semibold))
     private let delayCaption = UILabel(font: Theme.font(.footnote), color: .secondaryLabel, lines: 2)
-    private let memoryLine = SparklineView()
-    private let memoryValue = UILabel(font: Theme.digits(20, .semibold))
-    private let memoryDetail = UILabel(font: Theme.digits(Theme.font(.caption2).pointSize, .regular), color: .secondaryLabel)
     private let columns = ColumnsView()
     private let columnsPeak = UILabel(font: Theme.digits(Theme.font(.caption2).pointSize, .medium), color: .secondaryLabel)
     private var tcpRow: AnalyticsRow!
@@ -685,8 +682,6 @@ final class MinimalAnalyticsViewController: UIViewController, UIGestureRecognize
     /// colours after it; the rest by what they are.
     static let serverColors: [UIColor] = [UIColor(red: 0.25, green: 0.82, blue: 0.72, alpha: 1), .systemGreen, .systemYellow, .systemTeal]
     static let directColor = UIColor(red: 0.43, green: 0.39, blue: 0.94, alpha: 1)
-    /// The extension's limit, about 50 MiB: the memory line shows it when near.
-    private static let memoryLimit: Double = 50 * 1024 * 1024
     /// Routes in the card: a ring and a line of the legend each.
     private static let routesShown = 4
 
@@ -970,28 +965,7 @@ final class MinimalAnalyticsViewController: UIViewController, UIGestureRecognize
         // 3.5.26 (the owner): no note for the routes at all.
         for item in [small(L("Маршруты за сеанс")), routesBody] as [UIView] { routes.stack.addArrangedSubview(item) }
 
-        // The core's memory (4:2): the figure, then its line over two minutes,
-        // drawn to whatever room the card leaves (scaled inside its own box).
-        memoryLine.color = .systemPurple
-        memoryLine.ceiling = Self.memoryLimit
-        memoryLine.clipsToBounds = true
-        memoryLine.setContentHuggingPriority(.defaultLow, for: .vertical)
-        memoryLine.setContentCompressionResistancePriority(.defaultLow, for: .vertical)
-        memoryLine.heightAnchor.constraint(greaterThanOrEqualToConstant: 24).isActive = true
-        memoryValue.adjustsFontSizeToFitWidth = true
-        memoryValue.minimumScaleFactor = 0.6
-        memoryDetail.textAlignment = .right
-        memoryDetail.setContentHuggingPriority(.required, for: .horizontal)
-        let memoryNote = UILabel(L("2 мин · предел ≈ 50 МБ"), font: Theme.font(.caption2), color: .secondaryLabel)
-        let memory = AnalyticsCard(insets: UIEdgeInsets(top: 14, left: 14, bottom: 12, right: 14))
-        memory.stack.alignment = .fill
-        memory.stack.spacing = 4
-        // 3.5.26 (the owner): one line — «Память ядра   31.0 MB · 49 goroutines».
-        memoryValue.font = Theme.digits(Theme.font(.subheadline).pointSize, .regular)
-        memoryValue.textColor = .secondaryLabel
-        _ = memoryNote
-        let memoryRow = UIStackView(.horizontal, spacing: 6, alignment: .firstBaseline, [UILabel(L("Память ядра"), font: Theme.font(.subheadline)), UIView(), memoryValue, memoryDetail])
-        memory.stack.addArrangedSubview(memoryRow)
+        // 3.6.16 (the owner): the core's memory moved to the log (`ServiceLogViewController`).
 
         let routesNote = Classic.padded(UILabel(L("Маршруты — куда ушёл трафик сеанса: через какой сервер или напрямую. «Без разбивки» — трафик, пока приложение было закрыто: ядро сохраняет только последние соединения."), font: Theme.font(.caption2), color: .secondaryLabel, lines: 0),
                                         UIEdgeInsets(top: 0, left: 6, bottom: 0, right: 6))
@@ -1008,17 +982,15 @@ final class MinimalAnalyticsViewController: UIViewController, UIGestureRecognize
         _ = routesNote
         let content = UIStackView(.vertical, spacing: 8, alignment: .fill, [
             header, hero, tiles,
-            routes, connections, memory,
+            routes, connections,
             links,
         ])
         // 4:2 — as tall as the square tiles. Only now: the views must already share
         // a parent (3.5 (271) tied two of them earlier and crashed at launch).
         routes.heightAnchor.constraint(equalTo: traffic.heightAnchor).isActive = true
         // 3.5.26 (the owner): the session line close to the cards; even gaps between them.
-        // 3.6.16 (the owner: «a little more, the least bit» between the top and the cards): 6.
-        content.setCustomSpacing(6, after: header)
+        content.setCustomSpacing(4, after: header)
         for view in [hero, tiles, routes, connections] { content.setCustomSpacing(12, after: view) }
-        content.setCustomSpacing(12, after: memory)
         scroll.addSubview(content)
         content.translatesAutoresizingMaskIntoConstraints = false
         NSLayoutConstraint.activate([
@@ -1027,7 +999,8 @@ final class MinimalAnalyticsViewController: UIViewController, UIGestureRecognize
             // Dynamic Island) and ends 8 pt over the tab bar (was 24). 3.6.14 (the
             // owner: «a little less still»): 18 pt higher than before 3.6.13 (was 12).
             // 3.6.15 (the owner: a bit more room than 3.6.14, less than 3.6.13): 15 pt.
-            content.topAnchor.constraint(equalTo: scroll.contentLayoutGuide.topAnchor, constant: -11),
+            // 3.6.16 (the owner: the whole page «a little» lower still): 13 pt.
+            content.topAnchor.constraint(equalTo: scroll.contentLayoutGuide.topAnchor, constant: -9),
             content.bottomAnchor.constraint(equalTo: scroll.contentLayoutGuide.bottomAnchor, constant: -8),
             content.leadingAnchor.constraint(equalTo: scroll.frameLayoutGuide.leadingAnchor, constant: 16),
             content.trailingAnchor.constraint(equalTo: scroll.frameLayoutGuide.trailingAnchor, constant: -16),
@@ -1324,9 +1297,6 @@ final class MinimalAnalyticsViewController: UIViewController, UIGestureRecognize
         trafficRing.parts = greyed
             ? [(value: Double(downShown), color: .systemGray2), (value: Double(upShown), color: .systemGray4)]
             : [(value: Double(downBytes), color: SpeedGraphView.downColor), (value: Double(upBytes), color: SpeedGraphView.upColor)]
-        memoryValue.showText(status.map { Format.bytes($0.memory) } ?? "—")
-        // 3.6 (the owner): the ceiling beside the value — «31.9 MB из 50 MB».
-        memoryDetail.showText(status.map { Lf("из %@", "50 MB") + " · \($0.goroutines) goroutines" } ?? "")
         if graphHint.isHidden != (status != nil) { graphHint.isHidden = status != nil }
     }
 
@@ -1451,9 +1421,8 @@ final class MinimalAnalyticsViewController: UIViewController, UIGestureRecognize
         routesEmpty.isHidden = !names.isEmpty
     }
 
-    /// The memory line and the connection columns (a column per two seconds).
+    /// The connection columns (a column per two seconds).
     private func show(_ samples: CoreSamples) {
-        memoryLine.values = samples.memory.map { Double($0) }
         // A column per two seconds, the latest last.
         let count = min(samples.tcp.count, samples.udp.count)
         var indices: [Int] = []
