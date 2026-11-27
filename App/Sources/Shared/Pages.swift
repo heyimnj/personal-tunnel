@@ -143,6 +143,8 @@ final class ServiceLogViewController: UIViewController, UITableViewDataSource, U
     ])
     private let search = UISearchBar()
     private var lines: [LogLine] = []
+    /// How many times each shown line came in a row (3.6.19).
+    private var repeats: [Int] = []
     private var query = ""
     private var minimumLevel: Int32 = 7
     private let pause = UIButton(type: .system)
@@ -286,7 +288,11 @@ final class ServiceLogViewController: UIViewController, UITableViewDataSource, U
         let needle = query.lowercased()
         // Newest first: the screen opens on the latest lines and keeps them in view
         // while the reader stays at the top.
-        lines = App.shared.core.logs.filter { $0.level <= minimumLevel && (needle.isEmpty || $0.text.lowercased().contains(needle)) }.reversed()
+        let shown: [LogLine] = App.shared.core.logs.filter { $0.level <= minimumLevel && (needle.isEmpty || $0.text.lowercased().contains(needle)) }.reversed()
+        // 3.6.19: a run of the same line (connections' numbers aside) stands once, the newest, with its count.
+        let runs = LogDigest.runs(levels: shown.map(\.level), texts: shown.map(\.text))
+        lines = runs.map { shown[$0.first] }
+        repeats = runs.map(\.count)
         let atTop = table.contentOffset.y <= -table.adjustedContentInset.top + 40
         table.reloadData()
         if atTop, !lines.isEmpty { table.setContentOffset(CGPoint(x: 0, y: -table.adjustedContentInset.top), animated: false) }
@@ -422,6 +428,9 @@ final class ServiceLogViewController: UIViewController, UITableViewDataSource, U
         let level = ServiceLogViewController.levels.indices.contains(Int(line.level)) ? ServiceLogViewController.levels[Int(line.level)] : "LOG"
         // 3.5: the time the line came.
         content.text = line.time.map { level + " · " + $0 } ?? level
+        if repeats.indices.contains(indexPath.row), repeats[indexPath.row] > 1 {
+            content.text = (content.text ?? level) + " · ×\(repeats[indexPath.row])"
+        }
         content.textProperties.font = Theme.font(10, .semibold)
         content.textProperties.color = line.level <= 2 ? .systemRed : (line.level == 3 ? .systemOrange : .secondaryLabel)
         content.secondaryText = line.text

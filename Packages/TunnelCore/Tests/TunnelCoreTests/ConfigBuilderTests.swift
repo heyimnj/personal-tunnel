@@ -447,7 +447,8 @@ final class ConfigBuilderTests: XCTestCase {
         XCTAssertFalse(direct.contains { $0["server"] == "77.88.8.8" })
         // 3.5.17: QUIC is refused only after every rule that leaves the VPN.
         let fullRules = full.at("route", "rules")?.arrayValue ?? []
-        let quicRule: JSONValue = ["network": "udp", "port": 443, "action": "reject", "no_drop": true]
+        // 3.6.19: only what the core recognised as QUIC — calls on UDP/443 (STUN, TURN, media) pass.
+        let quicRule: JSONValue = ["network": "udp", "port": 443, "protocol": "quic", "action": "reject", "no_drop": true]
         XCTAssertEqual(fullRules.last, quicRule)
         let bypass = fullRules.firstIndex { (rule: JSONValue) -> Bool in rule["outbound"] == "direct" && rule["rule_set"] != nil }
         XCTAssertNotNil(bypass)
@@ -463,7 +464,7 @@ final class ConfigBuilderTests: XCTestCase {
         XCTAssertNil(server(bare, "dns-ru"))
         // 3.5.17: sniff, DNS and the QUIC refusal (on by default).
         XCTAssertEqual(bare.at("route", "rules")?.arrayValue?.count, 3)
-        XCTAssertEqual(bare.at("route", "rules")?.arrayValue?.last, ["network": "udp", "port": 443, "action": "reject", "no_drop": true])
+        XCTAssertEqual(bare.at("route", "rules")?.arrayValue?.last, quicRule)
         options.blockQUIC = false
         let quic = try ConfigBuilder.build(subscription: subscription, selected: nil, options: options)
         XCTAssertEqual(quic.at("route", "rules")?.arrayValue?.count, 2)

@@ -64,4 +64,12 @@ final class LogDigestTests: XCTestCase {
         XCTAssertEqual(TunnelEvents.starts(lines).count, 4)
         XCTAssertEqual(TunnelEvents.digest(lines, now: now, sessions: 1), [lines[9], lines[10], lines[11]])
     }
+
+    func testRunsOfTheSameLineStandOnce() {
+        let warn = "dns/group[dns-remote]: group[dns-remote]: no clean servers, survival attempt via dns-remote-tcp"
+        let texts = ["[1781597305 0ms] " + warn, "[768196843 0ms] " + warn, "[3529282096 12.5s] " + warn, "other", warn, warn]
+        let runs = LogDigest.runs(levels: [3, 3, 3, 3, 2, 2], texts: texts)
+        XCTAssertEqual(runs.map(\.first), [0, 3, 4])
+        XCTAssertEqual(runs.map(\.count), [3, 1, 2])
+    }
 }

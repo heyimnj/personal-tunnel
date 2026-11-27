@@ -34,6 +34,24 @@ public enum LogDigest {
         return entry.level + " " + connection.stringByReplacingMatches(in: text, range: NSRange(text.startIndex..., in: text), withTemplate: "")
     }
 
+    /// 3.6.19 (the owner's screenshot: a screen of the same DNS warning): the live
+    /// log shows a run of the same line (level and text without connection
+    /// numbers) once. Returns each run's first index and its length, in order.
+    public static func runs(levels: [Int32], texts: [String]) -> [(first: Int, count: Int)] {
+        var result: [(first: Int, count: Int)] = []
+        var lastKey: String?
+        for (index, (level, text)) in zip(levels, texts).enumerated() {
+            let key = Self.key(Entry(level: "\(level)", time: nil, text: text))
+            if key == lastKey, let last = result.indices.last {
+                result[last].count += 1
+            } else {
+                result.append((index, 1))
+                lastKey = key
+            }
+        }
+        return result
+    }
+
     /// 3.5.14: the log keeps its order and its detail (the owner found 3.5's copy too
     /// short: every repeat stood once, at its first place). A run of the same line
     /// stands once with its count; a line stands where it came up to `keep` times,

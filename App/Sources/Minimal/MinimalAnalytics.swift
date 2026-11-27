@@ -404,7 +404,11 @@ final class TimelineBarsView: UIView {
             let left = snap(CGFloat(index) * (width + gap))
             let right = snap(CGFloat(index) * (width + gap) + width)
             let barWidth = max(1 / scale, right - left)
-            let raw = max(bucket.total > 0 ? 2 : 1.5, height * CGFloat(bucket.total) / CGFloat(peak))
+            // 3.6.19 (the owner: one busy half hour flattened the rest into dashes):
+            // heights by the square root of the traffic — a column of a twentieth of
+            // the busiest still stands at a fifth of it; «больше всего» keeps the bytes.
+            let share = sqrt(CGFloat(bucket.total) / CGFloat(peak))
+            let raw = max(bucket.total > 0 ? 3 : 1.5, height * min(1, share))
             let top = snap(height - raw)
             let total = height - top
             let shape = CGRect(x: left, y: top, width: barWidth, height: total)

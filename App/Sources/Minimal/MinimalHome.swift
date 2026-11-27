@@ -347,6 +347,8 @@ final class MinimalHomeViewController: UIViewController, UIScrollViewDelegate, U
         switch gesture.state {
         case .began:
             scrubbing = true
+            // 3.6.19 (the owner): a small tap says the hold has taken.
+            Haptics.item()
             showDots()
             dotPill.transform = CGAffineTransform(scaleX: 0.7, y: 0.85)
             UIView.animate(withDuration: reduce ? 0 : 0.2, delay: 0, options: [.curveEaseOut, .beginFromCurrentState, .allowUserInteraction]) {

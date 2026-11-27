@@ -369,7 +369,10 @@ public enum ConfigBuilder {
             // After every rule that sends traffic outside the VPN, so only QUIC for
             // the server is refused; a refusal (not a silent drop, `no_drop`) makes
             // the app fall back to TCP at once instead of waiting out its timeout.
-            routeRules.append(["network": "udp", "port": 443, "action": "reject", "no_drop": true])
+            // 3.6.19 (the owner: calls through the VPN on mobile failed): only what the
+            // core's sniffing recognised as QUIC. Calls also use UDP/443 (STUN, TURN
+            // relays, media), and the rule refused them all.
+            routeRules.append(["network": "udp", "port": 443, "protocol": "quic", "action": "reject", "no_drop": true])
         }
 
         if probeExit != nil {
