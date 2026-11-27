@@ -34,3 +34,9 @@ ad.vk.com
 isappcloud.com
 ad.digitalturbine.com
 sdk.verve.com
+# BigoAds: запасные домены SDK, которых нет в списках (3.6.20; реклама в Block Blast у владельца:
+# api.haobird.site → CNAME https-api.bigolive.tv). Сам bigolive.tv — Bigo Live, не блокируется.
+haobird.site
+antibanads.com
+bytegle.tech
+youngle.site
